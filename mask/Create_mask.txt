@@ -1,0 +1,24 @@
+
+#### Creation of the mask (shapefile and raster) for the area of interest (north of 60 oN)
+# 1 - download the world map from ArcGIS library:
+# wget 'https://opendata.arcgis.com/api/v3/datasets/2b93b06dc0dc4e809d3c8db5cb96ba69_0/downloads/data?format=shp&spatialRefId=4326&where=1%3D1'
+# mv  $procindir'data?format=shp&spatialRefId=4326&where=1%3D1' $procindir'World_Countries_Generalized.zip'
+# unzip $procindir'*.zip'
+# 2- I've used this 1-km raster as a baseline - downloaded from the "ABoVE: Fractional Open Water Cover for Pan-Arctic and ABoVE-Domain Regions, 2002-2015" dataset - pan-arctic scenes
+# https://daac.ornl.gov/ABOVE/guides/ABoVE_Frac_Open_Water.html
+# 3- compute the box that correspond to 60oN in EPSG 6931 using this nice app: https://epsg.io/transform#s_srs=6931&t_srs=4326&x=1000.0000000&y=1000.0000000
+# For a small wiggle room, I used the box: -3310000 -3310000 3310000 3310000
+# 4- in qgis, clip the baseline raster (from #2) to this box set in #3
+# 5- after dissolving the world map, transform it to EPSG 6931, add a 5,000m buffer zone and clip it to the extent of the raster you created in #4
+# 6- convert the raster from #4 into a netcdf file and create a circular mask above 60 oN.
+# gdalwarp -overwrite -of netCDF -r bilinear -s_srs EPSG:6931 -t_srs EPSG:6931  '/Users/helenegenet/Desktop/test.tif' $outdir'tmp.nc
+# ncap2 -O -h -s'band2[$y, $x]=(x*x+y*y)^0.5'  $outdir'tmp.nc'   $outdir'tmp.nc'
+# ncap2 -O -h -s'band3[$y, $x]=0; where(band2<=3310000) band3=1;'  $outdir'tmp.nc'   $outdir'tmp.nc'
+# gdalwarp -overwrite -of GTiff -r bilinear -s_srs EPSG:6931 -t_srs EPSG:6931 NETCDF:$outdir'tmp.nc':band3 '/Users/helenegenet/Desktop/test1.tif'
+# 7- rasterize the clipped polygone created in #5 using the raster created in #6
+# 8- add these two rasters together and set all the values less than 2 (mask value) to NaN
+# 9- finally change the value 2 to the value 1.
+# 10- you can polygonize this raster if need be.
+
+
+
