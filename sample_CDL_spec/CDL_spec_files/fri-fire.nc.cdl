@@ -1,0 +1,26 @@
+netcdf fri-fire {
+dimensions:
+	Y = 1 ;
+	X = 1 ;
+variables:
+	float lat(Y, X) ;
+		lat:standard_name = "latitude" ;
+		lat:units = "degree_north" ;
+		lat:_FillValue = NaN ;
+	float lon(Y, X) ;
+		lon:standard_name = "longitude" ;
+		lon:units = "degree_east" ;
+		lon:_FillValue = NaN ;
+	int fri(Y, X) ;
+		fri:_FillValue = NaN ;
+	int fri_severity(Y, X) ;
+		fri_severity:_FillValue = NaN ;
+	int fri_jday_of_burn(Y, X) ;
+		fri_jday_of_burn:_FillValue = NaN ;
+	int fri_area_of_burn(Y, X) ;
+		fri_area_of_burn:_FillValue = NaN ;
+
+// global attributes:
+		:Conventions = "CF-1.5" ;
+		:source = "" ;
+}

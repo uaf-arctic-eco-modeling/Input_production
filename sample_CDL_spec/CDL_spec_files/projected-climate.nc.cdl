@@ -1,0 +1,46 @@
+netcdf projected-climate {
+dimensions:
+	time = UNLIMITED ; //
+	Y = 1 ;
+	X = 1 ;
+variables:
+	int64 Y(Y) ;
+	int64 X(X) ;
+	float lat(Y, X) ;
+		lat:standard_name = "latitude" ;
+		lat:units = "degree_north" ;
+		lat:_FillValue = NaN ;
+	float lon(Y, X) ;
+		lon:standard_name = "longitude" ;
+		lon:units = "degree_east" ;
+		lon:_FillValue = NaN ;
+	float tair(time, Y, X) ;
+		tair:standard_name = "air_temperature" ;
+		tair:units = "celsius" ;
+		tair:_FillValue = NaN ;
+	float precip(time, Y, X) ;
+		precip:standard_name = "precipitation_amount" ;
+		precip:units = "mm month-1" ;
+		precip:_FillValue = NaN ;
+	float nirr(time, Y, X) ;
+		nirr:standard_name = "downwelling_shortwave_flux_in_air" ;
+		nirr:units = "W m-2" ;
+		nirr:_FillValue = NaN ;
+	float vapor_press(time, Y, X) ;
+		vapor_press:standard_name = "water_vapor_pressure" ;
+		vapor_press:units = "hPa" ;
+		vapor_press:_FillValue = NaN ;
+	double time(time) ;
+		time:units = "days since YYYY-MM-DD HH:MM:SS" ;
+		time:long_name = "time" ;
+		time:calendar = "365_day" ;
+		time:_FillValue = NaN ;
+
+// global attributes:
+		:Conventions = "CF-1.5" ;
+		:source = "" ;
+		:model = "" ;
+		:scenario = "" ;
+		:history = "" ;
+		:NCO = "4.3.7" ;
+}

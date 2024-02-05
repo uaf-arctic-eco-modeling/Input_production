@@ -1,0 +1,24 @@
+netcdf soil-texture {
+dimensions:
+	Y = 1 ;
+	X = 1 ;
+variables:
+	float pct_sand(Y, X) ;
+		pct_sand:_FillValue = NaN ;
+	float pct_silt(Y, X) ;
+	  pct_silt:_FillValue = NaN ;
+	float pct_clay(Y, X) ;
+	  pct_clay:_FillValue = NaN ;
+	float lat(Y, X) ;
+		lat:standard_name = "latitude" ;
+		lat:units = "degree_north" ;
+		lat:_FillValue = NaN ;
+	float lon(Y, X) ;
+		lon:standard_name = "longitude" ;
+		lon:units = "degree_east" ;
+		lon:_FillValue = NaN ;
+
+// global attributes:
+		:Conventions = "CF-1.5" ;
+		:source = "" ;
+}

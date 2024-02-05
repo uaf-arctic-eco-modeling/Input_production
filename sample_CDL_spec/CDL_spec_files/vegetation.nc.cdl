@@ -1,0 +1,20 @@
+netcdf vegetation {
+dimensions:
+	Y = 1 ;
+	X = 1 ;
+variables:
+	int veg_class(Y, X) ;
+	  veg_class:_FillValue = NaN ;
+	float lat(Y, X) ;
+		lat:standard_name = "latitude" ;
+		lat:units = "degree_north" ;
+		lat:_FillValue = NaN ;
+	float lon(Y, X) ;
+		lon:standard_name = "longitude" ;
+		lon:units = "degree_east" ;
+		lon:_FillValue = NaN ;
+
+// global attributes:
+		:Conventions = "CF-1.5" ;
+		:source = "" ;
+}

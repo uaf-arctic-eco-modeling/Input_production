@@ -1,0 +1,24 @@
+netcdf topo {
+dimensions:
+	Y = 1 ;
+	X = 1 ;
+variables:
+	double slope(Y, X) ;
+	  slope:_FillValue = NaN ;
+	double aspect(Y, X) ;
+	  slope:_FillValue = NaN ;
+	double elevation(Y, X) ;
+	  elevation:_FillValue = NaN ;
+	float lat(Y, X) ;
+		lat:standard_name = "latitude" ;
+		lat:units = "degree_north" ;
+		lat:_FillValue = NaN ;
+	float lon(Y, X) ;
+		lon:standard_name = "longitude" ;
+		lon:units = "degree_east" ;
+		lon:_FillValue = NaN ;
+
+// global attributes:
+		:Conventions = "CF-1.5" ;
+		:source = "" ;
+}

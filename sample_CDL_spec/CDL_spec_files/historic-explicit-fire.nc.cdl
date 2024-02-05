@@ -1,0 +1,33 @@
+netcdf historic-explicit-fire {
+dimensions:
+	Y = 1;
+	X = 1 ;
+	time = UNLIMITED ; // 
+variables:
+	float lat(Y, X) ;
+		lat:standard_name = "latitude" ;
+		lat:units = "degree_north" ;
+		lat:_FillValue = NaN ;
+	float lon(Y, X) ;
+		lon:standard_name = "longitude" ;
+		lon:units = "degree_east" ;
+		lon:_FillValue = NaN ;
+	int exp_burn_mask(time, Y, X) ;
+		exp_burn_mask:_FillValue = NaN ;
+	int exp_jday_of_burn(time, Y, X) ;
+		exp_jday_of_burn:_FillValue = NaN ;
+	int exp_fire_severity(time, Y, X) ;
+		exp_fire_severity:_FillValue = NaN ;
+	int exp_area_of_burn(time, Y, X) ;
+		exp_area_of_burn:_FillValue = NaN ;
+	double time(time) ;
+		time:units = "days since YYYY-MM-DD HH:MM:SS" ;
+		time:long_name = "time" ;
+		time:calendar = "365_day" ;
+		time:_FillValue = NaN ;
+		
+
+// global attributes:
+		:Conventions = "CF-1.5" ;
+		:source = "" ;
+}

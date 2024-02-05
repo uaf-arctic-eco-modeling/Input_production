@@ -1,0 +1,14 @@
+netcdf co2 {
+dimensions:
+	year = UNLIMITED ; 
+variables:
+	float co2(year) ;
+		co2:_FillValue = NaN ;
+		co2:standard_name = "atmospheric CO2 concentration" ;
+		co2:units = "ppm" ;
+	int64 year(year) ;
+
+// global attributes:
+		:data_source = "https://www.esrl.noaa.gov/gmd/ccgg/trends/data.html" ;
+		:source = "" ;
+}

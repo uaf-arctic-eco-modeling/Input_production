@@ -1,0 +1,13 @@
+netcdf projected-co2 {
+dimensions:
+	year = UNLIMITED ; // 
+variables:
+	float co2(year) ;
+		co2:_FillValue = NaN ;
+	int64 year(year) ;
+	  year:_FillValue = NaN ;
+
+// global attributes:
+		:data_source = "" ;
+		:source = "" ;
+}
