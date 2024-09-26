@@ -30,8 +30,8 @@ cd $maskdir
 
 ## Create the directory to store the raw data
 if [ -d $maskdir'raw_data' ]; then
-	echo 'directory exists ... remove'
-	rm -r $maskdir'raw_data'
+echo 'directory exists ... remove'
+rm -r $maskdir'raw_data'
 fi
 mkdir $maskdir'raw_data'
 cd $maskdir'raw_data'
@@ -39,8 +39,8 @@ cd $maskdir'raw_data'
 
 # create a directory to load the global map 
 if [ -d $maskdir'raw_data/globmap' ]; then
-	echo 'directory exists ... remove'
-	rm -r $maskdir'raw_data/globmap'
+echo 'directory exists ... remove'
+rm -r $maskdir'raw_data/globmap'
 fi
 mkdir $maskdir'raw_data/globmap'
 cd $maskdir'raw_data/globmap'
@@ -48,7 +48,7 @@ cd $maskdir'raw_data/globmap'
 #wget 'https://opendata.arcgis.com/api/v3/datasets/2b93b06dc0dc4e809d3c8db5cb96ba69_0/downloads/data?format=shp&spatialRefId=4326&where=1%3D1'
 wget 'https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/geoBoundariesCGAZ_ADM1.zip'
 for entry in $maskdir'raw_data/globmap'/*; do
-  echo "$entry"
+echo "$entry"
 done
 #mv  $maskdir'raw_data/globmap'/* $maskdir'raw_data/globmap/World_Countries_Generalized.zip'
 unzip $maskdir'raw_data/globmap/'*'.zip' -d $maskdir'raw_data/globmap/'
@@ -56,8 +56,8 @@ unzip $maskdir'raw_data/globmap/'*'.zip' -d $maskdir'raw_data/globmap/'
 
 # create a directory to load the ecoregion map 
 if [ -d $maskdir'raw_data/ecomap' ]; then
-	echo 'directory exists ... remove'
-	rm -r $maskdir'raw_data/ecomap'
+echo 'directory exists ... remove'
+rm -r $maskdir'raw_data/ecomap'
 fi
 mkdir $maskdir'raw_data/ecomap'
 cd $maskdir'raw_data/ecomap'
@@ -69,8 +69,8 @@ unzip $maskdir'raw_data/ecomap/'*'.zip' -d $maskdir'raw_data/ecomap/'
 
 ### Process the data
 if [ -d $maskdir'processed_data' ]; then
-	echo 'directory exists ... remove'
-	rm -r $maskdir'processed_data'
+echo 'directory exists ... remove'
+rm -r $maskdir'processed_data'
 fi
 mkdir $maskdir'processed_data'
 cd $maskdir'processed_data'
