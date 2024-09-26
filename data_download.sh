@@ -46,22 +46,29 @@ modlist='access_cm2,mri_esm2_0,cmcc_cm2_sr5'
 ########   PROCESSING   ########
 
 
-
 ### WorldClim 
 
 ## Create storage directory
 if [ -d $indir'WorldClim' ]; then
-	echo 'directory exists ... remove'
-	rm -r $indir'WorldClim'
+echo 'directory exists ... remove'
+rm -r $indir'WorldClim'
 fi
 mkdir $indir'WorldClim'
 cd $indir'WorldClim'
 
-## Download the data
+## Download the data the files
 # variable loop
 for var in "${wcvarlist[@]}"; do
-    echo $var
-    wget 'https://geodata.ucdavis.edu/climate/worldclim/2_1/base/wc2.1_30s_'$var'.zip'
+echo $var
+wget 'https://geodata.ucdavis.edu/climate/worldclim/2_1/base/wc2.1_30s_'$var'.zip'
+fname=$(printf '%s\n' *"$var"*.zip)    
+done
+
+## Uncompress the data
+cd $indir'WorldClim'
+for f in  *.zip; do
+echo $f
+unzip $f
 done
 
 
@@ -70,31 +77,42 @@ done
 
 ## Create storage directory
 if [ -d $indir'CRU_JRA' ]; then
-	echo 'directory exists ... remove'
-	rm -r $indir'CRU_JRA'
+echo 'directory exists ... remove'
+rm -r $indir'CRU_JRA'
 fi
 mkdir $indir'CRU_JRA'
 cd $indir'CRU_JRA'
 
 ## Download the data
 for y in $(seq $cjstartyr $cjendyr); do
-	echo $y
-	for var in "${cjvarlist[@]}"; do
-		wget -r 'ftp://'$usrname':'$psswrd'@ftp.ceda.ac.uk/badc/cru/data/cru_jra/cru_jra_'$cjversion'/data/'$var'/crujra.v'$cjversion'.5d.'$var'.'$y'.365d.noc.nc.gz'
-	done
+echo $y
+for var in "${cjvarlist[@]}"; do
+wget -r 'ftp://'$usrname':'$psswrd'@ftp.ceda.ac.uk/badc/cru/data/cru_jra/cru_jra_'$cjversion'/data/'$var'/crujra.v'$cjversion'.5d.'$var'.'$y'.365d.noc.nc.gz'
+done
 done
 
 ## Move the data to the input directory
 mv $indir'CRU_JRA/ftp.ceda.ac.uk/badc/cru/data/cru_jra/cru_jra_'$cjversion'/data/'*  $indir'CRU_JRA/'
 rm -r $indir'CRU_JRA/ftp.ceda.ac.uk'
 
+## Uncompress the data
+for var in "${cjvarlist[@]}"; do
+for f in  *.noc.nc.gz; do
+echo $fname
+# uncompress the files
+gunzip $dir/$fname
+done
+done
+
+
+
 
 ### CMIP 
 
 ## Create storage directory
 if [ -d $indir'CMIP' ]; then
-	echo 'directory exists ... remove'
-	rm -r $indir'CMIP'
+echo 'directory exists ... remove'
+rm -r $indir'CMIP'
 fi
 mkdir $indir'CMIP'
 cd $indir'CMIP'
@@ -110,5 +128,13 @@ export gcm_list=${modlist[0]}
 export sc_list=${sclist[0]}
 export var_list=${cmipvarlist[0]}
 
-python3 $scriptdir'CMIP_daily_download.py'
+python3 $scriptdir'data_download_CMIP.py'
+
+## Uncompress the data
+cd indir'CMIP'
+for f in  *.zip; do
+echo $f
+unzip $f
+rm *.json *.png
+done
 
