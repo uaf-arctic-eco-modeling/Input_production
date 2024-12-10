@@ -2,6 +2,12 @@ import geopandas as gp
 import numpy as np
 import os
 
+# Creates area of interest. Produces extent of area of interest. 
+# Starts with global maps, (two datasets) and combines them, then 
+# Basically combining two datasets so that the glaciated areas are included in
+# the AOI. Then buffer it by 5km (to smooth out rough coastlines, etc)
+#
+# Then finally make this one merged shapefile and print the extents to stdout.
 
 ### Output directory
 outdir = os.getenv('outpath')
