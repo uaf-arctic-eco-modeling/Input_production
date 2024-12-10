@@ -1,0 +1,21 @@
+name: ip_0
+channels:
+  - defaults
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+dependencies:
+  - gdal
+  - xarray
+  - jupyter
+  - numpy
+  #- cdsapi
+  - requests
+  - pandas
+  - cryptography
+  #- contrail
+  - netCDF4
+
+
+
+
+
