@@ -1,10 +1,27 @@
 #!/usr/bin/env python
 
+import pathlib
 import requests
+import zipfile
+
 import geopandas as gpd
 
 import util
 
+def unzip_AOI_maps():
+  fpath = pathlib.Path('working/download/mask/geoBoundariesCGAZ_ADM1.zip')
+  print(f"Extracting {fpath=}")
+  with zipfile.ZipFile(fpath, 'r') as zip_ref:
+    x = pathlib.Path(fpath.parent, fpath.stem)
+    print(f"Extracting {x=}")
+    zip_ref.extractall(x)
+
+  fpath = pathlib.Path('working/download/mask/Ecoregions2017.zip')
+  print(f"Extracting {fpath=}")
+  with zipfile.ZipFile(fpath, 'r') as zip_ref:
+    x = pathlib.Path(fpath.parent, fpath.stem)
+    print(f"Extracting {x=}")
+    zip_ref.extractall(x)
 
 
 def download_AOI_maps():
@@ -36,7 +53,6 @@ def create_AOI_shapefiles(global_political_map, eco_region_map):
 
   # Dissolve geometries within `groupby` into single observation
   eco_north = eco_north.dissolve() 
-
 
   # Read the global map, 
   print(f"Opening {global_political_map=}...")
