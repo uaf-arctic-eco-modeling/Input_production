@@ -1,0 +1,4 @@
+*.pyc
+
+# don't track the generated assets
+working/
