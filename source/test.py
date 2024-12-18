@@ -15,7 +15,8 @@ def test_create_AOI_shapefiles():
 def test_unzip_AOI_maps():
   mask.unzip_AOI_maps()
 
-
+def test_get_AOI_extents():
+  print(mask.get_AOI_extents('working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp'))
 
 if __name__ == '__main__':
 
@@ -23,3 +24,4 @@ if __name__ == '__main__':
   #test_create_AOI_shapefiles()
   test_unzip_AOI_maps()
 
+  test_get_AOI_extents()
