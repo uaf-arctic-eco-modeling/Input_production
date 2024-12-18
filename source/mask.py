@@ -76,10 +76,16 @@ def create_AOI_shapefiles(global_political_map, eco_region_map):
 
   util.mkdir_p('working/aoi_4326/')
   util.mkdir_p('working/aoi_6931/')
+  util.mkdir_p('working/aoi_5km_buffer_6931/')
 
+  print("Writing AOI files...")
   AOI.to_crs(4326).to_file('working/aoi_4326/aoi_4326.shp')
   AOI.to_crs(6931).to_file('working/aoi_6931/aoi_6931.shp')
 
+  AOI_5km_buffer = AOI.to_crs(6931).buffer(5000) # 5km
+  AOI_5km_buffer.tmp = 1 # ?? what is this for?
+  print("Writing buffered AOI file...")
+  AOI_5km_buffer.to_file('working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
 
 def get_AOI_extents():
   pass
