@@ -9,6 +9,10 @@ import geopandas as gpd
 import util
 
 def unzip_AOI_maps():
+  '''
+  uzips into a directory of the same name as the zip file and right next
+  to the zip file.
+  '''
   fpath = pathlib.Path('working/download/mask/geoBoundariesCGAZ_ADM1.zip')
   print(f"Extracting {fpath=}")
   with zipfile.ZipFile(fpath, 'r') as zip_ref:
@@ -25,6 +29,9 @@ def unzip_AOI_maps():
 
 
 def download_AOI_maps():
+  '''
+  Go the web and get some stuff...
+  '''
   fname = 'geoBoundariesCGAZ_ADM1.zip'
   url = f'https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/{fname}'
   r = requests.get(url)
@@ -42,7 +49,11 @@ def download_AOI_maps():
 
 
 def create_AOI_shapefiles(global_political_map, eco_region_map):
-
+  '''
+  Creates two shape files in different projections that cover the whole
+  area of interest. Each file is a single feature (not sure if this is the
+  right term?) with a bunch of polygons defining the outline of the AOI.
+  '''
   # Read the eco region shape file, extract the shapes of interest, and then
   # merge (dissolve) them into one single shape (polygon?)
   print(f"Opening {eco_region_map=}...")
@@ -69,5 +80,8 @@ def create_AOI_shapefiles(global_political_map, eco_region_map):
   AOI.to_crs(4326).to_file('working/aoi_4326/aoi_4326.shp')
   AOI.to_crs(6931).to_file('working/aoi_6931/aoi_6931.shp')
 
+
+def get_AOI_extents():
+  pass
 
 
