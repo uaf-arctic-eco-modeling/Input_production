@@ -8,7 +8,9 @@ def download_maps():
   pass
 
 
-def get_aoi(global_political_map, eco_region_map):
+
+
+def create_AOI_shapefiles(global_political_map, eco_region_map):
 
   # Read the eco region shape file, extract the shapes of interest, and then
   # merge (dissolve) them into one single shape (polygon?)

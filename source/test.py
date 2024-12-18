@@ -4,8 +4,8 @@
 
 import mask
 
-def test_mask():
-  mask.get_aoi('working/download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp',
+def test_create_AOI_shapefiles():
+  mask.create_AOI_shapefiles('working/download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp',
                'working/download/mask/Ecoregions2017/Ecoregions2017.shp')
 
 
@@ -14,6 +14,5 @@ def test_mask():
 
 if __name__ == '__main__':
 
-  test_mask()
-
+  #test_create_AOI_shapefiles()
 
