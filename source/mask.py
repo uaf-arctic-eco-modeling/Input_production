@@ -4,6 +4,7 @@ import pathlib
 import requests
 import zipfile
 import numpy as np
+import subprocess
 import geopandas as gpd
 
 import util
@@ -125,6 +126,26 @@ def get_AOI_extents(shapefile):
   return (extents['minx'].values[0], extents['miny'].values[0], max_x.values[0], max_y.values[0])
 
 
-  pass
+def rasterize_AOI():
+
+  layer_name = 'aoi_5km_buffer_6931'
+  RES = str(4000)
+  target_extents = get_AOI_extents('working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
+
+  target_extents = [str(int(x)) for x in target_extents]
+  args = ['gdal_rasterize',
+          '-l', layer_name,
+          '-burn', str(1),
+          '-tr', RES, RES,
+          '-a_nodata', str(0),
+          '-te', *(target_extents),
+          '-ot', 'Int16',
+          '-of', 'GTiff',
+          'working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp',
+          'working/aoi_5km_buffer_6931.tiff'
+          ]
+  print(args)
+  subprocess.run(args)
+
 
 

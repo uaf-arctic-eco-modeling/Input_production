@@ -18,6 +18,9 @@ def test_unzip_AOI_maps():
 def test_get_AOI_extents():
   print(mask.get_AOI_extents('working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp'))
 
+def test_rasterize_AOI():
+  mask.rasterize_AOI()
+
 if __name__ == '__main__':
 
   #test_download_AOI_maps()
@@ -25,3 +28,4 @@ if __name__ == '__main__':
   test_unzip_AOI_maps()
 
   test_get_AOI_extents()
+  test_rasterize_AOI()
