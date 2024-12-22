@@ -50,13 +50,19 @@ def calculate_tile_extents():
       else:
         tile_xmax = tile_xmin + TILE_SIZE_X * aoiGT[1]
 
-      tile_ymin = (aoi_extents['miny'] + -4000 * maskY) + TILE_SIZE_Y * v * aoiGT[1] # <---WTF?? bug?
-      #tile_ymin = maB + TILE_SIZE_Y * v * aoiGT[1] # <---WTF?? bug?
-      #tile_ymin = aoi_extents['miny'] + TILE_SIZE_Y * v * aoiGT[5]
+      # Origin LOWER LEFT
+      tile_ymin = aoi_extents['miny'] + -4000 * maskY  + TILE_SIZE_Y * v * aoiGT[1]  # origin lower left
       if (v+1) == len(range(N_tiles_Y)):
         tile_ymax = tile_ymin + (maskY % TILE_SIZE_Y) * aoiGT[1]
       else:
         tile_ymax = tile_ymin + TILE_SIZE_Y * aoiGT[1]
+
+      # # Origin UPPER LEFT 
+      # tile_ymin = aoi_extents['miny'] + TILE_SIZE_Y * v * aoiGT[5]
+      # if (v+1) == len(range(N_tiles_Y)):
+      #   tile_ymax = tile_ymin + (maskY % TILE_SIZE_Y) * aoiGT[5]
+      # else:
+      #   tile_ymax = tile_ymin + TILE_SIZE_Y * aoiGT[5]
 
       tile_extents.append(dict(hidx=h, vidx=v, 
                                xmin=tile_xmin, xmax=tile_xmax, 
