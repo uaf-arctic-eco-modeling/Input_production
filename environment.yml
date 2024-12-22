@@ -1,11 +1,19 @@
 name: ip_0
 channels:
-  - defaults
-  - https://repo.anaconda.com/pkgs/main
-  - https://repo.anaconda.com/pkgs/r
+  # Need conda-forge channel. Not compatible with defaults
+  # so when setting up environment, must do this:
+  #     conda remove -n ip_0 --all
+  #     conda info --envs
+  #     conda create --name ip_0 --channel conda-forge --override-channels
+  #     conda activate ip_0
+  #     conda config --env --add channels conda-forge
+  #     conda config --show
+  #     conda config --env --set channel_priority strict
+  #     conda env update environment.yml --solver classic
+  - conda-forge
+
 dependencies:
   - python >=3.9,<3.12
-  - gdal
   - xarray
   - jupyter
   - numpy
@@ -14,6 +22,12 @@ dependencies:
   - cryptography
   - netCDF4
   - geopandas
+  - nco
+  - udunits # not automatically discovered as dep of nco? 
+            # or maybe it was 'cuz of --prune option?
+  - gdal
+  - libgdal-netcdf
+
 
   #- contrail
   #- cdsapi
