@@ -26,7 +26,6 @@ def calculate_tile_gridsize():
   return N_TILES_X, N_TILES_Y
 
 
-
 def calculate_tile_extents():
 
   aoimask = AOIMask.AOIMask()
@@ -35,26 +34,8 @@ def calculate_tile_extents():
   maskX, maskY = aoimask.size()
 
   aoi_extents = aoimask.extents()
-  #aoi_extents = aoimask.bounds()
+
   aoiGT = aoimask.geoTransform()
-
-
-  #msk_all_left=$(echo ${msk_all_o[0]} | bc)
-  #msk_all_bottom=$(echo ${msk_all_o[1]}+${msk_all_res[1]}*${msk_all_sz[1]} | bc)
-  #msk_all_top=$(echo ${msk_all_o[1]} | bc)
-  #msk_all_right=$(echo ${msk_all_o[0]}+${msk_all_res[0]}*${msk_all_sz[0]} | bc)
-  #ext_all_6931=($msk_all_left $msk_all_bottom $msk_all_right $msk_all_top)
-
-  #${msk_all_o[@]}  #   -4602000.000000000000000  4251000.000000000000000  <-- minx, maxy
-  #${msk_all_sz[@]} #     2242 1934
-  #${msk_all_res[@]}   #   4000.000000000000000 -4000.000000000000000
-
-
-  maL = aoi_extents['minx']
-  maB = aoi_extents['miny'] + -4000 * maskY
-  maT = aoi_extents['maxy']
-  maR = aoi_extents['minx'] + 4000 * maskX
-  HG_ext = (maL, maB, maR, maT)
 
   N_tiles_X, N_tiles_Y = calculate_tile_gridsize()
 
@@ -68,11 +49,6 @@ def calculate_tile_extents():
         tile_xmax = tile_xmin + (maskX % TILE_SIZE_X) * aoiGT[1]
       else:
         tile_xmax = tile_xmin + TILE_SIZE_X * aoiGT[1]
-
-      print("/////////////////////////////////////")
-      print(aoi_extents['miny'] + -4000 * maskY)        # bottom (south) of first tile
-      print(TILE_SIZE_Y * v * aoiGT[1])                 # <-- the number of meters from the bottom 
-      print("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\")
 
       tile_ymin = (aoi_extents['miny'] + -4000 * maskY) + TILE_SIZE_Y * v * aoiGT[1] # <---WTF?? bug?
       #tile_ymin = maB + TILE_SIZE_Y * v * aoiGT[1] # <---WTF?? bug?
