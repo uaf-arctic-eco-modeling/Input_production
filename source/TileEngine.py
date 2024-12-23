@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-import subprocess
+import numpy as np
+from osgeo import gdal
 
 import AOIMask
 
@@ -85,28 +86,23 @@ class TileEngine(object):
   def cut_tileset(self, tile_extents):
     '''Given a list of tile extents, call gdal warp and actually crop out
     the tile from the raster.'''
+
     for tile in tile_extents:
-      xmin = tile['xmin']  
-      ymin = tile['ymin']  
-      xmax = tile['xmax']  
-      ymax = tile['ymax']  
-      hidx = tile['hidx']
-      vidx = tile['vidx']
 
-      args = [
-        'gdalwarp',
-        '-overwrite',
-        '-of', 'GTiff',
-        '-r', 'bilinear',
-        '-s_srs', 'EPSG:6931',
-        '-t_srs', 'EPSG:6931',
-        '-tr', '4000', '-4000',
-        '-te', f'{xmin}', f'{ymin}', f'{xmax}', f'{ymax}',
-        'working/aoi_5km_buffer_6931.tiff', f'/tmp/H{hidx}_V{vidx}.tiff'
-      ]
-      print(' '.join(args))
-      subprocess.run(args)
+      warpOptions = {
+        'format': 'VRT',
+        'srcSRS': 'EPSG:6931',
+        'dstSRS': 'EPSG:6931',
+        'xRes': tile['xrez'],
+        'yRes': tile['yrez'],
+        #'outputType': '',
+        'outputBounds': [tile['xmin'], tile['ymin'], tile['xmax'], tile['ymax']],
+        #'resampleAlg': '',
+      }
 
+      # Put it in a temporary dataset
+      ds = gdal.Warp('', 'working/aoi_5km_buffer_6931.tiff', **warpOptions)
+      #print(f"H{tile['hidx']:02d}_V{tile['vidx']:02d}:   {np.count_nonzero(ds.ReadAsArray())} of {ds.RasterXSize* ds.RasterYSize}")
 
   def register_tileset():
     '''Inspect a file hirearchy'''
