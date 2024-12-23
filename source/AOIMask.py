@@ -93,6 +93,7 @@ class AOIMask(object):
 
 
   def size(self):
+    '''Return (width, height).'''
     return self.aoi_raster.RasterXSize, self.aoi_raster.RasterYSize
 
 
