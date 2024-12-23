@@ -9,26 +9,6 @@ import geopandas as gpd
 
 import util
 
-def unzip_AOI_maps():
-  '''
-  uzips into a directory of the same name as the zip file and right next
-  to the zip file.
-  '''
-  fpath = pathlib.Path('working/download/mask/geoBoundariesCGAZ_ADM1.zip')
-  print(f"Extracting {fpath=}")
-  with zipfile.ZipFile(fpath, 'r') as zip_ref:
-    x = pathlib.Path(fpath.parent, fpath.stem)
-    print(f"Extracting {x=}")
-    zip_ref.extractall(x)
-
-  fpath = pathlib.Path('working/download/mask/Ecoregions2017.zip')
-  print(f"Extracting {fpath=}")
-  with zipfile.ZipFile(fpath, 'r') as zip_ref:
-    x = pathlib.Path(fpath.parent, fpath.stem)
-    print(f"Extracting {x=}")
-    zip_ref.extractall(x)
-
-
 
 
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import requests
+import pathlib
+import zipfile
 
 
 import numpy as np
@@ -31,8 +33,27 @@ class AOIMask(object):
     with open(f'working/download/mask/{self.eco_map_fname}', 'wb') as new_file:
       new_file.write(r.content)
 
-  def _unzip():
-    pass
+  def _unzip(self):
+    '''
+    uzips into a directory of the same name as the zip file and right next
+    to the zip file.
+    '''
+    fpath = pathlib.Path(f'working/download/mask/{self.politic_map_fname}')
+    print(f"Extracting {fpath=}")
+    with zipfile.ZipFile(fpath, 'r') as zip_ref:
+      x = pathlib.Path(fpath.parent, fpath.stem)
+      print(f"Extracting {x=}")
+      zip_ref.extractall(x)
+
+    fpath = pathlib.Path(f'working/download/mask/{self.eco_map_fname}')
+    print(f"Extracting {fpath=}")
+    with zipfile.ZipFile(fpath, 'r') as zip_ref:
+      x = pathlib.Path(fpath.parent, fpath.stem)
+      print(f"Extracting {x=}")
+      zip_ref.extractall(x)
+
+
+
 
   def create_from_scratch(self):
     self._download()
