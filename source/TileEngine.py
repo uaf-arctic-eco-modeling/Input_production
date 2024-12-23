@@ -128,6 +128,11 @@ class TileEngine(object):
         print(f"Writing:     /tmp/H{tile['hidx']:02d}_V{tile['vidx']:02d}.tiff")
         out = gdal.GetDriverByName('GTiff')
         out.CreateCopy(f"/tmp/H{tile['hidx']:02d}_V{tile['vidx']:02d}_EPSG_6931.tiff", ds)
+
+        warpOpts = {'dstSRS':'EPSG:4326'}
+        ds = gdal.Warp(f"/tmp/H{tile['hidx']:02d}_V{tile['vidx']:02d}_EPSG_4326.tiff", ds, **warpOpts)
+
+
   def register_tileset():
     '''Inspect a file hirearchy'''
     pass
