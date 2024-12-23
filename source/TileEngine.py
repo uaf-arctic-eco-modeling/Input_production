@@ -35,8 +35,9 @@ class TileEngine(object):
   def calculate_tile_extents(self):
     '''
     Chop a raster up into tiles.
-    Returns list of tile extent dictionaries. each dict will have x, y, minx 
-    and max (projection coords) and H and V indices in the tileset.
+    Returns list of tile extent dictionaries. Each dict will have x, y, minx
+    and max (projection coords) and H and V indices in the tileset. And the
+    resolution.
     '''
 
     aoimask = AOIMask.AOIMask()
@@ -61,14 +62,16 @@ class TileEngine(object):
         else:
           tile_xmax = tile_xmin + TILE_SIZE_X * aoiGT[1]
 
+        tile_pixelXsize = aoiGT[1]
+        tile_pixelYsize = aoiGT[5]
+
         # Origin LOWER LEFT
-        # I think there is a potential bug here if X and Y resolution are not
-        # the same...
-        tile_ymin = aoi_extents['miny'] + -4000 * maskY  + TILE_SIZE_Y * v * aoiGT[1]  # origin lower left
+        tile_ymin = aoi_extents['miny'] + tile_pixelYsize * maskY \
+                    + TILE_SIZE_Y * v * tile_pixelYsize * -1
         if (v+1) == len(range(N_tiles_Y)):
-          tile_ymax = tile_ymin + (maskY % TILE_SIZE_Y) * aoiGT[1]
+          tile_ymax = tile_ymin + (maskY % TILE_SIZE_Y) * tile_pixelYsize * -1
         else:
-          tile_ymax = tile_ymin + TILE_SIZE_Y * aoiGT[1]
+          tile_ymax = tile_ymin + TILE_SIZE_Y * tile_pixelYsize * -1 
 
         # # Origin UPPER LEFT 
         # tile_ymin = aoi_extents['miny'] + TILE_SIZE_Y * v * aoiGT[5]
@@ -78,8 +81,9 @@ class TileEngine(object):
         #   tile_ymax = tile_ymin + TILE_SIZE_Y * aoiGT[5]
 
         tile_extents.append(dict(hidx=h, vidx=v, 
-                                xmin=tile_xmin, xmax=tile_xmax, 
-                                ymin=tile_ymin, ymax=tile_ymax))
+                                 xmin=tile_xmin, xmax=tile_xmax, 
+                                 ymin=tile_ymin, ymax=tile_ymax,
+                                 xrez=tile_pixelXsize, yrez=tile_pixelYsize))
 
     return tile_extents    
 
