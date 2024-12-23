@@ -3,6 +3,7 @@
 import requests
 import pathlib
 import zipfile
+import subprocess
 
 
 import numpy as np
@@ -77,6 +78,9 @@ class AOIMask(object):
     self.eco_map_url = f"https://storage.googleapis.com/teow2016/{self.eco_map_fname}"
 
     self.root = "working/download/mask"
+    self.RES = 4000 # meters
+
+
 
   def _download(self):
     '''
@@ -126,7 +130,6 @@ class AOIMask(object):
   def load_from_vector(self, vector_file):
     self.aoi_vector = gpd.read_file(vector_file)
 
-
   def geoTransform(self):
     geotransform = self.aoi_raster.GetGeoTransform()
     return geotransform
@@ -144,15 +147,13 @@ class AOIMask(object):
 
     return dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
 
-
-  def bounds(self):
+  def get_shapefile_bounds(self):
     '''
     maybe bounds is for vectors?
     WARNING! THIS ONE AND THE RASTER VERSION HAVE miny, maxy REVERSED!!
     ONE IS BOTTOM UP THE OTHER IS TOP DOWN CONFIRM!!!!
     returns dict with keys (minx, miny, maxx, maxy)
     '''
-    RES = 4000
 
     bounds = self.aoi_vector.geometry.bounds
 
@@ -171,8 +172,8 @@ class AOIMask(object):
     # actually not sure this works as intended for negative numbers??
     bounds = np.ceil((bounds/1000))*1000
 
-    max_x = bounds['maxx'] + (RES - (bounds['maxx'] - bounds['minx']) % RES)
-    max_y = bounds['maxy'] + (RES - (bounds['maxy'] - bounds['miny']) % RES)
+    max_x = bounds['maxx'] + (self.RES - (bounds['maxx'] - bounds['minx']) % self.RES)
+    max_y = bounds['maxy'] + (self.RES - (bounds['maxy'] - bounds['miny']) % self.RES)
 
 
     # The above data structures are all pandas.DataFrames so you gotta get just
@@ -183,7 +184,25 @@ class AOIMask(object):
                 maxy=max_y.values[0])
 
 
+  def rasterize_AOI(self):
 
+    layer_name = 'aoi_5km_buffer_6931'
+
+    bnds = self.get_shapefile_bounds()
+
+    args = ['gdal_rasterize',
+            '-l', layer_name,
+            '-burn', str(1),
+            '-tr', str(self.RES), str(self.RES),
+            '-a_nodata', str(0),
+            '-te', f"{bnds['minx']} {bnds['miny']} {bnds['maxx']} {bnds['maxy']}",
+            '-ot', 'Int16',
+            '-of', 'GTiff',
+            'working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp',
+            'working/aoi_5km_buffer_6931.tiff'
+            ]
+    print(args)
+    subprocess.run(args)
 
 
 
