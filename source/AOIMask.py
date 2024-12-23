@@ -1,16 +1,35 @@
+#!/usr/bin/env python
+
+import requests
+
+
 import numpy as np
 import geopandas as gpd
 from osgeo import gdal
 
+import util
+
 
 class AOIMask(object):
   def __init__(self):
-    pass
-    #self.political_map = 
-    #self.ecoregion_map =
+    self.politic_map_fname = "geoBoundariesCGAZ_ADM1.zip"
+    self.politic_map_url = f"https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/{self.politic_map_fname}"
+    self.eco_map_fname = "Ecoregions2017.zip"
+    self.eco_map_url = f"https://storage.googleapis.com/teow2016/{self.eco_map_fname}"
 
-  def _download():
-    pass
+  def _download(self):
+    '''
+    Go the web and get some stuff...
+    '''
+    r = requests.get(self.politic_map_url)
+    util.mkdir_p('working/download/mask/')
+    with open(f'working/download/mask/{self.politic_map_fname}', 'wb') as new_file:
+      new_file.write(r.content)
+
+    r = requests.get(self.eco_map_url)
+    util.mkdir_p('working/download/mask/')
+    with open(f'working/download/mask/{self.eco_map_fname}', 'wb') as new_file:
+      new_file.write(r.content)
 
   def _unzip():
     pass

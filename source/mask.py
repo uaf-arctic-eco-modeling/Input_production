@@ -29,23 +29,7 @@ def unzip_AOI_maps():
     zip_ref.extractall(x)
 
 
-def download_AOI_maps():
-  '''
-  Go the web and get some stuff...
-  '''
-  fname = 'geoBoundariesCGAZ_ADM1.zip'
-  url = f'https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/{fname}'
-  r = requests.get(url)
-  util.mkdir_p('working/download/mask/')
-  with open(f'working/download/mask/{fname}', 'wb') as new_file:
-    new_file.write(r.content)
 
-  fname = 'Ecoregions2017.zip'
-  url = f'https://storage.googleapis.com/teow2016/{fname}'
-  r = requests.get(url)
-  util.mkdir_p('working/download/mask/')
-  with open(f'working/download/mask/{fname}', 'wb') as new_file:
-    new_file.write(r.content)
 
 
 
