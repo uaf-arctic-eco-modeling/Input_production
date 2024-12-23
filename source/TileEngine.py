@@ -108,6 +108,26 @@ class TileEngine(object):
       ds = gdal.Warp('', 'working/aoi_5km_buffer_6931.tiff', **warpOptions)
       #print(f"H{tile['hidx']:02d}_V{tile['vidx']:02d}:   {np.count_nonzero(ds.ReadAsArray())} of {ds.RasterXSize* ds.RasterYSize}")
 
+      if np.count_nonzero(ds.ReadAsArray()) < 1:
+        print("Skip tile!")
+      else:
+        # get indices of non-zero data. Use theses to further trim down the
+        # extents of the tiles.
+        valid_y, valid_x = np.nonzero(ds.ReadAsArray())
+        transOptions = {
+          'format': 'VRT',
+          # [left x, top_y, width, height]
+          'srcWin': [valid_x.min(), valid_y.min(), 
+                    valid_x.max()-valid_x.min()+1, valid_y.max()-valid_y.min()+1 ] 
+        }
+
+        print(f"cropping H{tile['hidx']} V{tile['vidx']}", transOptions)
+        vrt = gdal.GetDriverByName('VRT')
+        ds = gdal.Translate('', ds, **transOptions)
+
+        print(f"Writing:     /tmp/H{tile['hidx']:02d}_V{tile['vidx']:02d}.tiff")
+        out = gdal.GetDriverByName('GTiff')
+        out.CreateCopy(f"/tmp/H{tile['hidx']:02d}_V{tile['vidx']:02d}_EPSG_6931.tiff", ds)
   def register_tileset():
     '''Inspect a file hirearchy'''
     pass
