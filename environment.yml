@@ -28,6 +28,8 @@ dependencies:
   - gdal
   - libgdal-netcdf
 
+  - pytest
+
 
   #- contrail
   #- cdsapi
