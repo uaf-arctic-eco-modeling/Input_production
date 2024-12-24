@@ -143,6 +143,24 @@ class TileEngine(object):
         ds = gdal.Warp(pathlib.Path(outdir, "EPSG_4326.tiff"), ds, **warpOpts)
 
 
+  def create_tile_index(self):
+    opts = {
+      'overwrite': True,
+      'filenameFilter' : "*6931.tiff",
+
+    }
+    files = glob.glob(self.root + "/tiles/**/EPSG_6931.tiff")
+
+    print(f"Found {len(files)} files to tile.")    
+    dstPath = pathlib.Path(self.root + "tile_index.shp")
+
+    gdal.TileIndex(dstPath, 
+                   files,
+                   **opts)
+    if not dstPath.exists():
+      raise RuntimeError(f"PROBLEM CREATING TILE INDEX: {dstPath}")
+    
+
 
   def register_tileset():
     '''Inspect a file hirearchy'''
