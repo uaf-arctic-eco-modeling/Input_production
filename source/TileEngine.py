@@ -19,15 +19,16 @@ class TileEngine(object):
   def __init__(self, root):
     self.root = root
 
+    self.aoimask = AOIMask.AOIMask(root=self.root)
+    self.aoimask.load_from_raster(self.root + '/aoi_5km_buffer_6931.tiff')
+
   def remove_tiles(self):
     shutil.rmtree(self.root + "/tiles")
   
 
   def calculate_tile_gridsize(self):
-    aoimask = AOIMask.AOIMask()
-    aoimask.load_from_raster('working/aoi_5km_buffer_6931.tiff')
 
-    maskX, maskY = aoimask.size()
+    maskX, maskY = self.aoimask.size()
 
     N_TILES_X = int(maskX / TILE_SIZE_X)
     N_TILES_Y = int(maskY / TILE_SIZE_Y)
@@ -49,14 +50,12 @@ class TileEngine(object):
     resolution.
     '''
 
-    aoimask = AOIMask.AOIMask()
-    aoimask.load_from_raster('working/aoi_5km_buffer_6931.tiff')
     
-    maskX, maskY = aoimask.size()
+    maskX, maskY = self.aoimask.size()
 
-    aoi_extents = aoimask.extents()
+    aoi_extents = self.aoimask.extents()
 
-    aoiGT = aoimask.geoTransform()
+    aoiGT = self.aoimask.geoTransform()
 
     N_tiles_X, N_tiles_Y = self.calculate_tile_gridsize()
 
