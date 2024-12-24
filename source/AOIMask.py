@@ -73,6 +73,8 @@ class AOIMask(object):
 
   def load_from_raster(self, raster_file):
     self.aoi_raster = gdal.Open(raster_file,  gdal.gdalconst.GA_ReadOnly)
+    if self.aoi_raster is None:
+      raise RuntimeError(f"Can't open file: {raster_file}")
 
   def load_from_vector(self, vector_file):
     self.aoi_vector = gpd.read_file(vector_file)
@@ -142,7 +144,7 @@ class AOIMask(object):
             '-burn', str(1),
             '-tr', str(self.RES), str(self.RES),
             '-a_nodata', str(0),
-            '-te', f"{bnds['minx']} {bnds['miny']} {bnds['maxx']} {bnds['maxy']}",
+            '-te', f"{bnds['minx']}", f"{bnds['miny']}", f"{bnds['maxx']}", f"{bnds['maxy']}",
             '-ot', 'Int16',
             '-of', 'GTiff',
             self.root + '/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp',
