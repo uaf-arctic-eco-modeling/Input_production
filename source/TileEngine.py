@@ -1,8 +1,13 @@
 #!/usr/bin/env python
 
+import pathlib
+import shutil
+import glob
 import numpy as np
 from osgeo import gdal
 
+
+import util
 import AOIMask
 
 TILE_SIZE_X = 100
@@ -11,8 +16,12 @@ TILE_SIZE_Y = 100
 
 class TileEngine(object):
 
-  def __init__(self):
-    print ("Instatitating a TileSet...")
+  def __init__(self, root):
+    self.root = root
+
+  def remove_tiles(self):
+    shutil.rmtree(self.root + "/tiles")
+  
 
   def calculate_tile_gridsize(self):
     aoimask = AOIMask.AOIMask()
@@ -105,8 +114,7 @@ class TileEngine(object):
       }
 
       # Put it in a temporary dataset
-      ds = gdal.Warp('', 'working/aoi_5km_buffer_6931.tiff', **warpOptions)
-      #print(f"H{tile['hidx']:02d}_V{tile['vidx']:02d}:   {np.count_nonzero(ds.ReadAsArray())} of {ds.RasterXSize* ds.RasterYSize}")
+      ds = gdal.Warp('', self.root+'/aoi_5km_buffer_6931.tiff', **warpOptions)
 
       if np.count_nonzero(ds.ReadAsArray()) < 1:
         print("Skip tile!")
@@ -125,12 +133,16 @@ class TileEngine(object):
         vrt = gdal.GetDriverByName('VRT')
         ds = gdal.Translate('', ds, **transOptions)
 
-        print(f"Writing:     /tmp/H{tile['hidx']:02d}_V{tile['vidx']:02d}.tiff")
+        outdir = pathlib.Path(self.root, 'tiles', f"H{tile['hidx']:02d}_V{tile['vidx']:02d}")
+        util.mkdir_p(outdir)
+
+        print(f"Writing to: {outdir}")
         out = gdal.GetDriverByName('GTiff')
-        out.CreateCopy(f"/tmp/H{tile['hidx']:02d}_V{tile['vidx']:02d}_EPSG_6931.tiff", ds)
+        out.CreateCopy(pathlib.Path(outdir, "EPSG_6931.tiff"), ds)
 
         warpOpts = {'dstSRS':'EPSG:4326'}
-        ds = gdal.Warp(f"/tmp/H{tile['hidx']:02d}_V{tile['vidx']:02d}_EPSG_4326.tiff", ds, **warpOpts)
+        ds = gdal.Warp(pathlib.Path(outdir, "EPSG_4326.tiff"), ds, **warpOpts)
+
 
 
   def register_tileset():

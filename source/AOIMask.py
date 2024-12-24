@@ -17,13 +17,13 @@ class AOIMask(object):
   '''
   Object that encapsulates an Area of Interest Mask.
   '''
-  def __init__(self):
+  def __init__(self, root):
     self.politic_map_fname = "geoBoundariesCGAZ_ADM1.zip"
     self.politic_map_url = f"https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/{self.politic_map_fname}"
     self.eco_map_fname = "Ecoregions2017.zip"
     self.eco_map_url = f"https://storage.googleapis.com/teow2016/{self.eco_map_fname}"
 
-    self.root = "working/download/mask"
+    self.root = root
     self.RES = 4000 # meters
 
 
@@ -33,13 +33,13 @@ class AOIMask(object):
     Go the web and get some stuff...
     '''
     r = requests.get(self.politic_map_url)
-    util.mkdir_p(self.root)
-    with open(pathlib.Path(self.root, self.politic_map_fname), 'wb') as new_file:
+    util.mkdir_p(pathlib.Path(self.root, 'download/mask'))
+    with open(pathlib.Path(self.root, 'download/mask', self.politic_map_fname), 'wb') as new_file:
       new_file.write(r.content)
 
     r = requests.get(self.eco_map_url)
-    util.mkdir_p(self.root)
-    with open(pathlib.Path(self.root, self.eco_map_fname), 'wb') as new_file:
+    util.mkdir_p(pathlib.Path(self.root, 'download/mask'))
+    with open(pathlib.Path(self.root, 'download/mask', self.eco_map_fname), 'wb') as new_file:
       new_file.write(r.content)
 
   def _unzip(self):
@@ -47,14 +47,14 @@ class AOIMask(object):
     uzips into a directory of the same name as the zip file and right next
     to the zip file.
     '''
-    fpath = pathlib.Path(self.root, self.politic_map_fname)
+    fpath = pathlib.Path(self.root, 'download/mask', self.politic_map_fname)
     print(f"Extracting {fpath=}")
     with zipfile.ZipFile(fpath, 'r') as zip_ref:
       x = pathlib.Path(fpath.parent, fpath.stem)
       print(f"Extracting {x=}")
       zip_ref.extractall(x)
 
-    fpath = pathlib.Path(self.root, self.eco_map_fname)
+    fpath = pathlib.Path(self.root, 'download/mask', self.eco_map_fname)
     print(f"Extracting {fpath=}")
     with zipfile.ZipFile(fpath, 'r') as zip_ref:
       x = pathlib.Path(fpath.parent, fpath.stem)
@@ -67,8 +67,9 @@ class AOIMask(object):
   #   self.create_from_shapefiles():
 
   def create_from_shapefiles(self):
-    merge_and_buffer_shapefiles(pathlib.Path(self.root, self.politic_map_fname),
-                                pathlib.Path(self.root, self.eco_map_fname))
+    merge_and_buffer_shapefiles(pathlib.Path(self.root, 'download/mask', self.politic_map_fname),
+                                pathlib.Path(self.root, 'download/mask', self.eco_map_fname),
+                                self.root)
 
   def load_from_raster(self, raster_file):
     self.aoi_raster = gdal.Open(raster_file,  gdal.gdalconst.GA_ReadOnly)
@@ -144,8 +145,8 @@ class AOIMask(object):
             '-te', f"{bnds['minx']} {bnds['miny']} {bnds['maxx']} {bnds['maxy']}",
             '-ot', 'Int16',
             '-of', 'GTiff',
-            'working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp',
-            'working/aoi_5km_buffer_6931.tiff'
+            self.root + '/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp',
+            self.root + '/aoi_5km_buffer_6931.tiff'
             ]
     print(args)
     subprocess.run(args)
