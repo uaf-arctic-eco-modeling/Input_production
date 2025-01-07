@@ -67,7 +67,7 @@ class AOIMask(object):
   #   self.create_from_shapefiles():
 
   def create_from_shapefiles(self):
-    merge_and_buffer_shapefiles(pathlib.Path(self.root, 'download/mask', self.politic_map_fname),
+    self.merge_and_buffer_shapefiles(pathlib.Path(self.root, 'download/mask', self.politic_map_fname),
                                 pathlib.Path(self.root, 'download/mask', self.eco_map_fname),
                                 self.root)
 

@@ -161,7 +161,15 @@ class TileEngine(object):
       raise RuntimeError(f"PROBLEM CREATING TILE INDEX: {dstPath}")
     
 
+  def get_tile_index_total_area(self):
+    files = glob.glob(self.root + "/tiles/**/EPSG_6931.tiff")
+    total = 0
+    for raster_file in files:
+      ds = gdal.Open(raster_file,  gdal.gdalconst.GA_ReadOnly)
+      total += ds.RasterXSize * ds.RasterYSize
+
+    return total
 
   def register_tileset():
-    '''Inspect a file hirearchy'''
+    '''use gdal.TileIndex()'''
     pass
