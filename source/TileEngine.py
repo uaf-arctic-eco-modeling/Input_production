@@ -152,7 +152,7 @@ class TileEngine(object):
     files = glob.glob(self.root + "/tiles/**/EPSG_6931.tiff")
 
     print(f"Found {len(files)} files to tile.")    
-    dstPath = pathlib.Path(self.root + "tile_index.shp")
+    dstPath = pathlib.Path(self.root, "tile_index.shp")
 
     gdal.TileIndex(dstPath, 
                    files,
