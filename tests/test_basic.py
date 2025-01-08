@@ -11,19 +11,19 @@ import TileEngine
 
 
 def test_aoi_download():
-  aoimask = AOIMask.AOIMask()
+  aoimask = AOIMask.AOIMask(root = "../working")
   aoimask._download()
 
 def test_aoi_unzip():
-  aoimask = AOIMask.AOIMask()
+  aoimask = AOIMask.AOIMask(root = "../working")
   aoimask._unzip()
 
 def test_aoi_create_from_shapefiles():
-  aoimask = AOIMask.AOIMask()
+  aoimask = AOIMask.AOIMask(root = "../working")
   aoimask.create_from_shapefiles()
 
 def test_aoi_get_shapefile_bounds():
-  aoimask = AOIMask.AOIMask()
+  aoimask = AOIMask.AOIMask(root = "../working")
   aoimask.load_from_vector('working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
   bounds = aoimask.get_shapefile_bounds()
   assert bounds['minx'] == pytest.approx(-4602000.0)
