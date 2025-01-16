@@ -69,7 +69,7 @@ class AOIMask(object):
   def create_from_shapefiles(self):
     self.merge_and_buffer_shapefiles(pathlib.Path(self.root, 'download/mask', self.politic_map_fname),
                                 pathlib.Path(self.root, 'download/mask', self.eco_map_fname),
-                                self.root)
+                              )
 
   def load_from_raster(self, raster_file):
     self.aoi_raster = gdal.Open(raster_file,  gdal.gdalconst.GA_ReadOnly)
