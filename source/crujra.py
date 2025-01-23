@@ -8,6 +8,8 @@ import xarray as xr
 import os
 import gzip
 import shutil
+from pathlib import Path
+
 
 __CRU_JRA_VARS__ = (
     'tmin','tmax','tmp','pre',
@@ -32,23 +34,30 @@ __CRU_JRA_RESAMPLE_METHODS__  = {
     'sum':  lambda x: x.resample(time='1D').sum(),
 }
 
-
 class CRU_JRA_daily(object):
     """CUR JRA resampled data daily for a year, This class 
     assumes data for a single year in input file
     """
-    def __init__ (self, year, in_path, verbose=False, _vars=__CRU_JRA_VARS__):
+    def __init__ (self, year, in_path,verbose=False, _vars=__CRU_JRA_VARS__,  **kwargs):
         """
         Parameters
         ----------
-        year: year represented by data:
+        year: int
+            year represented by data
         in_path: path
-            What to do with this?
-        verbose:
-            see self.verbose
-        _vars:
-            see self.vars
-
+            When given an existing file (.nc), the file is loaded via `load`.
+            or
+            When given an existing directly, raw data is loaded via 
+            `load_from_raw`. Also provide **kwargs as needed to use as optional
+            arguments in `load_from_raw`
+        verbose: bool, default False
+            see `verbose`
+        _vars: list, default __CRU_JRA_VARS__
+            see `vars`
+        **kwargs: dict
+            arguments passed to non-default parameters of `load_from_raw` 
+            if `in_path` is a directory.
+        
         Attributes
         ----------
         self.year: int 
@@ -59,16 +68,30 @@ class CRU_JRA_daily(object):
             when true status messages are enabled
         self.vars: list
             list of climate variables to load, defaults all(__CRU_JRA_VARS__)
+
+        Raises
+        ------
+        IOError
+            When file/files to load is wrong format or do not exist
+
         """
         self.year = year
         self.dataset = None ## xarray data 
         self.verbose = verbose 
         self.vars = _vars
+
+        in_path = Path(in_path)
+        if in_path.exists() and in_path.suffix == '.nc':
+            self.load(in_path)
+        elif in_path.exists() and in_path.is_dir(): 
+            self.load_from_raw(in_path, **kwargs)
+        else:
+            raise IOError('No Inputs found')
+
         
 
     def load_from_raw(
-            self, data_path, aoi_extent=None, 
-            file_format = '{var}/crujra.v2.5.5d.{var}.{yr}.365d.noc.nc.gz', 
+            self, data_path, aoi_extent=None, file_format = None, 
             cleanup_uncompressed=True
         ):
         """Loads raw (direct from source) CRU JRA files, resamples to a daily
@@ -82,14 +105,21 @@ class CRU_JRA_daily(object):
         aoi_extent: tuple, optional
             clipping extent(minx, maxx, miny, maxy) geo-coordinates in 
             degrees(WGS84) # is this really the order we want?
-        file_format: str, default '{var}/crujra.v2.5.5d.{var}.{yr}.365d.noc.nc.gz'
-            string that contains {var} and {yr} formatters to match. Default
-            format matches CUR JRA file format conventions where each variable 
-            is nested in a {var} subdirectory at the root `data_path`
+        file_format: str, defaults None
+            string that contains {var} and {yr} formatters to match. When 
+            None is passed, '{var}/crujra.v2.5.5d.{var}.{yr}.365d.noc.nc.gz' 
+            pattern is used; this format matches CUR JRA file format conventions
+            where each variable is nested in a {var} subdirectory at the root 
+            `data_path`
         cleanup_uncompressed: bool, default True
             if true uncompressed raw data is deleted when loading is complete
         """
         if self.verbose: print(f"Loading from raw data at '{data_path}'")
+
+        if file_format is None:
+            file_format = '{var}/crujra.v2.5.5d.{var}.{yr}.365d.noc.nc.gz'
+
+
         local_dataset = None
         for var in self.vars:
             _path = os.path.join(
@@ -113,6 +143,7 @@ class CRU_JRA_daily(object):
             temp = xr.open_dataset(_path, engine="netcdf4")
             
             if not aoi_extent is None:
+                if self.verbose: print('..clipping to aoi')
                 mask_x =  ( temp.lon >= aoi_extent[0] ) \
                         & ( temp.lon <= aoi_extent[1] )
                 mask_y =  ( temp.lat >= aoi_extent[2] ) \
@@ -192,3 +223,4 @@ class CRU_JRA_daily(object):
             unlimited_dims={'time':True}
         )
         
+
