@@ -41,15 +41,16 @@ class RemoteZip(object):
 
     #     if self.local_file.suffix == '.zip':
     #         return self.unzip()
-    def unzip(self):
+    def unzip(self, where = None):
         if self.local_file is None:
             return 0# to exception
         if self.verbose: print(f"Extracting {self.local_file}")
         with zipfile.ZipFile(self.local_file, 'r') as zip_ref:
-          x = Path(self.local_file.parent, self.local_file.stem)
-          if self.verbose: print(f"Extracting {x=}")
-          zip_ref.extractall(x)
-        return x
+          if where is None:
+            where = Path(self.local_file.parent, self.local_file.stem)
+          if self.verbose: print(f"Extracting {where=}")
+          zip_ref.extractall(where)
+        return where
     
 
     
