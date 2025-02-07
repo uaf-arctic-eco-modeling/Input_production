@@ -10,6 +10,8 @@ import gzip
 import shutil
 from pathlib import Path
 
+from clip_xarray import clip_xr_dataset
+
 
 __CRU_JRA_VARS__ = (
     'tmin','tmax','tmp','pre',
@@ -224,3 +226,7 @@ class CRU_JRA_daily(object):
         )
         
 
+    def get_by_extent(self, minx, maxx, miny, maxy, resolution = None):
+        """Returns xr.dataset for use in downscaling
+        """
+        return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )

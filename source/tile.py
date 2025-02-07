@@ -10,7 +10,7 @@ Tile
 class Tile(object):
     """
     """
-    def __init__(self):
+    def __init__(self, extent, resolution, buffer_px = 20):
         """
         """
         self.data = {}# dictionary of normalized data, i.e:
@@ -18,8 +18,12 @@ class Tile(object):
                       #     'crujra': xr.Dataset(...), 
                       #     'worldclim': xr.Dataset(...)
                       # }
-        self.extent = None # aoi object, or a modified aoi object
+        self.extent = extent #Dataframe with 'minx','maxx','miny','maxy'
         self.resolution # Maybe? Maybe inherent from TIF? 
+        self.buffer_area = buffer_px * self.resolution
+        self.buffer_pixles = buffer_px
+
+
 
         # A valid tile will be constructed when self.data has enough
         # informatiionto start implementing the stuff that is in downscaling.sh
@@ -32,10 +36,10 @@ class Tile(object):
         """
         pass
 
-    def load_extent(self, extent_file):
-        """
-        """
-        pass
+    # def load_extent(self, extent_file):
+    #     """
+    #     """
+    #     pass
 
     def load_data(self, data): #or (self, name, data)? or all?
         """
@@ -43,17 +47,22 @@ class Tile(object):
         pass
 
 
-    def import_normalized(self, name, datasource):
+    def import_normalized(self, name, datasource, buffered=True):
         """
         each datasource (e.g. CRU_JRA_daily, WorldClim) needs to implement a 
         .get() method that can return an xarray dataset to a specified spatial 
-        temporal rezolution and aoi extent
+        temporal resolution and aoi extent
 
         tile.py is driven by a wrapper script/tool that creates a bunch of
           datasource objects and then calls this method to populate the tile object
         """
-        
-        self.data[name] = datasource.get(spatialrez=4, temporalrez='daily', aoi_extent=self.extent) 
+        minx, maxx, miny, maxy = self.extent[['minx','maxx','miny','maxy']]
+        if buffered:
+            minx,maxx = minx-self.buffer,maxx+self.buffer
+            miny,maxy = miny-self.buffer,maxy+self.buffer
+        self.data[name] = datasource.get_by_extent(
+            minx, maxx, miny, maxy, self.resolution
+        ) 
 
     def save(self, where): 
         """
