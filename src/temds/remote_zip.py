@@ -8,19 +8,20 @@ from pathlib import Path
 
 # __COMPRESSED_TYPES__ = ['.zip']#, '.gz']
 
+class RemoteZipPedanticError(Exception):
+    pass
+
 class RemoteZip(object):
-    def __init__(self, url, verbose=False):
+    def __init__(self, url, verbose=False, pedantic=False):
         self.url = url
         self.local_file = None
         self.verbose = verbose
+        self.pedantic=pedantic
 
     def download(self, location, overwrite=False):
         location = Path(location)
-        
-        
-        
         self.local_file = Path(location, Path(self.url).name)
-
+        
         if not self.local_file.exists() or overwrite:
             if self.verbose: print(f"downloading: {self.url}" )
             location.mkdir(parents=True, exist_ok=True)
@@ -28,6 +29,13 @@ class RemoteZip(object):
             r = requests.get(self.url)
             with self.local_file.open('wb') as new_file:
                 new_file.write(r.content)
+        else:
+            if self.verbose:
+                print(f"Local file exists {self.local_file}" )
+            if self.pedantic:
+                raise RemoteZipPedanticError(
+                    f"Local file exists {self.local_file}"
+                )
 
         return self.local_file
 
