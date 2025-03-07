@@ -1,11 +1,40 @@
 
-general:
-  alpha: "a general setting of some sort"
-  work_directory: working # <-- could be somewhere elese on your computer.
+global: # global settings
+  overwrite: True 
+  directories: # directories
+    root: './working'
+    aoi: aoi 
+    download: downloads
+    preprocessed: arctic
+    tiles: tiles
+    final: downscaleds
 
-mask:
-  resolution: 4000            # meters
-  dest_dir: 'build/mask/'     # 
+##<aoi> as shortcut sto indicate in aoi 
+## code currently only supports full path
+## but this is an Idea 
+aoi:
+  name: 'arctic' ## short name for aoi
+  ##<aoi> as shortcut sto indicate in aoi 
+  ## code currently only supports full path
+  ## but this is an Idea 
+  raster: <in-aoi>aoi_5km_buffer_6931.tiff
+
+worldclim: # worldclim settings
+  url: default ## default finds url saved in code
+  vars: 'all' # test with ['prec'] for speed reasons # or a list of specific variables i.e ['tmin', 'tmax', 'pre']
+
+
+
+
+
+### other potential STUFF
+# general:
+#   alpha: "a general setting of some sort"
+#   work_directory: working # <-- could be somewhere elese on your computer.
+
+# mask:
+#   resolution: 4000            # meters
+#   dest_dir: 'build/mask/'     # 
 
 # tiling:
 #   #outdir: 'build/tile_index/'
