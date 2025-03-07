@@ -31,6 +31,32 @@ async def async_run(cmd):
 
 
 class CloudShellBucketFiller(object):
+  '''
+  This class allows for running code on the Google Cloud Shell, which is an
+  ephemeral VM provided as part of the GCP. This is a funky arrangement
+  in that we are passing computation off to the cloud shell environment rather
+  than running it locally, but there are some limitations and awkwardness in 
+  how scripting the actions on the cloud shell...at some point it feels like
+  there might be security issues?
+  
+  The idea is that we are using the ephemeral Cloud Shell VM as a conduit for
+  downloading data direct to a bucket. So on the cloud shell, (whcih comes 
+  provisioned with all the handy gcloud utilities), we mount a bucket as a drive
+  and then run the download directly to that drive. As far as I can tell the 
+  data doesn't touch the local file system of the Cloud Shell instance, which
+  is good becuase it is pretty limited.
+
+  The other alternatives are:
+  1) Download data from cru (or wherever) to local machine and then upload to 
+     bucket.
+  2) Use dedicated VM to download data to the VM and then move it to a bucket
+     (or use the fuse mounted bucket)
+  3) clone/install python code to the VM (or cloud shell) and run the commands
+     there rather than using this "pass thru" CloudShellBucketFiller object.
+
+  Overall this is sort of funky and I am not sure how useful, so a bunch of the 
+  methods are stubbed out and I am not sure if it is worth finishing them...
+  '''
 
   def __init__(self, root):
     
