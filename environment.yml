@@ -1,38 +1,23 @@
-name: ip_0
+name: temds
 channels:
-  # Need conda-forge channel. Not compatible with defaults
-  # so when setting up environment, must do this:
-  #     conda remove -n ip_0 --all
-  #     conda info --envs
-  #     conda create --name ip_0 --channel conda-forge --override-channels
-  #     conda activate ip_0
-  #     conda config --env --add channels conda-forge
-  #     conda config --show
-  #     conda config --env --set channel_priority strict
-  #     conda env update environment.yml --solver classic
   - conda-forge
-
 dependencies:
   - python >=3.9,<3.12
-  - xarray
-  - jupyter
-  - numpy
-  - requests
-  - pandas
-  - cryptography
-  - netCDF4
-  - geopandas
-  - nco
-  - udunits # not automatically discovered as dep of nco? 
-            # or maybe it was 'cuz of --prune option?
-  - gdal
-  - libgdal-netcdf
-
-  - pytest
-
-
-  #- contrail
-  #- cdsapi
+  - xarray=2025.1.0
+  - rioxarray=0.18.2
+  - jupyter=1.1.1
+  - numpy=2.2.1
+  - requests=2.32.3
+  - pandas=2.2.3
+  - cryptography=44.0.0
+  - netCDF4=1.7.2
+  - geopandas=1.0.1
+  - nco=5.3.0
+  - udunits=2.2.17 
+  - gdal=3.10.0
+  - libgdal-netcdf=3.10.0
+  - pytest=8.3.4 
+  - typer=0.15.2 
 
 
 

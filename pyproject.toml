@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "temds"
+dynamic = ["version", "readme"]
+license = {file = "LICENSE.txt"}
+description = 'TODO'
+requires-python = ">=3.8"
+keywords = []
+authors = [
+  { name = "Tobey Carman", email = "tcarman2@alaska.edu " },
+  { name = "Rawser Spicer", email = "rwspicer@alaska.edu" },
+
+]
+maintainers = [
+  { name = "Tobey Carman", email = "tcarman2@alaska.edu " },
+  { name = "Rawser Spicer", email = "rwspicer@alaska.edu" },
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "temds.__version__"} 
+readme = {file = ["README.md"]}
+
+[project.urls]
+Homepage = "https://github.com/rwspicer/fluxpro"
+
+[project.scripts]
+TEMdownscale = "temds.cli:app"
