@@ -4,6 +4,7 @@ import textwrap
 import subprocess
 import tempfile
 import os
+
 #from io import StringIO
 import asyncio
 
@@ -56,29 +57,92 @@ class CloudShellBucketFiller(object):
 
   Overall this is sort of funky and I am not sure how useful, so a bunch of the 
   methods are stubbed out and I am not sure if it is worth finishing them...
+  
   '''
 
   def __init__(self, root):
     
     self.root = root
 
-    self.BUCKET = 'cru-25-jra'
+    self.BUCKET = 'cru-jra-25'        # The name of the google cloud bucket
+    self.MOUNT_POINT = 'cru-jra-25'   # The name of the folder where the bucket
+                                      # will be mounted. Easiest so far if these
+                                      # are simply the same.
 
+    # All the variables that we want to get from cru-jra
+    self.__VAR_LIST__ = ['tmin', 'tmax', 'tmp', 'pre', 'dswrf', 'ugrd', 'vgrd', 'spfh', 'pres']
 
   def gcp_auth(self):
-    #??? do we need this here? WIll it work?
+    #??? do we need this here? Will it work?
     subprocess.run('gcloud auth login'.split(' '))
 
   def gcp_shell(self):
+    print("Not implemented yet...")
     pass
+
+
+  def bucket_is_mounted(self):
+
+    cp = subprocess.run(
+      [
+        'gcloud', 'cloud-shell', 'ssh', '--authorize-session', '--command',
+        f'mount | grep {self.MOUNT_POINT}'
+      ], 
+      capture_output=True
+    )
+    #print(cp.stdout.decode('utf-8'))
+    if not cp.stdout.decode('utf-8'):
+      return False
+    else:
+      return True
 
 
   def mount_bucket(self):
-    pass
+
+    if self.bucket_is_mounted():
+      print("Bucket is already mounted...")
+    else:
+
+      print(f"Ensure that {self.MOUNT_POINT} directory exists on cloud shell host...")
+      subprocess.run([
+        'gcloud', 'cloud-shell', 'ssh', '--authorize-session', '--command', 
+        f'mkdir -p {self.MOUNT_POINT}'
+
+      ])
+
+      print(f"Mount bucket: {self.BUCKET} to {self.MOUNT_POINT} on cloud shell host...")
+      subprocess.run([
+        'gcloud', 'cloud-shell', 'ssh', '--authorize-session', '--command',
+        f'gcsfuse {self.BUCKET} {self.MOUNT_POINT}'
+      ])
 
 
   def get_file():
-    pass
+    print("Not implemented yet...")
+
+  def bucket_report(self, var):
+    if var not in self.__VAR_LIST__:
+      print(f"Unexpected variable. Must be one of {self.__VAR_LIST__}")
+
+    subprocess.run([ 
+      'gcloud', 'cloud-shell', 'ssh', '--authorize-session', '--command',
+       f'find {self.MOUNT_POINT} -name "*{var}*.nc.gz" | wc -l'
+    ])
+
+    # Want to run something liek this but again running into the issue 
+    # and awkwardness of this remote cloud shell thing...basically I would need
+    # to save this code to a temporary file, upload to the cloud shell and then
+    # excute it over there...if I run this here, the context is totally wrong
+    # and it is meaningless...
+    # ...
+    # def report_mounted_bucket(self):
+    #   for dirpath, dirnames, filenames in os.walk(self.MOUNT_POINT):
+    #     level = dirpath.replace(self.MOUNT_POINT, '').count(os.sep)
+    #     indent = ' ' * 2 * level
+    #     print(f'{indent}{os.path.basename(dirpath)}/')
+    #     subindent = ' ' * 2 * (level + 1)
+    #     print(f'{subindent}Number of files: {len(filenames)}')
+
 
   def setup_creds(self):
     '''
@@ -139,28 +203,9 @@ class CloudShellBucketFiller(object):
 
   def download_file(self, var='tmax', year=1901):
 
-    MOUNT_POINT = 'cru-jra-25'
-
-    # check bucket is already mounted...
-    cp = subprocess.run(
-      [
-        'gcloud', 'cloud-shell', 'ssh', '--authorize-session', '--command',
-        f'mount | grep {MOUNT_POINT}'
-      ], 
-      capture_output=True
-    )
-    #print(cp.stdout.decode('utf-8'))
-
-
-    if not cp.stdout.decode('utf-8'):
-      subprocess.run([
-        'gcloud', 'cloud-shell', 'ssh', '--authorize-session', '--command',
-        f'gcsfuse {MOUNT_POINT} {MOUNT_POINT}'
-      ])
-    else:
-      print("Bucket is already mounted...")
-
-    print(subprocess.run(['gcloud', 'cloud-shell', 'ssh', '--authorize-session', '--command', f'ls {MOUNT_POINT}']))
+    if not self.bucket_is_mounted():
+      print("The bucket is not mounted...attempting mount...")
+      self.mount_bucket()
 
     cp = subprocess.run([
       'gcloud','cloud-shell','ssh', '--authorize-session', '--command',
@@ -177,7 +222,12 @@ class CloudShellBucketFiller(object):
 
   def super_dl(self, var_list, year_list):
 
-    # need to check if bucket is mounted!
+    if not self.bucket_is_mounted():
+      print("The bucket is not mounted! Attempting mount...") 
+      self.mount_bucket()
+
+
+
     # seems that the download from ceda to this cloud shell is much faster than to the mounted bucket...
 
     loop = asyncio.new_event_loop()
