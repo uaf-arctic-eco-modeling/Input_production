@@ -98,6 +98,7 @@ def download(what, config='', save_to='./download', url_pattern='default', overw
 
     save_to = config.path_to('preprocessed', what)
     aoi_name = config['aoi']['name']
+    save_to.mkdir(parents=True, exist_ok=True)
     data.save(
         Path(save_to, f'{what}-{aoi_name}.nc'), 
         overwrite=overwrite
