@@ -15,23 +15,23 @@ from pathlib import Path
 import gc
 import shutil
 
-from remote_zip import RemoteZip
-from clip_xarray import clip_xr_dataset
+from .remote_zip import RemoteZip
+from .clip_xarray import clip_xr_dataset
 
 
-# gdal.UseExceptions() ## gdal 4.0 future proofing
+gdal.UseExceptions() ## gdal 4.0 future proofing
 
 
-__WORLDCLIM_VARS__ = (
+WORLDCLIM_VARS = (
     'tmin','tmax','tavg','prec','srad','wind','vapr'
 )
 
-__DAYS_PER_MONTH__ = np.cumsum([31,28,31,30,31,30,31,31,30,31,30,31]) 
-__MONTH_START_DAYS__ =  np.append([1], (__DAYS_PER_MONTH__ + 1) )[:-1] 
+DAYS_PER_MONTH = np.cumsum([31,28,31,30,31,30,31,31,30,31,30,31]) 
+MONTH_START_DAYS =  np.append([1], (DAYS_PER_MONTH + 1) )[:-1] 
 
 
-__WORLDCLIM_2_1_URL_PATTERN__ = 'https://geodata.ucdavis.edu/climate/worldclim/2_1/base/wc2.1_30s_{var}.zip'
-__WORLDCLIM_URL_PATTERN__ = __WORLDCLIM_2_1_URL_PATTERN__
+WORLDCLIM_2_1_URL_PATTERN = 'https://geodata.ucdavis.edu/climate/worldclim/2_1/base/wc2.1_30s_{var}.zip'
+WORLDCLIM_URL_PATTERN = WORLDCLIM_2_1_URL_PATTERN
 
 class WorldClim(object):
     """WorldClim data is monthly data that represents long term normal 
@@ -40,7 +40,7 @@ class WorldClim(object):
     def __init__ (self, 
             data_input,
             extent_raster = None, verbose=False, 
-            _vars=__WORLDCLIM_VARS__, months=range(1,13), 
+            _vars=WORLDCLIM_VARS, months=range(1,13), 
             **kwargs
         ):
         """
@@ -55,7 +55,7 @@ class WorldClim(object):
          extent_raster
         verbose: bool, default False
             see `verbose`
-        _vars: list, default __CRU_JRA_VARS__
+        _vars: list, default CRU_JRA_VARS
             see `vars`
         months: list like
             list of months, represented as numbers, to use. Useful for testing
@@ -74,7 +74,7 @@ class WorldClim(object):
         self.verbose: bool
             when true status messages are enabled
         self.vars: list
-            list of climate variables to load, defaults all(__CRU_JRA_VARS__)
+            list of climate variables to load, defaults all(CRU_JRA_VARS)
         self.months: list,
             list of numbers containing months represented in dataset 1 to 12 
 
@@ -99,7 +99,7 @@ class WorldClim(object):
         elif url[:4] == 'http' and url[-4:] == '.zip' and not extent_raster is None:
             ll = kwargs['local_location']
             del(kwargs['local_location'])
-            self.load_from_web_with_extent_raster(
+            self.load_from_web(
                 ll, extent_raster, 
                 cleanup_uncompressed=True, url_pattern=url,
                 **kwargs
@@ -158,10 +158,11 @@ class WorldClim(object):
         dims = ['time', 'lat', 'lon']
         n_months = len(self.months)
         shape = [n_months, rows, cols]
-        empty_data = np.zeros(n_months * rows * cols).reshape(shape)
+        empty_data = np.zeros(n_months * rows * cols)\
+                       .reshape(shape).astype('float32')
         data_vars = { var : (dims, empty_data ) for var in self.vars}
 
-        doy = [__MONTH_START_DAYS__[mn-1] for mn in self.months]
+        doy = [MONTH_START_DAYS[mn-1] for mn in self.months]
         coords={
             'lat': lat_dim, 
             'lon': lon_dim,
@@ -190,6 +191,7 @@ class WorldClim(object):
     def set_var_from_web(
             self, var, url, local_location, 
             file_format=None, resample_alg='bilinear', cleanup=True, 
+            overwrite=False,
             **kwargs
         ):
         """Download and set climate data from web based zip file.
@@ -197,7 +199,7 @@ class WorldClim(object):
         Parameters
         ----------
         var: str
-            one of the climate variables from  `__WORLDCLIM_VARS__` and 
+            one of the climate variables from  `WORLDCLIM_VARS` and 
             `self.vars` 
         url: str
             url of a remote zip file containing .tif files for each month 
@@ -218,9 +220,16 @@ class WorldClim(object):
            
 
         """
-        archive = RemoteZip(url, self.verbose)
-        overwrite = True
-        archive.download(local_location, overwrite)
+        ## download with complete url so we need complete local location
+        results = self.download(
+            url, local_location, 
+            vars=None, overwrite=overwrite
+        )
+        archive = results['download']
+
+        # archive = RemoteZip(url, self.verbose)
+        # overwrite = True
+        # archive.download(local_location, overwrite)
 
         self.set_var_from_zip(
             var, archive, local_location, file_format=file_format, 
@@ -242,7 +251,7 @@ class WorldClim(object):
         Parameters
         ----------
         var: str
-            one of the climate variables from  `__WORLDCLIM_VARS__` and 
+            one of the climate variables from  `WORLDCLIM_VARS` and 
             `self.vars` 
         archive: path
             zip file containing .tif files for each month of the year
@@ -282,7 +291,7 @@ class WorldClim(object):
         Parameters
         ----------
         var: str
-            one of the climate variables from  `__WORLDCLIM_VARS__` and 
+            one of the climate variables from  `WORLDCLIM_VARS` and 
             `self.vars` 
         in_dir: path
             directory containing .tif files for each month of the year
@@ -310,7 +319,8 @@ class WorldClim(object):
 
     def set_from_raster(self,
             var, idx, data_raster, 
-            resample_alg='bilinear', no_data=-3.4e+38
+            resample_alg='bilinear', no_data=-3.4e+38,
+            initialize_if_needed=True,
         ):
         """
         sets a variable a a timestep index in `self.dataset`
@@ -318,7 +328,7 @@ class WorldClim(object):
         Parameters
         ----------
         var: str
-            one of the climate variables from  `__WORLDCLIM_VARS__` and 
+            one of the climate variables from  `WORLDCLIM_VARS` and 
             `self.vars` 
         idx: int
             integer  based time step index to `self.dataset`
@@ -332,6 +342,18 @@ class WorldClim(object):
         
         if self.verbose: 
             print(f'loading {var} data from {data_raster} at index {idx}')
+        if self.dataset is None:
+            
+            if not initialize_if_needed:
+                print(f'data not initialized.')
+                raise TypeError('NEEDS AN ERROR')
+            if self.verbose: 
+                print(
+                    f'data not initialized. '
+                    'Initializing with extent from {data_raster}'
+                )
+            self.new_from_raster_extent(data_raster)
+
         gt = self.dataset.rio.transform().to_gdal()
 
         minx = gt[0]
@@ -339,8 +361,7 @@ class WorldClim(object):
         maxx = minx + abs(gt[1]) * self.dataset.lon.size
         maxy = miny + abs(gt[5]) * self.dataset.lat.size
         extent = (minx, miny, maxx, maxy) #_warp_order
-        print(extent)
-        if self.verbose: print(f'.. Running gdal.Warp')
+        if self.verbose: print(f'.. Running gdal.Warp to extent {extent}')
 
         # load result to memory so we don't have temp files
         result = gdal.Warp(
@@ -351,6 +372,7 @@ class WorldClim(object):
             format='mem',
             resampleAlg=resample_alg,
             dstNodata=-3.4e+38,
+            outputType=gdal.GDT_Float32,
             # srcBands = [1],
             # dstBands = [1]
         )
@@ -365,7 +387,7 @@ class WorldClim(object):
         [gc.collect(i) for i in range(2)]
 
 
-    def save(self, out_file, missing_value=1.e+20, fill_value=1.e+20):
+    def save(self, out_file, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
         """Save `dataset` as a netCDF file.
 
         Parameters
@@ -386,12 +408,15 @@ class WorldClim(object):
         for _var in self.vars:
             self.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
             
-        self.dataset.to_netcdf(
-                out_file, 
-                # encoding=encoding, 
-                engine="netcdf4",
-                # unlimited_dims={'time':True}
-            )
+        if  not out_file.exists() or overwrite:
+            self.dataset.to_netcdf(
+                    out_file, 
+                    # encoding=encoding, 
+                    engine="netcdf4",
+                    # unlimited_dims={'time':True}
+                )
+        else:
+            raise FileExistsError('The file {out_file} exists and `overwrite` is False')
         
     def get_by_extent(self, minx, maxx, miny, maxy, resolution = None):
         """Returns xr.dataset for use in downscaling
@@ -431,8 +456,8 @@ class WorldClim(object):
         self.dataset = xr.open_dataset(in_path, engine="netcdf4")
         if self.verbose: print('dataset initialized')
 
-    def load_from_web_with_extent_raster(
-            self, local_location, extent_raster, 
+    def load_from_web(
+            self, local_location, extent_raster=None, 
             cleanup_uncompressed=True, url_pattern=None,
             resample_alg='bilinear', no_data=-3.4e+38
         ):
@@ -444,8 +469,10 @@ class WorldClim(object):
             local data and working directory
         extent_raster: path
             Path to raster to pull extent and resolution from
+            if not provided  extent and resolution are 
+            pulled from first raster open
         cleanup_uncompressed: bool, Default True,
-        url_pattern: Str, default `__WORLDCLIM_URL_PATTERN__`
+        url_pattern: Str, default `WORLDCLIM_URL_PATTERN`
             Url pattern containing {var} formatter
         resample_alg: str, default 'bilinear'
             gdal.warp resampling algorithm 
@@ -455,8 +482,9 @@ class WorldClim(object):
         """
 
         if url_pattern is None:
-            url_pattern = __WORLDCLIM_URL_PATTERN__
-        self.new_from_raster_extent(extent_raster)
+            url_pattern = WORLDCLIM_URL_PATTERN
+        if extent_raster:
+            self.new_from_raster_extent(extent_raster)
         for var in self.vars:
             self.set_var_from_web(
                 var, url_pattern.format(var=var), local_location,
@@ -464,4 +492,85 @@ class WorldClim(object):
                 resample_alg=resample_alg, no_data=no_data
             )
 
+    def load_from_directory(
+            self, local_location, extent_raster=None, 
+            cleanup_uncompressed=True, url_pattern=None,
+            resample_alg='bilinear', no_data=-3.4e+38
+        ):
+        """Create `self.dateset` from extent raster and load from web source
 
+        Parameters
+        ----------
+        local_location: path
+            local data and working directory
+        extent_raster: path
+            Path to raster to pull extent and resolution from
+            if not provided  extent and resolution are 
+            pulled from first raster open
+        cleanup_uncompressed: bool, Default True,
+        url_pattern: Str, default `WORLDCLIM_URL_PATTERN`
+            Url pattern containing {var} formatter
+        resample_alg: str, default 'bilinear'
+            gdal.warp resampling algorithm 
+        no_data: float
+            Not implemented 
+
+        """
+
+        if url_pattern is None:
+            url_pattern = WORLDCLIM_URL_PATTERN
+        if extent_raster:
+            self.new_from_raster_extent(extent_raster)
+        for var in self.vars:
+            self.set_var_from_web(
+                var, url_pattern.format(var=var), local_location,
+                cleanup=cleanup_uncompressed, 
+                resample_alg=resample_alg, no_data=no_data
+            )
+
+    def download(self, url_pattern, local_location, vars='all', overwrite=False):
+        """Download data, assumes remote data is in .zip format
+
+        Parameters
+        ----------
+        url_pattern: str
+            a url that may contain '{var}' formatter.
+        local_location: Path
+            path to save data to. When `vars` is str or list
+            data for each variable is saved in a subdirectory named
+            as the variable. When `vars` is None data is save 
+            directly to `local_location`
+        vars: str, list, or None:
+            if str and vars=='all'
+                vars is set to all vars in self.vars
+            if str and vars!='all'
+                vars must be in `WORLDCLIM_VARS`
+            if list
+                each item must be in
+            if None:
+                assumes URL is a complete url with no {var} formatter
+
+        Returns
+        -------
+        dict:
+            dictionary of RemoteZip objects for var in `vars` with 
+            self.local_file set. if vars is one only key in dict is 'download'
+        """
+        if self.verbose: print('..WorldClim.download', local_location)
+        if vars == 'all':
+            vars = self.vars
+        if vars is None and url_pattern.format(vars) != url_pattern:
+            raise TypeError('URL is a formatter and no var is provided')
+        if not type(vars) is list:
+            vars = [vars]
+        completed = {}
+        for var in vars:
+            
+            url =  url_pattern.format(var=var)
+            archive = RemoteZip(url, self.verbose)
+            archive.download(local_location, overwrite)
+            key = var
+            if key is None:
+                key = 'download'
+            completed[key] = archive
+        return completed

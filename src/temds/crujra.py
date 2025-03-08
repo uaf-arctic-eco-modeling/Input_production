@@ -10,7 +10,7 @@ import gzip
 import shutil
 from pathlib import Path
 
-from clip_xarray import clip_xr_dataset
+from .clip_xarray import clip_xr_dataset
 
 
 __CRU_JRA_VARS__ = (
