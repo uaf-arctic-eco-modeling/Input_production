@@ -22,7 +22,8 @@ __CRU_JRA_RESAMPLE_LOOKUP__ = {
     'tmin': 'mean',
     'tmax': 'mean',
     'tmp': 'mean',
-    'pre': 'sum',
+    'pre': 'sum',  # Might have issue here with summing nans --> leads to 0, should be nan
+                   # hopefully fixed by pinning xarray version to one that leads to nans.
     'dswrf': 'sum',
     'ugrd': 'mean',
     'vgrd': 'mean',
@@ -203,6 +204,17 @@ class CRU_JRA_daily(object):
             values set as _FillValuem, and missing_value in netCDF variable
             headers
         """
+
+        # probably going to want to add to the history global attribute. From CF
+        # conventions page: 
+        # 
+        # history: Provides an audit trail for modifications
+        # to the original data. Well-behaved generic netCDF filters will
+        # automatically append their name and the parameters with which they
+        # were invoked to the global history attribute of an input netCDF file.
+        # We recommend that each line begin by indicating the date and time of
+        # day that the program was executed.
+
         climate_enc = {
             '_FillValue':fill_value, 
             'missing_value':missing_value, 
