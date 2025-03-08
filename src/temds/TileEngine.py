@@ -7,8 +7,8 @@ import numpy as np
 from osgeo import gdal
 
 
-import util
-import AOIMask
+from . import util
+from . import AOIMask
 
 TILE_SIZE_X = 100
 TILE_SIZE_Y = 100

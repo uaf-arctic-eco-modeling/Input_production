@@ -10,7 +10,7 @@ import numpy as np
 import geopandas as gpd
 from osgeo import gdal
 
-import util
+from . import util
 
 
 class AOIMask(object):
