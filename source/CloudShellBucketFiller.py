@@ -219,6 +219,24 @@ class CloudShellBucketFiller(object):
 
   ### NOTE: Need method to check for active gcloud configuration!!
 
+  def throttled_superdl(self, first_yr, last_yr, step=2):
+    '''
+    Hack method to throttle the super async downloads...
+    through trial and error noticed that > 20 requests results in time outs
+    and failures. So here we just make a syncronous wrapper around the super_dl
+    that can call super_dl with smaller year lists.
+    This is imperfect, but should make it relatively painless to get all the cru
+    data into the bucket.
+    '''
+    for i, s in enumerate(range(first_yr, last_yr, step)):
+      e = s + step
+      if e <= last_yr:
+        pass
+      else:
+        e = last_yr + 1
+      yr_list = [i for i in range(s, e)]
+      print(i, s, e, f"Calling super_dl with {yr_list}")
+      self.super_dl(self.__VAR_LIST__, yr_list)
 
   def super_dl(self, var_list, year_list):
 
@@ -238,8 +256,10 @@ class CloudShellBucketFiller(object):
           print(f"Making task to get file for {var=} {year=}")
           uname = os.environ['CEDA_UNAME']
           cedapw = os.environ['CEDA_PW']
-          tasks.append(asyncio.create_task(async_run(f'gcloud cloud-shell ssh --authorize-session --command "cd {self.root}/cru-jra-25 && export CEDA_USERNAME={uname} && export CEDA_PASSWORD={cedapw} && wget --certificate ~/ceda_pydap_cert_code/online_ca_client/contrail/security/onlineca/client/sh/creds.pem -e robots=off --mirror --no-parent -r http://dap.ceda.ac.uk/thredds/fileServer/badc/cru/data/cru_jra/cru_jra_2.5/data/{var}/crujra.v2.5.5d.{var}.{year}.365d.noc.nc.gz"')))
+          tasks.append(asyncio.create_task(async_run(f'gcloud cloud-shell ssh --authorize-session --command "cd {self.root}/cru-jra-25 && export CEDA_USERNAME={uname} && export CEDA_PASSWORD={cedapw} && wget --no-verbose --certificate ~/ceda_pydap_cert_code/online_ca_client/contrail/security/onlineca/client/sh/creds.pem -e robots=off --mirror --no-parent -r http://dap.ceda.ac.uk/thredds/fileServer/badc/cru/data/cru_jra/cru_jra_2.5/data/{var}/crujra.v2.5.5d.{var}.{year}.365d.noc.nc.gz"')))
+      print("async waiting... ")
       await asyncio.wait(tasks)
+      print("DONE async waiting... ")
 
     loop.run_until_complete(create_task_func())
     loop.close()
