@@ -13,12 +13,12 @@ from pathlib import Path
 from .clip_xarray import clip_xr_dataset
 
 
-__CRU_JRA_VARS__ = (
+CRU_JRA_VARS = (
     'tmin','tmax','tmp','pre',
     'dswrf','ugrd','vgrd','spfh','pres'
 )
 
-__CRU_JRA_RESAMPLE_LOOKUP__ = {
+CRU_JRA_RESAMPLE_LOOKUP = {
     'tmin': 'mean',
     'tmax': 'mean',
     'tmp': 'mean',
@@ -32,7 +32,7 @@ __CRU_JRA_RESAMPLE_LOOKUP__ = {
     
 }
 
-__CRU_JRA_RESAMPLE_METHODS__  = {
+CRU_JRA_RESAMPLE_METHODS  = {
     'mean': lambda x: x.resample(time='1D').mean(),
     'sum':  lambda x: x.resample(time='1D').sum(),
 }
@@ -41,7 +41,7 @@ class CRU_JRA_daily(object):
     """CUR JRA resampled data daily for a year, This class 
     assumes data for a single year in input file
     """
-    def __init__ (self, year, in_path,verbose=False, _vars=__CRU_JRA_VARS__,  **kwargs):
+    def __init__ (self, year, in_path,verbose=False, _vars=CRU_JRA_VARS,  **kwargs):
         """
         Parameters
         ----------
@@ -55,7 +55,7 @@ class CRU_JRA_daily(object):
             arguments in `load_from_raw`
         verbose: bool, default False
             see `verbose`
-        _vars: list, default __CRU_JRA_VARS__
+        _vars: list, default CRU_JRA_VARS
             see `vars`
         **kwargs: dict
             arguments passed to non-default parameters of `load_from_raw` 
@@ -70,7 +70,7 @@ class CRU_JRA_daily(object):
         self.verbose: bool
             when true status messages are enabled
         self.vars: list
-            list of climate variables to load, defaults all(__CRU_JRA_VARS__)
+            list of climate variables to load, defaults all(CRU_JRA_VARS)
 
         Raises
         ------
@@ -139,7 +139,7 @@ class CRU_JRA_daily(object):
                         shutil.copyfileobj(f_in, f_out)
                 _path = _path[:-3]
                 # this ensures cleanup only occurs on files we uncompress
-                # and not already uncompress files the user may still need
+                # and not already uncompressed files the user may still need
                 if cleanup_uncompressed:
                     cleanup = True
 
@@ -154,8 +154,8 @@ class CRU_JRA_daily(object):
                 temp = temp.where(mask_x & mask_y, drop=True)
 
 
-            method = __CRU_JRA_RESAMPLE_LOOKUP__[var]
-            temp = __CRU_JRA_RESAMPLE_METHODS__[method] (temp)
+            method = CRU_JRA_RESAMPLE_LOOKUP[var]
+            temp = CRU_JRA_RESAMPLE_METHODS[method] (temp)
                                 # yr_data['tmax'].resample(time='1D').mean()
            
             if local_dataset is None:
@@ -169,7 +169,7 @@ class CRU_JRA_daily(object):
         ## this is to set the attribute at the right level in the dataset
         for var in self.vars:
             temp = local_dataset[var]
-            method= __CRU_JRA_RESAMPLE_LOOKUP__[var]
+            method= CRU_JRA_RESAMPLE_LOOKUP[var]
             temp = temp.assign_attrs( {'cell_methods':f'time:{method}'} )
             local_dataset = local_dataset.assign({var:temp})
             
