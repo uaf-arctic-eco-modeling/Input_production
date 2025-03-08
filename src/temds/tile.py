@@ -15,13 +15,13 @@ class Tile(object):
         """
         self.data = {}# dictionary of normalized data, i.e:
                       # {
-                      #     'crujra': xr.Dataset(...), 
-                      #     'worldclim': xr.Dataset(...)
+                      #     'daily_crujra': xr.Dataset(...), 
+                      #     'monthly_worldclim': xr.Dataset(...)
                       # }
         self.extent = extent #Dataframe with 'minx','maxx','miny','maxy'
         self.resolution # Maybe? Maybe inherent from TIF? 
         self.buffer_area = buffer_px * self.resolution
-        self.buffer_pixles = buffer_px
+        self.buffer_pixels = buffer_px
 
 
 
