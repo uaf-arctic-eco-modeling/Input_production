@@ -12,8 +12,12 @@ import asyncio
 
 async def async_run(cmd):
   '''
+  Run a sub process shell command asynchronously.
+
   Inspired from here:
   https://towardsdatascience.com/deep-dive-into-multithreading-multiprocessing-and-asyncio-94fdbe0c91f0
+  Which is really similar to the Python docs here:
+  https://docs.python.org/3.11/library/asyncio-subprocess.html#asyncio-subprocess
   '''
   print(f"In async run(..) Creating subprocess shell for  {cmd=}")
   proc = await asyncio.create_subprocess_shell(
@@ -86,6 +90,7 @@ class CloudShellBucketFiller(object):
                           "http://dap.ceda.ac.uk/thredds/fileServer/badc/cru/data/cru_jra/cru_jra_2.5/data/{var}/crujra.v2.5.5d.{var}.{year}.365d.noc.nc.gz"
 
 
+
   def gcp_auth(self):
     #??? do we need this here? Will it work?
     subprocess.run('gcloud auth login'.split(' '))
@@ -143,7 +148,7 @@ class CloudShellBucketFiller(object):
        f'find {self.MOUNT_POINT} -name "*{var}*.nc.gz" | wc -l'
     ])
 
-    # Want to run something liek this but again running into the issue 
+    # Want to run something like this but again running into the issue 
     # and awkwardness of this remote cloud shell thing...basically I would need
     # to save this code to a temporary file, upload to the cloud shell and then
     # excute it over there...if I run this here, the context is totally wrong
@@ -216,6 +221,7 @@ class CloudShellBucketFiller(object):
     subprocess.run(['gcloud', 'cloud-shell', 'ssh', '--command', 'bash auto_cred_refresh.sh'])
 
   def download_file(self, var='tmax', year=1901):
+    '''Get one file from cru.'''
 
     if not self.bucket_is_mounted():
       print("The bucket is not mounted...attempting mount...")
@@ -230,12 +236,17 @@ class CloudShellBucketFiller(object):
 
   def throttled_superdl(self, first_yr, last_yr, step=2):
     '''
-    Hack method to throttle the super async downloads...
-    through trial and error noticed that > 20 requests results in time outs
+    Hack method to throttle the async super_dl(..) function for downloads...
+    Through trial and error noticed that > 20 requests results in time outs
     and failures. So here we just make a syncronous wrapper around the super_dl
     that can call super_dl with smaller year lists.
     This is imperfect, but should make it relatively painless to get all the cru
     data into the bucket.
+
+    Roughly an hour of compute time to get everything.
+
+    If this gets refactored in the future it might be better to use a
+    multiprocessing pool rather than this function and super_dl(...)
     '''
     for i, s in enumerate(range(first_yr, last_yr, step)):
       e = s + step
@@ -248,14 +259,22 @@ class CloudShellBucketFiller(object):
       self.super_dl(self.__VAR_LIST__, yr_list)
 
   def super_dl(self, var_list, year_list):
+    '''
+    Download a bunch of things asyncronously.
 
+    This seems to be limited by the constraints of the Cloud Shell VM (its
+    pretty small) and doesn't like to wget more than about 20 things at a time. 
+    
+    There is no throttling of the tasks here; it will greedily start a sub 
+    process for every item in the task list, which ends up being the product of
+    the size of `var_list` and `year_list`.
+    '''
     if not self.bucket_is_mounted():
       print("The bucket is not mounted! Attempting mount...") 
       self.mount_bucket()
 
-
-
-    # seems that the download from ceda to this cloud shell is much faster than to the mounted bucket...
+    # seems that the download from ceda to this cloud shell is much faster 
+    # than to the mounted bucket...
 
     loop = asyncio.new_event_loop()
     async def create_task_func(year_list=year_list):
