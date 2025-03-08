@@ -14,7 +14,7 @@ channels:
 
 dependencies:
   - python >=3.9,<3.12
-  - xarray
+  - xarray=2025.1.0
   - jupyter
   - numpy
   - requests
@@ -27,6 +27,8 @@ dependencies:
             # or maybe it was 'cuz of --prune option?
   - gdal
   - libgdal-netcdf
+
+  - rioxarray
 
   - pytest
 
