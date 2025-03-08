@@ -72,6 +72,20 @@ class CloudShellBucketFiller(object):
     # All the variables that we want to get from cru-jra
     self.__VAR_LIST__ = ['tmin', 'tmax', 'tmp', 'pre', 'dswrf', 'ugrd', 'vgrd', 'spfh', 'pres']
 
+    # This is the command string that will get run on the Cloud Shell.
+    # substitute as many things as possible here, but leave format place holders
+    # for the year and variable for picking an individual file.
+    # http://dap.ceda.ac.uk/thredds/fileServer/badc/cru/data/cru_jra/cru_jra_2.5/data/{var}/crujra.v2.5.5d.{var}.{year}.365d.noc.nc.gz',
+    # https://dap.ceda.ac.uk/badc/cru/data/cru_jra/cru_jra_2.5/data/tmin/crujra.v2.5.5d.tmin.1901.365d.noc.nc.gz?download=1
+    self.CLOUD_WGET_CMD = f"cd {self.root}/{self.MOUNT_POINT} && " \
+                          f"export CEDA_USERNAME={os.environ['CEDA_UNAME']} && " \
+                          f"export CEDA_PASSWORD={os.environ['CEDA_PW']} && " \
+                          "wget --certificate " \
+                          "~/ceda_pydap_cert_code/online_ca_client/contrail/security/onlineca/client/sh/creds.pem " \
+                          "-e robots=off --mirror --no-parent -r " \
+                          "http://dap.ceda.ac.uk/thredds/fileServer/badc/cru/data/cru_jra/cru_jra_2.5/data/{var}/crujra.v2.5.5d.{var}.{year}.365d.noc.nc.gz"
+
+
   def gcp_auth(self):
     #??? do we need this here? Will it work?
     subprocess.run('gcloud auth login'.split(' '))
@@ -209,13 +223,8 @@ class CloudShellBucketFiller(object):
 
     cp = subprocess.run([
       'gcloud','cloud-shell','ssh', '--authorize-session', '--command',
-      f"cd {self.root}/{MOUNT_POINT} && export CEDA_USERNAME={os.environ['CEDA_UNAME']} && export CEDA_PASSWORD={os.environ['CEDA_PW']} && wget --certificate ~/ceda_pydap_cert_code/online_ca_client/contrail/security/onlineca/client/sh/creds.pem -e robots=off --mirror --no-parent -r http://dap.ceda.ac.uk/thredds/fileServer/badc/cru/data/cru_jra/cru_jra_2.5/data/{var}/crujra.v2.5.5d.{var}.{year}.365d.noc.nc.gz",
-      
+      self.CLOUD_WGET_CMD.format(var=var, year=year)
     ])
-      #http://dap.ceda.ac.uk/thredds/fileServer/badc/cru/data/cru_jra/cru_jra_2.5/data/{var}/crujra.v2.5.5d.{var}.{year}.365d.noc.nc.gz',
-      #https://dap.ceda.ac.uk/badc/cru/data/cru_jra/cru_jra_2.5/data/tmin/crujra.v2.5.5d.tmin.1901.365d.noc.nc.gz?download=1
-    #])
-
 
   ### NOTE: Need method to check for active gcloud configuration!!
 
@@ -256,7 +265,11 @@ class CloudShellBucketFiller(object):
           print(f"Making task to get file for {var=} {year=}")
           uname = os.environ['CEDA_UNAME']
           cedapw = os.environ['CEDA_PW']
-          tasks.append(asyncio.create_task(async_run(f'gcloud cloud-shell ssh --authorize-session --command "cd {self.root}/cru-jra-25 && export CEDA_USERNAME={uname} && export CEDA_PASSWORD={cedapw} && wget --no-verbose --certificate ~/ceda_pydap_cert_code/online_ca_client/contrail/security/onlineca/client/sh/creds.pem -e robots=off --mirror --no-parent -r http://dap.ceda.ac.uk/thredds/fileServer/badc/cru/data/cru_jra/cru_jra_2.5/data/{var}/crujra.v2.5.5d.{var}.{year}.365d.noc.nc.gz"')))
+          tasks.append(asyncio.create_task(async_run(
+              'gcloud cloud-shell ssh --authorize-session --command ' +
+              '"' + self.CLOUD_WGET_CMD.format(var=var, year=year) + '"'
+          )))
+
       print("async waiting... ")
       await asyncio.wait(tasks)
       print("DONE async waiting... ")
