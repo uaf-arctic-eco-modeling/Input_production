@@ -136,3 +136,10 @@ def setup_directories(*args, **kwargs):
     if 'worldclim' in config.data:
         for dir in ['download', 'preprocessed']:
             config.path_to(dir, 'worldclim').mkdir(parents=True, exist_ok=True)
+
+
+def bucketfill_cru():
+    print("Not implemented yet...should do all the stuff to download masses of data and put it in the bucket")
+
+def spatial_crop_cru():
+    print("Not implemented yet...should grab files from the cru bucket (for all variables for a single year), crop them to an aoi and then save a new netcdf file for that year with all variables, but cropped to the aoi")

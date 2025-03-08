@@ -9,6 +9,16 @@ VALID_SUBPROGRAMS = Literal['download', 'preprocess', 'setup']
 app = typer.Typer()
 
 @app.command()
+def bucketfill_cru():
+    print("need to implement this. Call all the bucket filling functions using CloudShellBucketFiller?")
+    subprograms.bucketfill_cru()
+
+@app.command()
+def spatial_crop_cru():
+    print("Need to call the spatial_crop_cru func...")
+    subprograms.spatial_crop_cru()
+
+@app.command()
 def setup(
         what: str,
         config: Annotated[str, typer.Argument(help="YAML configuration to use in lieu of command line arguments")]=None, 
