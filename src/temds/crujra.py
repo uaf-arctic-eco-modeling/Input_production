@@ -4,6 +4,7 @@ CRU JRA
 
 Data structures representing CRU JRA data
 """
+import datetime
 import xarray as xr
 import os
 import gzip
@@ -214,6 +215,13 @@ class CRU_JRA_daily(object):
         # were invoked to the global history attribute of an input netCDF file.
         # We recommend that each line begin by indicating the date and time of
         # day that the program was executed.
+
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        history_entry = f"{current_time}: Saved dataset to {out_file}. Resampled to daily and cropped to aoi extent by temds.crujra.CRU_JRA_daily class, part of the Input_production project: https://github.com/uaf-arctic-eco-modeling/Input_production"
+        if 'history' in self.dataset.attrs:
+            self.dataset.attrs['history'] += "\n" + history_entry
+        else:
+            self.dataset.attrs['history'] = history_entry
 
         climate_enc = {
             '_FillValue':fill_value, 
