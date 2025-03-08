@@ -1,12 +1,8 @@
 #!/usr/bin/env python
 
-import sys
-import os
-import pytest
 
-sys.path.append(os.path.abspath('../source/'))
 
-import CloudShellBucketFiller
+from temds import CloudShellBucketFiller
 
 def test_1():
 

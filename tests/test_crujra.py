@@ -1,13 +1,9 @@
 #!/usr/bin/env python
 
-import sys
-import os
-sys.path.append(os.path.abspath('../source/'))
 
-import pytest
 from xarray import Dataset
 
-import crujra
+from temds import crujra
 
 def test_load_from_raw():
   aoi_extent = (-180.0, 180.0, 44.930151, 84.223125)
