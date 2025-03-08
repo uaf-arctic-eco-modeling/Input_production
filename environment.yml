@@ -18,6 +18,7 @@ dependencies:
   - libgdal-netcdf=3.10.0
   - pytest=8.3.4 
   - typer=0.15.2 
+  - pip # for --editable install...maybe there is a way to do with with conda?
 
 
 
