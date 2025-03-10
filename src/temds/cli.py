@@ -10,13 +10,30 @@ app = typer.Typer()
 
 @app.command()
 def bucketfill_cru():
-    print("need to implement this. Call all the bucket filling functions using CloudShellBucketFiller?")
+    print("need to implement this. Call all the bucket filling functions using "
+          "CloudShellBucketFiller?")
     subprograms.bucketfill_cru()
 
 @app.command()
 def spatial_crop_cru():
     print("Need to call the spatial_crop_cru func...")
     subprograms.spatial_crop_cru()
+
+@app.command()
+def prepare_aoi():
+    print("Should start from scratch, download some data for the aoi mask, and "
+          "create the aoi based on the downloaded files. results in two shape "
+          "files in your 'working' directory")
+
+@app.command()
+def prepare_tile_folders():
+    print("Run this after you have an AOI. This cuts the AOI up into tiles and "
+          "makes a folder for each tile. Inside each folder will be some shape "
+          "files that define the tile extent. There should also be a tile "
+          "index file that is a shape file with a polygon for each tile folder")
+    
+
+
 
 @app.command()
 def setup(
