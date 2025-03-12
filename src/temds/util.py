@@ -49,3 +49,31 @@ def getRasterExtents(raster):
   maxy = miny + geoTransform[5] * ds.RasterYSize
 
   return [minx, miny, maxx, maxy]
+
+def buffer_extent(extent, buffer, digits=6):
+    """ 
+    This adds a buffer to the passed in extents. Works in degrees.
+    
+    parameters
+    ----------
+    extent: list like
+        extent in [minx,maxx,miny,maxy] order
+        assumes coords are in degrees
+    buffer: float
+        buffer in degrees
+    digits: int, default 6
+        number of digits to pass to round
+
+    returns
+    -------
+    tuple:
+        (minx,maxx,miny,maxy) in degrees
+    """
+    minx = round(max(extent[0] - buffer, -180.0), 6)
+    maxx = round(min(extent[1] + buffer,  180.0), 6)
+    
+    miny = round(max(extent[2] - buffer, -90.0), 6)
+    maxy = round(min(extent[3] + buffer,  90.0), 6)
+
+    
+    return (minx, maxx, miny, maxy)

@@ -5,9 +5,13 @@ Sub Utility Helpers for CLI
 """
 from pathlib import Path
 from collections import UserDict
+import multiprocessing
 
 import yaml
 
+from . import crujra
+from . import AOIMask
+from . import util
 from .worldclim import WORLDCLIM_VARS, WORLDCLIM_URL_PATTERN, WorldClim
 
 DATA_SOURCES = [
@@ -141,5 +145,39 @@ def setup_directories(*args, **kwargs):
 def bucketfill_cru():
     print("Not implemented yet...should do all the stuff to download masses of data and put it in the bucket")
 
+def cru_load_crop_and_save(pdict):
+    buffered_aoi = pdict['buffered_aoi']
+    year = pdict['year']
+    cru = crujra.CRU_JRA_daily(year, 'local_test_data', True, aoi_extent=buffered_aoi)
+    cru.save(f"working/cru-arctic/crujra.arctic.v2.5.5d.{year}.365d.noc.nc")
+
+
 def spatial_crop_cru():
-    print("Not implemented yet...should grab files from the cru bucket (for all variables for a single year), crop them to an aoi and then save a new netcdf file for that year with all variables, but cropped to the aoi")
+    print("""Spatially cropping the cru data. Use the AOIMask extents to 
+          chop off the arctic portion of the cru data and combine all
+          variables into a single file for each year. Save the files to a new
+          folder. Use a processing pool to process more than one year at a time.
+          Small pool number because I think each process takes several GB of 
+          memory.""")
+
+    aoi_extent = AOIMask.AOIMask(root = 'working/')
+    aoi_extent.load_from_vector('working/aoi_4326/aoi_4326.shp')
+
+    minx, miny, maxx, maxy = aoi_extent.aoi_vector.bounds.values[0]
+
+    buffered_aoi = util.buffer_extent([minx, maxx, miny, maxy], 0.1, 6)
+
+    Path.mkdir(Path('working/cru-arctic/'), exist_ok=True)
+
+    # start 3 worker processes
+    with multiprocessing.Pool(processes=3) as pool:
+
+        plist = [dict(buffered_aoi=buffered_aoi, year=y) for y in range(1901, 1904)]
+        # print "[0, 1, 4,..., 81]"
+        pool.map(cru_load_crop_and_save, plist)
+
+    # for year in range(1901, 1904):
+    #   cru = crujra.CRU_JRA_daily(year, 'local_test_data', True, aoi_extent=buffered_aoi)
+    #   cru.save(f"working/cru-arctic/crujra.arctic.v2.5.5d.{year}.365d.noc.nc")
+
+
