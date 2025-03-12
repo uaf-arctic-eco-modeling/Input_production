@@ -146,7 +146,7 @@ class CRU_JRA_daily(object):
 
             temp = xr.open_dataset(_path, engine="netcdf4")
             
-            if not aoi_extent is None:
+            if aoi_extent is not None:
                 if self.verbose: print('..clipping to aoi')
                 mask_x =  ( temp.lon >= aoi_extent[0] ) \
                         & ( temp.lon <= aoi_extent[1] )
@@ -170,7 +170,7 @@ class CRU_JRA_daily(object):
         ## this is to set the attribute at the right level in the dataset
         for var in self.vars:
             temp = local_dataset[var]
-            method= CRU_JRA_RESAMPLE_LOOKUP[var]
+            method = CRU_JRA_RESAMPLE_LOOKUP[var]
             temp = temp.assign_attrs( {'cell_methods':f'time:{method}'} )
             local_dataset = local_dataset.assign({var:temp})
             
