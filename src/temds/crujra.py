@@ -11,6 +11,12 @@ import gzip
 import shutil
 from pathlib import Path
 
+from rasterio.enums import Resampling
+from shapely.geometry import box
+import geopandas as gpd
+
+from collections import UserList
+
 from .clip_xarray import clip_xr_dataset
 
 
@@ -38,7 +44,95 @@ CRU_JRA_RESAMPLE_METHODS  = {
     'sum':  lambda x: x.resample(time='1D').sum(),
 }
 
-class CRU_JRA_daily(object):
+class AnnualDailyYearUnknownError(Exception):
+    """Raise when self.year is unkonwn and cannot be loaded"""
+    pass
+
+class AnnualTimeSeriesError(Exception):
+    """ """
+    pass
+
+class AnnualTimeSeries(UserList):
+    def __init__(self, data, verbose=True):
+        """
+        parameters
+        ----------
+        """
+
+        self.data = sorted(data)
+        self.start_year = 0 ## start year not set
+        self.verbose = verbose
+        if hasattr(self.data[0], 'year'):
+            self.start_year = self.data[0].year
+        elif  'data_year' in self.data[0].attrs['data_year']:
+            self.start_year = self.data[0].attrs['data_year']
+
+    def __repr__(self):
+        return('AnnualTimeSeries\n-'+'\n-'.join([str(i) for i in self.data]))
+
+    def __setitem__(self, index, item):
+        raise AnnualTimeSeriesError('__setitem__ is not supported in AnnualTimeseries')
+
+    def insert(self, index, item):
+        raise AnnualTimeSeriesError('insert is not supported in AnnualTimeseries')
+    
+    def append(self, item):
+        raise AnnualTimeSeriesError('append is not supported in AnnualTimeseries')
+    
+    def extend(self, other):
+        raise AnnualTimeSeriesError('extend is not supported in AnnualTimeseries')
+
+    def __add__(self, other):
+        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+    def __radd__(self, other):
+        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+    def __iadd__(self, other):
+        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+
+    def __getitem__(self, index):
+        if type(index) is int:
+            yr = index-self.start_year
+        else: #slice
+            start = index.start - self.start_year
+            stop = index.stop - self.start_year if index.stop else None
+            step = index.step if index.step else None
+            yr = slice(start, stop, step)
+        return super().__getitem__(yr)
+
+    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,resolution = None ):
+        tiles = []
+        for item in self.data:
+            if self.verbose: print(f'{item} clipping' )
+            c_tile = AnnualDaily(
+                item.year, 
+                item.get_by_extent(
+                    minx, maxx, miny, maxy, extent_crs ,resolution
+                )
+            )
+            tiles.append(c_tile)
+
+        return AnnualTimeSeries(tiles)
+
+    def save(self, where, name_pattern, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
+        climate_enc = {
+            '_FillValue':fill_value, 
+            'missing_value':missing_value, 
+            'zlib': True, 'complevel': 9 # USE COMPRESSION?
+        }
+        for item in self.data:
+            if self.verbose: print(f'{item} saving' )
+            op = Path(where)
+            op.mkdir(exist_ok=True, parents=True)
+            out_file = op.joinpath(name_pattern.format(year=item.year))
+            item.save(out_file, missing_value, fill_value, overwrite)
+        # # for _var in ds.data_vars:
+        # #     print(_var)
+        #     # # ds[_var].rio.update_encoding(climate_enc, inplace=True)
+        #     # try: del ds[_var].attrs['_FillValue']
+        #     # except: pass
+            
+
+class AnnualDaily(object):
     """CUR JRA resampled data daily for a year, This class 
     assumes data for a single year in input file
     """
@@ -84,15 +178,31 @@ class CRU_JRA_daily(object):
         self.verbose = verbose 
         self.vars = _vars
 
-        in_path = Path(in_path)
-        if in_path.exists() and in_path.suffix == '.nc':
-            self.load(in_path)
-        elif in_path.exists() and in_path.is_dir(): 
-            self.load_from_raw(in_path, **kwargs)
-        else:
-            raise IOError('No Inputs found')
 
-        
+        if type(in_path) is xr.Dataset:
+            self.dataset=in_path
+        else:
+            in_path = Path(in_path)
+            if in_path.exists() and in_path.suffix == '.nc':
+                self.load(in_path, year_override=year)
+            elif in_path.exists() and in_path.is_dir(): 
+                self.load_from_raw(in_path, **kwargs)
+            else:
+                raise IOError('No Inputs found')
+
+    def __repr__(self):
+        return(f"CRUJRAnnualDaily: {self.year}")
+
+    def __lt__(self, other):
+        """less than for sort
+        """
+        if self.year is None or other.year is None:
+            raise AnnualDailyYearUnknownError(
+                "One of the AnnualDaily objcets"
+                " in comparison is missing 'year' attribute"
+            )
+        return self.year < other.year
+
 
     def load_from_raw(
             self, data_path, aoi_extent=None, file_format = None, 
@@ -182,7 +292,7 @@ class CRU_JRA_daily(object):
             print('dataset initialized')
         
 
-    def load(self, in_path):
+    def load(self, in_path, year_override=None):
         """Load daily data from a single file. Assumes file contains 
         all required variables, correct extent and daily timestep
         """
@@ -191,9 +301,27 @@ class CRU_JRA_daily(object):
                   "region are set"
             )
         self.dataset = xr.open_dataset(in_path, engine="netcdf4")
+        try: 
+            if self.year is None and year_override is None:
+                self.year = int(self.dataset.attrs['data_year'])
+            elif type(year_override) is int:
+                self.year = year_override
+        except KeyError:
+            raise AnnualDailyYearUnknownError(
+                f"Cannot load year form nc file {in_path}. "
+                "Missing 'data_year' attribute"
+
+            )
+
+        ## THIS needs to be done better
+        self.dataset = \
+            self.dataset.rio.write_crs('EPSG:4326', inplace=True).\
+                 rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True).\
+                 rio.write_coordinate_system(inplace=True) 
+
         if self.verbose: print('dataset initialized')
     
-    def save(self, out_file, missing_value=1.e+20, fill_value=1.e+20):
+    def save(self, out_file, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
         """Save `dataset` as a netCDF file.
 
         Parameters
@@ -223,10 +351,12 @@ class CRU_JRA_daily(object):
         else:
             self.dataset.attrs['history'] = history_entry
 
+        self.dataset.attrs['data_year'] = self.year
+
         climate_enc = {
             '_FillValue':fill_value, 
             'missing_value':missing_value, 
-            # 'zlib': True, 'complevel': 9 # USE COMPRESSION?
+            'zlib': True, 'complevel': 9 # USE COMPRESSION?
         }
         encoding = {var: climate_enc for var in self.vars}
 
@@ -246,7 +376,69 @@ class CRU_JRA_daily(object):
         )
         
 
-    def get_by_extent(self, minx, maxx, miny, maxy, resolution = None):
+        
+        
+    def reproject(self, crs):
+        if self.verbose: print(f'{self} Repojecting')
+        self.dataset = self.dataset.rio.reproject(crs)
+
+
+    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,resolution):
         """Returns xr.dataset for use in downscaling
         """
-        return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
+        # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
+        if extent_crs != self.dataset.rio.crs:
+            if self.verbose: print(f'{self} -- Repojecting to clip')
+            ballpark_buff = resolution * 10
+            ballpark = gpd.GeoDataFrame(
+                geometry= [
+                    box(
+                        minx-ballpark_buff, miny-ballpark_buff,
+                        maxx+ballpark_buff, maxy+ballpark_buff,
+                    )
+                ],
+                crs = extent_crs
+            )
+
+            local_dataset = self.dataset\
+                .rio.clip(
+                    ballpark.geometry.values, 
+                    ballpark.crs, 
+                    drop=True
+                )\
+                .rio.reproject(
+                    extent_crs,
+                    resolution=(resolution, resolution),
+                    # resampling=alg
+                )
+
+
+        else:
+            local_dataset = self.dataset
+
+        # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
+        if minx>maxx:
+            print('swap x')
+            minx, maxx = maxx,minx
+        if miny>maxy:
+            print('swap y')
+            miny, maxy = maxy,miny  
+                
+
+        if hasattr(local_dataset, 'lat') and hasattr(local_dataset, 'lat'):
+            mask_x = ( local_dataset.lon >= minx ) & ( local_dataset.lon <= maxx )
+            mask_y = ( local_dataset.lat >= miny ) & ( local_dataset.lat <= maxy )
+        else: # x and y 
+            mask_x = ( local_dataset.x >= minx ) & ( local_dataset.x <= maxx )
+            mask_y = ( local_dataset.y >= miny ) & ( local_dataset.y <= maxy )
+        
+        tile = local_dataset.where(mask_x&mask_y, drop=True)
+        tile = tile.rio.write_crs(extent_crs, inplace=True)\
+                   .rio.write_coordinate_system(inplace=True)
+
+        # tile = tile\
+        #     .rio.write_crs(extent_crs, inplace=True).rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True).rio.write_coordinate_system(inplace=True)
+
+            # .rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)\
+            
+        return tile
