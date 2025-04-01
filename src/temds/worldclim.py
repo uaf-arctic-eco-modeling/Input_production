@@ -418,7 +418,7 @@ class WorldClim(object):
         else:
             raise FileExistsError('The file {out_file} exists and `overwrite` is False')
         
-    def get_by_extent(self, minx, maxx, miny, maxy, resolution = None):
+    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs, resolution = None):
         """Returns xr.dataset for use in downscaling
 
         Parameters
@@ -442,8 +442,26 @@ class WorldClim(object):
             at `resolution`
 
         """
-        return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
+        if extent_crs != self.dataset.rio.crs:
+            local_dataset = self.dataset.rio.reproject(extent_crs)
+        else:
+            local_dataset = self.dataset
 
+        # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
+        if minx>maxx:
+            print('swap x')
+            minx, maxx = maxx,minx
+        if miny>maxy:
+            print('swap y')
+            miny, maxy = maxy,miny  
+                
+            
+        mask_x =  ( local_dataset.lon >= minx ) & ( local_dataset.lon <= maxx )
+        mask_y =  ( local_dataset.lat >= miny ) & ( local_dataset.lat <= maxy )
+        tile = local_dataset.where(mask_x&mask_y, drop=True)
+
+        tile.rio.write_crs(local_dataset.rio.crs, inplace=True)
+        return tile
 
     def load(self, in_path):
         """Load daily data from a single file. Assumes file contains 
@@ -453,7 +471,18 @@ class WorldClim(object):
             print(f"loading file '{in_path}' assuming correct times temp and "
                   "region are set"
             )
+        # self.dataset = rioxarray.open_rasterio(in_path, engine="netcdf4")
         self.dataset = xr.open_dataset(in_path, engine="netcdf4")
+        crs = self.dataset.spatial_ref.attrs['spatial_ref']
+        gt = (float(f) for f in self.dataset.spatial_ref.attrs['GeoTransform'].split(' '))
+
+        
+        self.dataset.rio.write_crs(crs,inplace=True)\
+            .rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)\
+            .rio.write_coordinate_system(inplace=True) 
+        
+        # from_gdal very important here.
+        self.dataset.rio.write_transform(Affine.from_gdal(*gt), inplace=True)
         if self.verbose: print('dataset initialized')
 
     def load_from_web(
