@@ -58,6 +58,10 @@ class AnnualTimeSeries(UserList):
         parameters
         ----------
         """
+        if type(data) is Path: # TODO TEST
+            files = data.glob('*.nc')
+            data = [AnnualDaily(file) for file in files] 
+
 
         self.data = sorted(data)
         self.start_year = 0 ## start year not set
@@ -131,7 +135,7 @@ class AnnualTimeSeries(UserList):
         #     # try: del ds[_var].attrs['_FillValue']
         #     # except: pass
             
-    def create_climate_average(self, start_year, end_year):
+    def create_climate_baseline(self, start_year, end_year):
         """
         """
         full_ts = xr.merge(
@@ -411,7 +415,7 @@ class AnnualDaily(object):
         self.dataset = self.dataset.rio.reproject(crs)
 
 
-    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,resolution):
+    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,resolution, alg=Resampling.bilinear):
         """Returns xr.dataset for use in downscaling
         """
         # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
@@ -437,7 +441,7 @@ class AnnualDaily(object):
                 .rio.reproject(
                     extent_crs,
                     resolution=(resolution, resolution),
-                    # resampling=alg
+                    resampling=alg
                 )
 
 

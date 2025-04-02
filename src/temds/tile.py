@@ -8,6 +8,10 @@ Tile
 from pathlib import Path
 from .crujra import AnnualTimeSeries
 
+from . import corrections 
+from . import downscalers
+
+import xarray as xr
 
 class Tile(object):
     """
@@ -143,16 +147,51 @@ class Tile(object):
             else:
                 raise FileExistsError('The file {out_file} exists and `overwrite` is False')
 
-    def calcualte_cru_longterm_average(self, start_year, end_year, key='cru_AnnualTimeSeries'):
+    def calculate_climate_baseline(self, start_year, end_year, target, source):
 
-        self.data['cru_avg'] = self.data[key].create_climate_average(start_year, end_year)
+        self.data[target] = self.data[source].create_climate_baseline(start_year, end_year)
+
+    def calculate_correction_factors(self, baseline_id, reference_id, variables, factor_id='correction_factors'):
+
+        reference = self.data[reference_id]
+        baseline = self.data[baseline_id]
+        temp = []
 
 
-    def downscale(self, method='bilinear'):
+        for var, info in variables.items():
+            func = corrections.LOOKUP[info['function']]
+            current = func(baseline, reference, info)
+            current.name = info['name']
+            temp.append(current)
+           
+
+        correction_factors = xr.merge(temp)
+        self.data[factor_id] = correction_factors
+
+    def downscale_year(self, year, source_id, baseline_id, reference_id, variables):
+        """
+        Add downscaled to self.data dict as xarray dataset. 
+        """
+        reference = self.data[reference_id]
+        baseline = self.data[baseline_id]
+        source = self.data[source_id][year].dataset
+        temp = []
+        for var, info in variables.items():
+            func = downscalers.LOOKUP[info['function']]
+            current = func(baseline, reference, info)
+            current.name = info['name']
+            temp.append(current)
+           
+        downscaled = xr.merge(temp)
+        return downscaled
+
+
+    def downscale(self, source_id, baseline_id, reference_id, variables):
         """
         Add downscaled to self.data dict as xarray dataset. 
         """
         pass
+
 
     def export_netcdf(self, where):
         """Function Docs 
