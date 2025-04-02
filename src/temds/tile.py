@@ -96,13 +96,19 @@ class Tile(object):
                         print(_var)
                         item.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
                     out_file = Path(op).joinpath(f'crujra-{item.year}.nc') 
-                    item.dataset.to_netcdf(
+                    if  not out_file.exists() or overwrite:
+                        if overwrite and out_file.exists():
+                            out_file.unlink()
+                        item.dataset.to_netcdf(
                             out_file, 
                             # encoding=encoding, 
                             # mode='w',
                             engine="netcdf4",
                             # unlimited_dims={'time':True}
                         )
+                    else:
+                        raise FileExistsError('The file {out_file} exists and `overwrite` is False')
+
                 # ds.save( ## why does this not work?? 
                 #     op, 'crujra-{year}.nc', 
                 #     missing_value, fill_value, overwrite
@@ -136,6 +142,11 @@ class Tile(object):
                 
             else:
                 raise FileExistsError('The file {out_file} exists and `overwrite` is False')
+
+    def calcualte_cru_longterm_average(self, start_year, end_year, key='cru_AnnualTimeSeries'):
+
+        self.data['cru_avg'] = self.data[key].create_climate_average(start_year, end_year)
+
 
     def downscale(self, method='bilinear'):
         """

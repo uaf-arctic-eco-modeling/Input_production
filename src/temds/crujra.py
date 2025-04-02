@@ -18,7 +18,7 @@ import geopandas as gpd
 from collections import UserList
 
 from .clip_xarray import clip_xr_dataset
-
+from . import worldclim
 
 CRU_JRA_VARS = (
     'tmin','tmax','tmp','pre',
@@ -131,6 +131,34 @@ class AnnualTimeSeries(UserList):
         #     # try: del ds[_var].attrs['_FillValue']
         #     # except: pass
             
+    def create_climate_average(self, start_year, end_year):
+        """
+        """
+        full_ts = xr.merge(
+            [self[yr].dataset for yr in range(start_year, end_year+1)]
+        )
+        daily_avg = full_ts.groupby(['time.dayofyear']).mean()
+        temp = []
+        for mn in range(12):
+            mn_data = daily_avg.sel(
+                dayofyear=slice(
+                    worldclim.MONTH_START_DAYS[mn],
+                    worldclim.DAYS_PER_MONTH[mn]
+                )
+            )
+            # print(mn_data.dayofyear.shape)
+            mn_ag = mn_data.mean('dayofyear')
+            for var in ['pre',]: # todo this needs to be defined elsewhere
+                mn_ag[var] = mn_data[var].sum('dayofyear')
+            temp.append(mn_ag)
+        doy = [worldclim.MONTH_START_DAYS[mn] for mn in range(12)]
+        clim_ref = xr.concat(temp, dim='time').assign_coords({'time': doy})
+        
+        clim_ref.rio.write_crs(
+            self[start_year].dataset.rio.crs.to_wkt(), 
+            inplace=True
+        )
+        return clim_ref
 
 class AnnualDaily(object):
     """CUR JRA resampled data daily for a year, This class 
