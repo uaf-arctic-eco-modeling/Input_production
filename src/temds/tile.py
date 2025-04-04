@@ -103,6 +103,7 @@ class Tile(object):
                     if  not out_file.exists() or overwrite:
                         if overwrite and out_file.exists():
                             out_file.unlink()
+                        item.dataset.attrs['data_year'] = item.year    
                         item.dataset.to_netcdf(
                             out_file, 
                             # encoding=encoding, 
@@ -186,11 +187,16 @@ class Tile(object):
         return downscaled
 
 
-    def downscale(self, source_id, baseline_id, reference_id, variables):
+    def downscale_timeseries(self, source_id, baseline_id, reference_id, variables):
         """
         Add downscaled to self.data dict as xarray dataset. 
         """
-        pass
+        results = []
+        for item in self.data[source_id]:
+            year = item.year
+            self.downscale_year(year, source_id, baseline_id, reference_id, variables)
+        
+
 
 
     def export_netcdf(self, where):

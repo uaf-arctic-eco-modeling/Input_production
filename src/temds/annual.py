@@ -1,0 +1,296 @@
+"""
+Annual
+------
+
+Base class Objects representing annual data
+"""
+from collections import UserList
+from pathlib import Path
+
+import xarray as xr
+
+class AnnualDailyYearUnknownError(Exception):
+    """Raise when self.year is unknown and cannot be loaded"""
+    pass
+
+class AnnualDailyContinuityError(Exception):
+    """Raise when if """
+    pass
+
+class AnnualTimeSeriesError(Exception):
+    """ """
+    pass
+
+class AnnualTimeSeries(UserList):
+    """
+    Base class for annual time series data
+
+    Attributes
+    ----------
+    data: list
+    start_year: int
+    verbose: bool
+
+
+    """
+
+    def __init__(self, data, verbose=True):
+        """
+        parameters
+        ----------
+        """
+        print(type(data))
+        if hasattr(data,'exists'): # TODO TEST
+            print('paths')
+            files = data.glob('*.nc')
+            data = [AnnualDaily(None, file) for file in files] 
+
+
+        self.data = sorted(data)
+        self.start_year = 0 ## start year not set
+        self.verbose = verbose
+        if hasattr(self.data[0], 'year'):
+            self.start_year = self.data[0].year
+        elif  'data_year' in self.data[0].attrs['data_year']:
+            self.start_year = self.data[0].attrs['data_year']
+        
+        self.check_continuity(raise_exception=True)
+        self.check_continuity(advanced=True,raise_exception=True)
+
+
+    def check_continuity(self, advanced=False, raise_exception=False):
+        """Checks annual continuity of `data`
+
+        Parameters
+        ----------
+        advanced: bool, default False
+            When True Check each year for continuity
+            when False checks expected items matches items in data
+        raise_exception: bool, default False
+            when True Raise exceptions on discontinuity
+
+        Raises
+        ------
+        AnnualDailyContinuityError: 
+            This error is raised on discontinuity if raise_exception is true 
+
+        Returns
+        -------
+        bool
+            False if data is discontinuous
+        """
+        last_year = self.data[-1].year
+        continuous = True
+        if not advanced:
+            if self.verbose: print('Checking Continuity (basic)')
+            n_items = len(self.data)
+            expected = (last_year - self.start_year) + 1 
+            if expected != n_items:
+                continuous = False
+                if raise_exception:
+                    raise AnnualDailyContinuityError(f'{type(self).__name__}: expected {expected} items, but has {n_items}')
+                
+        else:
+            if self.verbose: print('Checking Continuity (advanced)')
+            for yr in range(self.start_year, last_year+1):
+                if self.verbose: print(f'-- Checking {yr}')
+                d_yr = self[yr].year
+                if d_yr != yr:
+                    if self.verbose: print(f'---- testing for year {yr} but found {d_yr} off by {d_yr - yr}')
+                    continuous = False
+                    if raise_exception:
+                        raise AnnualDailyContinuityError(f'{type(self).__name__}: expected {yr} but found {d_yr} off by {d_yr - yr}')
+                    # break
+
+
+        if self.verbose and continuous: print('Data is continuous')
+        if self.verbose and not continuous: print('Data is not continuous')
+        return continuous
+
+    def __repr__(self):
+        """String representation of object"""
+        return(f'{type(self).__module__}.{type(self).__name__}\n-'+'\n-'.join([str(i) for i in self.data]))
+
+    def __setitem__(self, index, item):
+        """"""
+        raise AnnualTimeSeriesError('__setitem__ is not supported in AnnualTimeseries')
+
+    def insert(self, index, item):
+        raise AnnualTimeSeriesError('insert is not supported in AnnualTimeseries')
+    
+    def append(self, item):
+        raise AnnualTimeSeriesError('append is not supported in AnnualTimeseries')
+    
+    def extend(self, other):
+        raise AnnualTimeSeriesError('extend is not supported in AnnualTimeseries')
+
+    def __add__(self, other):
+        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+    def __radd__(self, other):
+        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+    def __iadd__(self, other):
+        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+
+    def __getitem__(self, index):
+        if type(index) is int:
+            yr = index-self.start_year
+        else: #slice
+            start = index.start - self.start_year
+            stop = index.stop - self.start_year if index.stop else None
+            step = index.step if index.step else None
+            yr = slice(start, stop, step)
+        return super().__getitem__(yr)
+
+    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,resolution = None ):
+        tiles = []
+        for item in self.data:
+            if self.verbose: print(f'{item} clipping' )
+            c_tile = AnnualDaily(
+                item.year, 
+                item.get_by_extent(
+                    minx, maxx, miny, maxy, extent_crs ,resolution
+                )
+            )
+            tiles.append(c_tile)
+
+        return AnnualTimeSeries(tiles)
+
+    def save(self, where, name_pattern, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
+        climate_enc = {
+            '_FillValue':fill_value, 
+            'missing_value':missing_value, 
+            'zlib': True, 'complevel': 9 # USE COMPRESSION?
+        }
+        for item in self.data:
+            if self.verbose: print(f'{item} saving' )
+            op = Path(where)
+            op.mkdir(exist_ok=True, parents=True)
+            out_file = op.joinpath(name_pattern.format(year=item.year))
+            item.save(out_file, missing_value, fill_value, overwrite)
+
+
+
+
+class AnnualDaily(object):
+    """Daily for a year, This class 
+    assumes data for a single year in input file
+    """
+    def __init__ (self, year, in_data, verbose=False, _vars=[],  **kwargs):
+        """
+        Parameters
+        ----------
+        year: int
+            year represented by data
+        in_data: path
+            When given an existing file (.nc), the file is loaded via `load`.
+            or
+            When given an existing directly, raw data is loaded via 
+            `load_from_raw`. Also provide **kwargs as needed to use as optional
+            arguments in `load_from_raw`
+        verbose: bool, default False
+            see `verbose`
+        _vars: list, default CRU_JRA_VARS
+            see `vars`
+        **kwargs: dict
+            arguments passed to non-default parameters of `load_from_raw` 
+            if `in_data` is a directory.
+        
+        Attributes
+        ----------
+        self.year: int 
+            year of data being represented.
+        self.dataset: xarray.dataset 
+            Daily CRU JRA data for a year
+        self.verbose: bool
+            when true status messages are enabled
+        self.vars: list
+            list of climate variables to load, defaults all(CRU_JRA_VARS)
+
+        Raises
+        ------
+        IOError
+            When file/files to load is wrong format or do not exist
+
+        """
+        print('parent')
+        self.year = year
+        self.dataset = None ## xarray data 
+        self.verbose = verbose 
+        
+
+        ## I want to combine these
+        self.vars = _vars
+        self.naming = {}
+
+        ## GEOSPATIAL STUFF
+        self.crs = None
+        self.transform = None
+
+
+        if type(in_data) is xr.Dataset:
+            self.dataset=in_data
+        else:
+            in_data = Path(in_data)
+            if in_data.exists() and in_data.suffix == '.nc':
+                self.load(in_data, year_override=year)
+            elif in_data.exists() and in_data.is_dir(): 
+                self.load_from_raw(in_data, **kwargs)
+            else:
+                raise IOError('No Inputs found')
+
+    def __repr__(self):
+        return(f"{type(self).__module__}.{type(self).__name__}: {self.year}")
+
+    def __lt__(self, other):
+        """less than for sort
+        """
+        if self.year is None or other.year is None:
+            raise AnnualDailyYearUnknownError(
+                "One of the AnnualDaily objcets"
+                " in comparison is missing 'year' attribute"
+            )
+        return self.year < other.year
+
+    def update_variable_names(self, new_scheme):
+        """
+        """
+        update_map = {self.naming[var] for var in new_scheme}
+        self.dataset.rename(update_map)
+
+        self.naming.update(new_scheme)
+
+    def load(self, in_path, year_override=None):
+        """Load daily data from a single file. Assumes file contains 
+        all required variables, correct extent and daily timestep
+        """
+        if self.verbose: 
+            print(f"loading file '{in_path}' assuming correct timestemp and "
+                  "region are set"
+            )
+        self.dataset = xr.open_dataset(in_path, engine="netcdf4")
+        try: 
+            if self.year is None and year_override is None:
+                self.year = int(self.dataset.attrs['data_year'])
+            elif type(year_override) is int:
+                self.year = year_override
+        except KeyError:
+            raise AnnualDailyYearUnknownError(
+                f"Cannot load year form nc file {in_path}. "
+                "Missing 'data_year' attribute"
+
+            )
+
+        ## THIS needs to be done better
+        # try:
+        #     self.dataset = \
+        #         self.dataset.rio.write_crs('EPSG:4326', inplace=True).\
+        #             rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True).\
+        #             rio.write_coordinate_system(inplace=True) 
+        
+
+        if self.verbose: print('dataset initialized')
+
+    def save(self):
+        """"""
+        pass 
+        ## needs to work with data with/without geo stuff
