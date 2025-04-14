@@ -143,6 +143,7 @@ class AnnualTimeSeries(UserList):
         )
         daily_avg = full_ts.groupby(['time.dayofyear']).mean()
         temp = []
+        #downscaling.sh line 77-80
         for mn in range(12):
             mn_data = daily_avg.sel(
                 dayofyear=slice(
