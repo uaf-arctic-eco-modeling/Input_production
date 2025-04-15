@@ -146,9 +146,10 @@ def bucketfill_cru():
     print("Not implemented yet...should do all the stuff to download masses of data and put it in the bucket")
 
 def cru_load_crop_and_save(pdict):
+    '''worker function - designed to be wrapped with some kind of multi processing thing'''
     buffered_aoi = pdict['buffered_aoi']
     year = pdict['year']
-    cru = crujra.CRU_JRA_daily(year, 'local_test_data', True, aoi_extent=buffered_aoi)
+    cru = crujra.AnnualDaily(year, 'local_test_data', True, aoi_extent=buffered_aoi)
     cru.save(f"working/cru-arctic/crujra.arctic.v2.5.5d.{year}.365d.noc.nc")
 
 
