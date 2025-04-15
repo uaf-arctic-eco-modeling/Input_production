@@ -4,7 +4,7 @@
 import pytest
 
 from temds import AOIMask
-from temds import TileEngine
+from temds import tileindex
 
 
 def test_aoi_download():
@@ -40,12 +40,12 @@ def test_aoi_load_raster():
 
 
 def test_tile_engine_cut_tileset():
-  te = TileEngine.TileEngine(root = "../working")
-  te.cut_tileset(te.calculate_tile_extents())
+  tile_index = tileindex.TileIndex(root = "working")
+  tile_index.cut_tileset(tile_index.calculate_tile_extents())
 
 def test_tile_engine_remove_tiles():
-  te = TileEngine.TileEngine(root="../working")
-  te.remove_tiles()
+  tile_index = tileindex.TileIndex(root="working")
+  tile_index.remove_tiles()
 
 
 

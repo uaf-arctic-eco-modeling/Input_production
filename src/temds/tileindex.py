@@ -14,7 +14,7 @@ TILE_SIZE_X = 100
 TILE_SIZE_Y = 100
 
 
-class TileEngine(object):
+class TileIndex(object):
 
   def __init__(self, root):
     self.root = root
