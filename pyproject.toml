@@ -12,7 +12,7 @@ keywords = []
 authors = [
   { name = "Tobey Carman", email = "tcarman2@alaska.edu " },
   { name = "Rawser Spicer", email = "rwspicer@alaska.edu" },
-
+  { name = "Helene Genet", email = "hgenet@alaska.edu" },
 ]
 maintainers = [
   { name = "Tobey Carman", email = "tcarman2@alaska.edu " },
@@ -30,7 +30,7 @@ version = {attr = "temds.__version__"}
 readme = {file = ["README.md"]}
 
 [project.urls]
-Homepage = "https://github.com/rwspicer/fluxpro"
+Homepage = "https://github.com/uaf-arctic-eco-modeling/Input_production"
 
 [project.scripts]
 TEMdownscale = "temds.cli:app"
