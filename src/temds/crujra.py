@@ -44,12 +44,16 @@ CRU_JRA_RESAMPLE_METHODS  = {
     'sum':  lambda x: x.resample(time='1D').sum(),
 }
 
+class InvalidCalendarError(Exception):
+    """Raise when the calendar attribute of the time dimension of the dataset is not 365_day or noleap"""
+    pass
+
 class AnnualDailyYearUnknownError(Exception):
-    """Raise when self.year is unkonwn and cannot be loaded"""
+    """Raise when self.year is unkonwn and cannot be loaded."""
     pass
 
 class AnnualTimeSeriesError(Exception):
-    """ """
+    """Raise when for errors related to annual time series data."""
     pass
 
 class AnnualTimeSeries(UserList):
@@ -166,8 +170,70 @@ class AnnualTimeSeries(UserList):
         return clim_ref
 
 class AnnualDaily(object):
-    """CUR JRA resampled data daily for a year, This class 
-    assumes data for a single year in input file
+    """
+    AnnualDaily class for managing and processing daily CRU JRA climate data.
+    This class provides functionality to load, process, and save daily climate
+    data from CRU JRA datasets. It supports loading data from raw files or
+    preprocessed NetCDF files, resampling to daily timesteps, clipping to a
+    geographic extent, and saving the processed data.
+
+    Attributes
+    ----------
+    year : int
+        The year represented by the data.
+    in_path : str or Path or xarray.Dataset
+        Path to the input data. If a NetCDF file is provided, it is loaded via
+        `load`. If a directory is provided, raw data is loaded via
+        `load_from_raw`. If an xarray.Dataset is provided, it is directly
+        assigned.
+    verbose : bool, optional, default=False
+        Enables status messages when set to True.
+    _vars : list, optional, default=CRU_JRA_VARS
+        List of climate variables to load. Defaults to all variables in
+        `CRU_JRA_VARS`.
+    **kwargs : dict
+        Additional arguments passed to `load_from_raw` when `in_path` is a
+        directory.
+    year : int
+        The year of the data being represented.
+    dataset : xarray.Dataset
+        The loaded daily CRU JRA data for the specified year.
+    verbose : bool
+        Indicates whether status messages are enabled.
+    vars : list
+        List of climate variables to load.
+
+    Methods
+    -------
+    __repr__()
+        Returns a string representation of the AnnualDaily object.
+    __lt__(other)
+        Compares two AnnualDaily objects based on their year attribute.
+    load_from_raw(data_path, aoi_extent=None, file_format=None,
+    cleanup_uncompressed=True)
+        Loads raw CRU JRA files (6 hour time resolution, gloabl resolution),
+        resamples to daily timesteps, and clips to an extent if provided.
+    load(in_path, year_override=None)
+        Loads daily data from a single NetCDF file.
+    save(out_file, missing_value=1.e+20, fill_value=1.e+20, overwrite=False)
+        Saves the dataset as a NetCDF file.
+    reproject(crs)
+        Reprojects the dataset to a specified coordinate reference system (CRS).
+    get_by_extent(minx, maxx, miny, maxy, extent_crs, resolution,
+    alg=Resampling.bilinear)
+        Extracts a subset of the dataset based on a specified geographic extent
+        and resolution.
+
+    Exceptions
+    ----------
+    IOError
+        Raised when the input file or directory does not exist or is in the
+        wrong format.
+    AnnualDailyYearUnknownError
+        Raised when the year attribute is missing during certain operations.
+    InvalidCalendarError
+        Raised when the calendar type in the dataset is invalid.
+
     """
     def __init__ (self, year, in_path,verbose=False, _vars=CRU_JRA_VARS,  **kwargs):
         """
@@ -242,7 +308,15 @@ class AnnualDaily(object):
             cleanup_uncompressed=True
         ):
         """Loads raw (direct from source) CRU JRA files, resamples to a daily
-        timestep, and clips to an extent if provided
+        timestep, and clips to an extent if provided. The raw data is expected to 
+        be have been downloaded from CRU in the .gz compressed format.
+        The files are expected to have following format for names:
+            "{var}/crujra.v2.5.5d.{var}.{yr}.365d.noc.nc.gz"
+        where {var} is the variable name and {yr} is the year of data.
+        The raw data is expected to be in a directory structure where each
+        variable is in a subdirectory named after the variable name. Each CRU 
+        file is expected to have a time dimension with a calendar attribute of
+        '365_day' or 'noleap' and be at a 6 hour resolution.
 
         Parameters
         ----------
@@ -288,7 +362,11 @@ class AnnualDaily(object):
                     cleanup = True
 
             temp = xr.open_dataset(_path, engine="netcdf4")
-            
+            if temp.time.calendar not in ['365_day', 'noleap']:
+                raise InvalidCalendarError(
+                    f"Invalid calendar {temp.time.calendar} for file '{_path}'"
+                )
+
             if aoi_extent is not None:
                 if self.verbose: print('..clipping to aoi')
                 mask_x =  ( temp.lon >= aoi_extent[0] ) \
