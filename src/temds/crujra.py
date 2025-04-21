@@ -5,27 +5,27 @@ CRU JRA
 Data structures representing CRU JRA data
 """
 import datetime
-import xarray as xr
 import os
 import gzip
 import shutil
 from pathlib import Path
+from collections import UserList
 
+import geopandas as gpd
+import numpy as np
+import xarray as xr
 from rasterio.enums import Resampling
 from shapely.geometry import box
-import geopandas as gpd
-
-from collections import UserList
 
 from .clip_xarray import clip_xr_dataset
 from . import worldclim
 
-CRU_JRA_VARS = (
+CRUJRA_VARS = (
     'tmin','tmax','tmp','pre',
     'dswrf','ugrd','vgrd','spfh','pres'
 )
 
-CRU_JRA_RESAMPLE_LOOKUP = {
+CRUJRA_RESAMPLE_LOOKUP = {
     'tmin': 'mean',
     'tmax': 'mean',
     'tmp': 'mean',
@@ -39,9 +39,9 @@ CRU_JRA_RESAMPLE_LOOKUP = {
     
 }
 
-CRU_JRA_RESAMPLE_METHODS  = {
+CRUJRA_RESAMPLE_METHODS  = {
     'mean': lambda x: x.resample(time='1D').mean(),
-    'sum':  lambda x: x.resample(time='1D').sum(),
+    'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna)
 }
 
 class InvalidCalendarError(Exception):
@@ -57,14 +57,16 @@ class AnnualTimeSeriesError(Exception):
     pass
 
 class AnnualTimeSeries(UserList):
-    def __init__(self, data, verbose=True):
+    def __init__(self, data, verbose=True, **kwargs):
         """
         parameters
         ----------
+
         """
         if type(data) is Path: # TODO TEST
+            if verbose: print('loading form path')
             files = data.glob('*.nc')
-            data = [AnnualDaily(file) for file in files] 
+            data = [AnnualDaily(file, verbose, **kwargs) for file in files] 
 
 
         self.data = sorted(data)
@@ -140,34 +142,75 @@ class AnnualTimeSeries(UserList):
         #     # except: pass
             
     def create_climate_baseline(self, start_year, end_year):
+        """Create baseline climate variables for dataset; uses
+        the methods defined in CRUJRA_RESAMPLE_LOOKUP Based on original 
+        downscaling.sh line 77-80. Here calculations are split up by var
+        and the result is combined into a single dataset at the end.
+
+        Algorithm: (pixel wise)
+            (A) For each variable, daily data for each year in [start_year, 
+        end_year] is averaged. 
+            (B) For each month, the mean (or sum) of the daily average(from A)
+        is calculated, giving the monthly baseline.
+            (C) Monthly results are combined as time steps in yearly 
+        dataset(xr.concat)
+            (D) Each variables yearly dataset is combined into a single 
+        dataset(xr.merge). This dataset is geo-referenced with crs from 
+        first year of self.data.
+
+        Parameters
+        ----------
+        start_year: int
+            Inclusive start year for baseline
+        end_year: int
+            Inclusive end year for baseline
+
+        Returns
+        -------
+        xr.dataset
+            Geo-referenced dataset with monthly baseline aggregate for each 
+            climate variable. Dimensions are x,y, time. Time dimensions has 
+            12 times steps
         """
-        """
-        full_ts = xr.merge(
-            [self[yr].dataset for yr in range(start_year, end_year+1)]
-        )
-        daily_avg = full_ts.groupby(['time.dayofyear']).mean()
-        temp = []
-        #downscaling.sh line 77-80
-        for mn in range(12):
-            mn_data = daily_avg.sel(
-                dayofyear=slice(
-                    worldclim.MONTH_START_DAYS[mn],
-                    worldclim.DAYS_PER_MONTH[mn]
-                )
-            )
-            # print(mn_data.dayofyear.shape)
-            mn_ag = mn_data.mean('dayofyear')
-            for var in ['pre',]: # todo this needs to be defined elsewhere
-                mn_ag[var] = mn_data[var].sum('dayofyear')
-            temp.append(mn_ag)
+        var_list = []
         doy = [worldclim.MONTH_START_DAYS[mn] for mn in range(12)]
-        clim_ref = xr.concat(temp, dim='time').assign_coords({'time': doy})
-        
+
+        for var, method in CRUJRA_RESAMPLE_LOOKUP.items():  
+            if self.verbose: print('creating baseline for', var, 'with', method)
+            ts = [self[yr].dataset[var] for yr in range(start_year, end_year+1)]
+            ts = xr.merge(ts)
+            daily_avg = ts.groupby(['time.dayofyear']).mean()
+            temp = []
+            for mn in range(12):
+                mn_data = daily_avg.sel(
+                    dayofyear=slice(
+                        worldclim.MONTH_START_DAYS[mn],
+                        worldclim.DAYS_PER_MONTH[mn]
+                    )
+                )
+                # print(mn, mn_data.dayofyear.shape, worldclim.DAYS_PER_MONTH[mn])
+                    
+                if 'mean' == method:
+                    mn_ag = mn_data.mean('dayofyear')
+
+                elif 'sum' == method:
+                    # skipna = False will preserve the no data areas instead 
+                    # of setting them to 0 
+                    mn_ag = mn_data.sum('dayofyear', skipna = False)
+
+                temp.append(mn_ag)
+            var_list.append(
+                xr.concat(temp, dim='time').assign_coords({'time': doy})
+            )
+        clim_ref = xr.merge(var_list)
         clim_ref.rio.write_crs(
             self[start_year].dataset.rio.crs.to_wkt(), 
             inplace=True
         )
         return clim_ref
+
+## ---- end of AnnualTimeSeries ----
+
 
 class AnnualDaily(object):
     """
@@ -188,9 +231,9 @@ class AnnualDaily(object):
         assigned.
     verbose : bool, optional, default=False
         Enables status messages when set to True.
-    _vars : list, optional, default=CRU_JRA_VARS
+    _vars : list, optional, default=CRUJRA_VARS
         List of climate variables to load. Defaults to all variables in
-        `CRU_JRA_VARS`.
+        `CRUJRA_VARS`.
     **kwargs : dict
         Additional arguments passed to `load_from_raw` when `in_path` is a
         directory.
@@ -235,7 +278,7 @@ class AnnualDaily(object):
         Raised when the calendar type in the dataset is invalid.
 
     """
-    def __init__ (self, year, in_path,verbose=False, _vars=CRU_JRA_VARS,  **kwargs):
+    def __init__ (self, year, in_path, verbose=False, _vars=CRUJRA_VARS,  **kwargs):
         """
         Parameters
         ----------
@@ -249,7 +292,7 @@ class AnnualDaily(object):
             arguments in `load_from_raw`
         verbose: bool, default False
             see `verbose`
-        _vars: list, default CRU_JRA_VARS
+        _vars: list, default CRUJRA_VARS
             see `vars`
         **kwargs: dict
             arguments passed to non-default parameters of `load_from_raw` 
@@ -264,7 +307,7 @@ class AnnualDaily(object):
         self.verbose: bool
             when true status messages are enabled
         self.vars: list
-            list of climate variables to load, defaults all(CRU_JRA_VARS)
+            list of climate variables to load, defaults all(CRUJRA_VARS)
 
         Raises
         ------
@@ -283,7 +326,7 @@ class AnnualDaily(object):
         else:
             in_path = Path(in_path)
             if in_path.exists() and in_path.suffix == '.nc':
-                self.load(in_path, year_override=year)
+                self.load(in_path, year_override=year, **kwargs)
             elif in_path.exists() and in_path.is_dir(): 
                 self.load_from_raw(in_path, **kwargs)
             else:
@@ -376,8 +419,8 @@ class AnnualDaily(object):
                 temp = temp.where(mask_x & mask_y, drop=True)
 
 
-            method = CRU_JRA_RESAMPLE_LOOKUP[var]
-            temp = CRU_JRA_RESAMPLE_METHODS[method] (temp)
+            method = CRUJRA_RESAMPLE_LOOKUP[var]
+            temp = CRUJRA_RESAMPLE_METHODS[method] (temp)
                                 # yr_data['tmax'].resample(time='1D').mean()
            
             if local_dataset is None:
@@ -391,7 +434,7 @@ class AnnualDaily(object):
         ## this is to set the attribute at the right level in the dataset
         for var in self.vars:
             temp = local_dataset[var]
-            method = CRU_JRA_RESAMPLE_LOOKUP[var]
+            method = CRUJRA_RESAMPLE_LOOKUP[var]
             temp = temp.assign_attrs( {'cell_methods':f'time:{method}'} )
             local_dataset = local_dataset.assign({var:temp})
             
@@ -403,7 +446,10 @@ class AnnualDaily(object):
             print('dataset initialized')
         
 
-    def load(self, in_path, year_override=None):
+    def load(
+            self, in_path, year_override=None,
+            force_aoi_to='tmin', aoi_nodata = np.nan
+        ):
         """Load daily data from a single file. Assumes file contains 
         all required variables, correct extent and daily timestep
         """
@@ -411,7 +457,14 @@ class AnnualDaily(object):
             print(f"loading file '{in_path}' assuming correct timestemp and "
                   "region are set"
             )
+            print(force_aoi_to, aoi_nodata)
         self.dataset = xr.open_dataset(in_path, engine="netcdf4")
+
+        if force_aoi_to:
+            aoi_idx = np.isnan(self.dataset[force_aoi_to].values)
+            for var in self.dataset.data_vars:
+                self.dataset[var].values[aoi_idx]=aoi_nodata
+
         try: 
             if self.year is None and year_override is None:
                 self.year = int(self.dataset.attrs['data_year'])
@@ -456,7 +509,7 @@ class AnnualDaily(object):
         # day that the program was executed.
 
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        history_entry = f"{current_time}: Saved dataset to {out_file}. Resampled to daily and cropped to aoi extent by temds.crujra.CRU_JRA_daily class, part of the Input_production project: https://github.com/uaf-arctic-eco-modeling/Input_production"
+        history_entry = f"{current_time}: Saved dataset to {out_file}. Resampled to daily and cropped to aoi extent by temds.crujra.CRUJRA_daily class, part of the Input_production project: https://github.com/uaf-arctic-eco-modeling/Input_production"
         if 'history' in self.dataset.attrs:
             self.dataset.attrs['history'] += "\n" + history_entry
         else:

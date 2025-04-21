@@ -2,22 +2,71 @@
 Tile
 ----
 
+Code for managing a single tile in the downscaling process
 
+We use 'pixles' to mean grid cell item
+
+tile.py is driven by a wrapper script/tool that creates a bunch of
+datasource objects and then calls this methods to populate/run the tile object
 
 """
 from pathlib import Path
-from .crujra import AnnualTimeSeries
-
-from . import corrections 
-from . import downscalers
 
 import xarray as xr
 
+from . import corrections 
+from . import downscalers
+from .crujra import AnnualTimeSeries
+
+
+
+
 class Tile(object):
-    """
+    """Object represents a "Tile" a geographic area that can be
+    downscaled
+
+    Attributes
+    ----------
+    data: dict
+        items must be xr.dataset or inherit from annual.AnnualTimeSeries
+        keys should represent the data being stored, but can be anything
+    index: tuple, or int
+        the index (H,V) or N of the tile in the tile index
+        primarily used for logging
+        #TODO implement INT code
+    extent: pandas.DataFrame
+        DataFrame with columns 'minx','maxx','miny','maxy', and a single
+        row
+    resolution: float
+        resolution of pixels for tile
+    crs: ??
+        CRS of tile. Items imported will be converted to this crs with
+        pixel size of `resolution`
+    buffer_px: int
+        Number of pixels to buffer extent by in `crs`/`resolution`
+    buffer_area: float
+        area in `crs` units of pixel buffer
+
     """
     def __init__(self, index, extent, resolution, crs, buffer_px = 20):
         """
+
+        Parameters
+        ----------
+        index: tuple, or int
+            the index (H,V) or N of the tile in the tile index
+            primarily used for logging
+        extent: pandas.DataFrame
+            DataFrame with columns 'minx','maxx','miny','maxy', and a single
+            row
+        resolution: float
+            resolution of pixels for tile
+        crs: ??
+            CRS of tile. Items imported will be converted to this crs with
+            pixel size of `resolution`
+        buffer_px: int, Optional, Default = 20
+            Number of pixels to buffer extent by in `crs`/`resolution`
+
         """
         self.data = {}# dictionary of normalized data, i.e:
                       # {
@@ -56,15 +105,25 @@ class Tile(object):
 
 
     def import_normalized(self, name, datasource, buffered=True):
-        """
-        each datasource (e.g. CRU_JRA_daily, WorldClim) needs to implement a 
-        .get() method that can return an xarray dataset to a specified spatial 
-        temporal resolution and aoi extent
+        """Loads an item to `data` as name from datasource. Each datasource 
+        (e.g. AnnualDaily, WorldClim) needs to implement a get_by_extent() 
+        method that can return an xarray dataset or AnnualTimeseries to a 
+        specified spatial temporal resolution and extent
 
-        tile.py is driven by a wrapper script/tool that creates a bunch of
-          datasource objects and then calls this method to populate the tile object
+        Parameters
+        ----------
+        name: str
+            used as key for datasource in `data`
+        datasource: Object
+            Object must implement `get_by_extent` with 6 arguments (minx: float,
+            maxx: float, miny: float, maxy: float, crs:??, resolution: float)
+        ) 
+        buffered: boo, Defaults True
+            When true add buffer to tile data being clipped
         """
-        minx, maxx, miny, maxy = self.extent[['minx','maxx','miny','maxy']].iloc[0]
+        minx, maxx, miny, maxy = self.extent[
+            ['minx','maxx','miny','maxy']
+        ].iloc[0]
         if buffered:
             minx,maxx = minx-self.buffer_area,maxx+self.buffer_area
             miny,maxy = miny-self.buffer_area,maxy+self.buffer_area
@@ -93,13 +152,13 @@ class Tile(object):
             
             H, V = self.index
             if type(ds) is AnnualTimeSeries:
-                op = Path(where).joinpath(f'H{H:02d}_V{V:02d}','crujra') 
+                op = Path(where).joinpath(f'H{H:02d}_V{V:02d}', name) 
                 op.mkdir(exist_ok=True, parents=True)
                 for item in ds.data:
                     for _var in item.dataset.data_vars:
                         print(_var)
                         item.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
-                    out_file = Path(op).joinpath(f'crujra-{item.year}.nc') 
+                    out_file = Path(op).joinpath(f'{name}-{item.year}.nc') 
                     if  not out_file.exists() or overwrite:
                         if overwrite and out_file.exists():
                             out_file.unlink()
@@ -149,10 +208,30 @@ class Tile(object):
                 raise FileExistsError('The file {out_file} exists and `overwrite` is False')
 
     def calculate_climate_baseline(self, start_year, end_year, target, source):
+        """Calculate the climate baseline for the tile from data in an 
+        AnnulTimeseries object
 
-        self.data[target] = self.data[source].create_climate_baseline(start_year, end_year)
+        Parameters
+        ----------
+        start_year: int
+            Inclusive start year for baseline
+        end_year: int
+            Inclusive end year for baseline
+        target: str
+            name to set baseline data to in `data`
+        source: str
+            An AnnualTimeseries item in `data` with 
+            `create_climate_baseline(start_year, end_year)` method
+        """
 
-    def calculate_correction_factors(self, baseline_id, reference_id, variables, factor_id='correction_factors'):
+        self.data[target] = self.data[source].create_climate_baseline(
+            start_year, end_year
+        )
+
+    def calculate_correction_factors(
+            self, baseline_id, reference_id, variables, 
+            factor_id='correction_factors'
+        ):
 
         reference = self.data[reference_id]
         baseline = self.data[baseline_id]
@@ -169,44 +248,69 @@ class Tile(object):
         correction_factors = xr.merge(temp)
         self.data[factor_id] = correction_factors
 
-    def downscale_year(self, year, source_id, baseline_id, reference_id, variables):
+    def downscale_year(self, year, source_id, correction_id, variables):
+        """Downscale a singe year of `data[source_id]` using corrections
+        in `data['correction_id]`, and configuration in variables
+
+
+        Variables example: 
+        variables = {
+            'tmax': {
+                'function': 'temperature', 
+                'temperature': 'tmax',
+                'correction_factor':'tmax', 
+                'name': 'tmax'
+            },
+            'prec': {
+                'function': 'precipitation', 
+                'precipitation': 'pre',
+                'correction_factor':'prec', 
+                'name': 'prec'
+            },
+        }
+
+        Parameters
+        ----------
+        year: int
+            the year to downscale
+        source_id: str
+            AnnualTimeseries item in `data`
+        correction_id: str
+            xr.dataset item in `data`
+        variables: dict
+            dictionary mapping variable names to variable configurations
+            each key 'var' has and dictionary item with... 
+            see example above
+        
+        Returns
+        -------
+        xr.dataset
+            a single downscaled year
+
         """
-        Add downscaled to self.data dict as xarray dataset. 
-        """
-        reference = self.data[reference_id]
-        baseline = self.data[baseline_id]
+        correction = self.data[correction_id]
         source = self.data[source_id][year].dataset
         temp = []
         for var, info in variables.items():
             func = downscalers.LOOKUP[info['function']]
-            current = func(baseline, reference, info)
+            current = func(source, correction, info)
             current.name = info['name']
             temp.append(current)
-           
+        
         downscaled = xr.merge(temp)
         return downscaled
 
 
-    def downscale_timeseries(self, source_id, baseline_id, reference_id, variables):
+    def downscale_timeseries(self, downscaled_id, source_id, correction_id, variables):
         """
         Add downscaled to self.data dict as xarray dataset. 
         """
         results = []
         for item in self.data[source_id]:
             year = item.year
-            self.downscale_year(year, source_id, baseline_id, reference_id, variables)
+            results.append(
+                self.downscale_year(year, source_id, correction_id, variables)
+            )
         
-
-
-
-    def export_netcdf(self, where):
-        """Function Docs 
-        Parameters
-        ----------
-        Returns
-        -------
-        """
-        pass
-        
-
+        self.data[downscaled_id] = downscaled.AnnualTimeSeries(results)
 
