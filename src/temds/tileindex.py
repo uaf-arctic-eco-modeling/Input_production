@@ -172,4 +172,4 @@ class TileIndex(object):
 
   def register_tileset():
     '''use gdal.TileIndex()'''
-    pass
+    raise NotImplementedError("Not implemented yet")

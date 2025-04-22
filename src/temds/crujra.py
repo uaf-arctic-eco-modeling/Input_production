@@ -252,8 +252,7 @@ class AnnualDaily(object):
         Returns a string representation of the AnnualDaily object.
     __lt__(other)
         Compares two AnnualDaily objects based on their year attribute.
-    load_from_raw(data_path, aoi_extent=None, file_format=None,
-    cleanup_uncompressed=True)
+    load_from_raw(data_path, aoi_extent=None, file_format=None, cleanup_uncompressed=True)
         Loads raw CRU JRA files (6 hour time resolution, gloabl resolution),
         resamples to daily timesteps, and clips to an extent if provided.
     load(in_path, year_override=None)
@@ -262,8 +261,7 @@ class AnnualDaily(object):
         Saves the dataset as a NetCDF file.
     reproject(crs)
         Reprojects the dataset to a specified coordinate reference system (CRS).
-    get_by_extent(minx, maxx, miny, maxy, extent_crs, resolution,
-    alg=Resampling.bilinear)
+    get_by_extent(minx, maxx, miny, maxy, extent_crs, resolution, alg=Resampling.bilinear)
         Extracts a subset of the dataset based on a specified geographic extent
         and resolution.
 
@@ -509,7 +507,7 @@ class AnnualDaily(object):
         # day that the program was executed.
 
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        history_entry = f"{current_time}: Saved dataset to {out_file}. Resampled to daily and cropped to aoi extent by temds.crujra.CRUJRA_daily class, part of the Input_production project: https://github.com/uaf-arctic-eco-modeling/Input_production"
+        history_entry = f"{current_time}: Saved dataset to {out_file}. Resampled to daily and cropped to aoi extent by temds.crujra.AnnualDaily class, part of the Input_production project: https://github.com/uaf-arctic-eco-modeling/Input_production"
         if 'history' in self.dataset.attrs:
             self.dataset.attrs['history'] += "\n" + history_entry
         else:

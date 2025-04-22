@@ -35,7 +35,7 @@ WORLDCLIM_URL_PATTERN = WORLDCLIM_2_1_URL_PATTERN
 
 class WorldClim(object):
     """WorldClim data is monthly data that represents long term normal 
-    climate conditions
+    climate conditions.
     """
     def __init__ (self, 
             data_input,
@@ -48,11 +48,12 @@ class WorldClim(object):
         ----------
         data_input: path, or str
             When given an existing file (.nc), the file is loaded via `load`.
-            or
-            When Given a str starting with http and ending in .zip, and and if 
-            `extent_raster` is not None, dataset is created based on 
+            When given a str starting with http and ending in .zip, and if
+            `extent_raster` is not None, dataset is created based on
             `extent_raster` and populated from remote data.
-         extent_raster
+        extent_raster : path, optional
+            Path to raster to pull extent and resolution from if not provided
+            extent and resolution are pulled from first raster open
         verbose: bool, default False
             see `verbose`
         _vars: list, default CRU_JRA_VARS
@@ -62,9 +63,8 @@ class WorldClim(object):
             Values in list are from 1 to 12 for January through december.
             Default list includes all months.
         **kwargs: dict
-            'local_location': local working path
-            or 
-            options to forward to load_from_* functions
+            'local_location': local working path or options to forward to the
+            `load_from_*` functions.
             
         
         Attributes
@@ -468,7 +468,7 @@ class WorldClim(object):
         all required variables, correct extent and time steps
         """
         if self.verbose: 
-            print(f"loading file '{in_path}' assuming correct times temp and "
+            print(f"...loading file '{in_path}' ...assuming correct time step and "
                   "region are set"
             )
         # self.dataset = rioxarray.open_rasterio(in_path, engine="netcdf4")
