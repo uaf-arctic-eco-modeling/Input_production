@@ -4,44 +4,47 @@ Tile
 
 Code for managing a single tile in the downscaling process
 
-We use 'pixles' to mean grid cell item
+We use 'pixels' to mean grid cell item
 
 tile.py is driven by a wrapper script/tool that creates a bunch of
 datasource objects and then calls this methods to populate/run the tile object
 
 """
+
 from pathlib import Path
 
 import xarray as xr
+import pandas as pd
 
 from . import corrections 
 from . import downscalers
 from .crujra import AnnualTimeSeries
 
 
-
-
 class Tile(object):
-    """Object represents a "Tile" a geographic area that can be
-    downscaled
+    """Object represents a "Tile" - a geographic area that can be
+    downscaled. Downscaling refers to the process of taking coarse resolution
+    data and creating finer resolution data. This is done by using an
+    interpolation scheme as well as correction factors. The correction factors
+    are typically derived from observed data and are used to adjust the data
+    once it has been interpolated.
+
 
     Attributes
     ----------
     data: dict
-        items must be xr.dataset or inherit from annual.AnnualTimeSeries
-        keys should represent the data being stored, but can be anything
+        items must be xr.dataset or inherit from annual.AnnualTimeSeries keys
+        should represent the data being stored, but can be anything
     index: tuple, or int
-        the index (H,V) or N of the tile in the tile index
-        primarily used for logging
-        #TODO implement INT code
+        the index (H,V) or N of the tile in the tile index primarily used for
+        logging #TODO implement INT code
     extent: pandas.DataFrame
-        DataFrame with columns 'minx','maxx','miny','maxy', and a single
-        row
+        DataFrame with columns 'minx','maxx','miny','maxy', and a single row
     resolution: float
         resolution of pixels for tile
     crs: ??
-        CRS of tile. Items imported will be converted to this crs with
-        pixel size of `resolution`
+        CRS of tile. Items imported will be converted to this crs with pixel
+        size of `resolution`
     buffer_px: int
         Number of pixels to buffer extent by in `crs`/`resolution`
     buffer_area: float
@@ -74,16 +77,22 @@ class Tile(object):
                       #     'monthly_worldclim': xr.Dataset(...)
                       # }
         self.index = index # 2 tuple (H, V)
-        self.extent = extent #Dataframe with 'minx','maxx','miny','maxy'
+
+        if isinstance(extent, list) and len(extent) == 4:
+            self.extent = pd.DataFrame([extent], columns=['minx', 'maxx', 'miny', 'maxy'])
+        elif isinstance(extent, pd.DataFrame):
+            self.extent = extent
+        else:
+            raise TypeError("extent must be either a pandas DataFrame or a list of 4 items [minx, maxx, miny, maxy]")
+
         self.resolution = resolution # Maybe? Maybe inherent from TIF? 
         self.buffer_area = buffer_px * self.resolution
         self.buffer_pixels = buffer_px
         self.crs = crs
 
 
-
         # A valid tile will be constructed when self.data has enough
-        # informatiionto start implementing the stuff that is in downscaling.sh
+        # information start implementing the stuff that is in downscaling.sh
         # however we end up re-naming the load/import functions here...
 
 
@@ -118,7 +127,7 @@ class Tile(object):
             Object must implement `get_by_extent` with 6 arguments (minx: float,
             maxx: float, miny: float, maxy: float, crs:??, resolution: float)
         ) 
-        buffered: boo, Defaults True
+        buffered: bool, Defaults True
             When true add buffer to tile data being clipped
         """
         minx, maxx, miny, maxy = self.extent[
