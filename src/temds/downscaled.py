@@ -28,7 +28,7 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
 
 
 class AnnualDaily(annual.AnnualDaily):
-    """CUR JRA resampled data daily for a year, This class 
+    """CRU JRA resampled data daily for a year, This class 
     assumes data for a single year in input file
     """
     def __init__ (self, year, in_data, verbose=False, _vars=[],  **kwargs):

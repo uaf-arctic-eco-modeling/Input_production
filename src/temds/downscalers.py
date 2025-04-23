@@ -31,7 +31,7 @@ def temperature(not_downscaled, correction_factors, keys):
     downscaled_array = []
     # apply correction factors per month
     # monthly correction factors convert to daily by setting each day to the monthly values
-    # per line 124-136 of downcasing.sh. In python we can do this directly on 
+    # per line 124-136 of downscaling.sh. In python we can do this directly on 
     # data by adding a 2d array (monthly correction factor) to a 3d array
     # (daily non downscaled data for each month) 
 
