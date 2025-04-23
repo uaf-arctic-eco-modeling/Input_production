@@ -456,7 +456,13 @@ class AnnualDaily(object):
                   "region are set"
             )
             print(force_aoi_to, aoi_nodata)
-        self.dataset = xr.open_dataset(in_path, engine="netcdf4")
+        try:
+            import dask
+            chunks = 'auto'
+        except ImportError:
+            chunks = None
+        if self.verbose: print(f'...loading dataset {chunks=}')
+        self.dataset = xr.open_dataset(in_path, engine="netcdf4", chunks=chunks)
 
         if force_aoi_to:
             aoi_idx = np.isnan(self.dataset[force_aoi_to].values)

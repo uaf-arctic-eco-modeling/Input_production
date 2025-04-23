@@ -4,6 +4,7 @@ channels:
 dependencies:
   - python >=3.9,<3.12
   - xarray=2025.1.0
+  - dask=2025.4.0
   - rioxarray=0.18.2
   - jupyter=1.1.1
   - numpy=2.2.1
