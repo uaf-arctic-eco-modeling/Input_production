@@ -116,7 +116,7 @@ class AnnualTimeSeries(UserList):
             c_tile = AnnualDaily(
                 item.year, 
                 item.get_by_extent(
-                    minx, maxx, miny, maxy, extent_crs ,resolution
+                    minx, maxx, miny, maxy, extent_crs, resolution
                 )
             )
             tiles.append(c_tile)

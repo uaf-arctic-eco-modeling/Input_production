@@ -241,7 +241,43 @@ class Tile(object):
             self, baseline_id, reference_id, variables, 
             factor_id='correction_factors'
         ):
+        """
+        Calculate correction factors based on baseline and reference datasets.
 
+        This method computes correction factors for specified variables by
+        applying user-defined functions to the baseline and reference datasets.
+        The resulting correction factors are stored in the `self.data`
+        dictionary under the specified `factor_id`.
+
+        Parameters
+        ----------
+        baseline_id : str
+            The key to access the baseline dataset in `self.data`.
+        reference_id : str
+            The key to access the reference dataset in `self.data`.
+        variables : dict
+            A dictionary where keys are variable names and values are
+            dictionaries containing the following keys:
+                - 'function' (str): The name of the function to apply, which
+                  must exist in `corrections.LOOKUP`. 
+                - 'name' (str): The name to assign to the resulting correction 
+                  factor.
+                - factor_id : str, optional. The key under which the resulting 
+                  correction factors will be stored in `self.data`. Defaults to
+                  'correction_factors'.
+
+        Raises
+        ------
+        KeyError
+            If `baseline_id` or `reference_id` is not found in `self.data`.
+        KeyError
+            If the specified function is not found in `corrections.LOOKUP`.
+
+        Returns
+        -------
+        None
+            The correction factors are stored in `self.data[factor_id]`.
+        """
         reference = self.data[reference_id]
         baseline = self.data[baseline_id]
         temp = []
