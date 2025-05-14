@@ -18,6 +18,7 @@ from rasterio.enums import Resampling
 from shapely.geometry import box
 
 from .clip_xarray import clip_xr_dataset
+from . import annual
 from . import worldclim
 
 CRUJRA_VARS = (
@@ -44,97 +45,97 @@ CRUJRA_RESAMPLE_METHODS  = {
     'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna)
 }
 
-class InvalidCalendarError(Exception):
-    """Raise when the calendar attribute of the time dimension of the dataset is not 365_day or noleap"""
-    pass
 
-class AnnualDailyYearUnknownError(Exception):
-    """Raise when self.year is unkonwn and cannot be loaded."""
-    pass
-
-class AnnualTimeSeriesError(Exception):
-    """Raise when for errors related to annual time series data."""
-    pass
-
-class AnnualTimeSeries(UserList):
+class AnnualTimeSeries(annual.AnnualTimeSeries):
     def __init__(self, data, verbose=True, **kwargs):
         """
         parameters
         ----------
 
         """
-        if type(data) is Path: # TODO TEST
-            if verbose: print('loading form path')
-            files = data.glob('*.nc')
-            data = [AnnualDaily(file, verbose, **kwargs) for file in files] 
+        super().__init__(data, verbose,  **kwargs)
+        
+        # if type(data) is Path: # TODO TEST
+        #     if verbose: print('loading form path')
+        #     files = data.glob('*.nc')
+        #     data = [AnnualDaily(file, verbose, **kwargs) for file in files] 
 
 
-        self.data = sorted(data)
-        self.start_year = 0 ## start year not set
-        self.verbose = verbose
-        if hasattr(self.data[0], 'year'):
-            self.start_year = self.data[0].year
-        elif  'data_year' in self.data[0].attrs['data_year']:
-            self.start_year = self.data[0].attrs['data_year']
+        # self.data = sorted(data)
+        # self.start_year = 0 ## start year not set
+        # self.verbose = verbose
+        # if hasattr(self.data[0], 'year'):
+        #     self.start_year = self.data[0].year
+        # elif  'data_year' in self.data[0].attrs['data_year']:
+        #     self.start_year = self.data[0].attrs['data_year']
 
-    def __repr__(self):
-        return('AnnualTimeSeries\n-'+'\n-'.join([str(i) for i in self.data]))
+    # def __repr__(self):
+    #     return('AnnualTimeSeries\n-'+'\n-'.join([str(i) for i in self.data]))
 
-    def __setitem__(self, index, item):
-        raise AnnualTimeSeriesError('__setitem__ is not supported in AnnualTimeseries')
+    # def __setitem__(self, index, item):
+    #     raise annual.AnnualTimeSeriesError('__setitem__ is not supported in AnnualTimeseries')
 
-    def insert(self, index, item):
-        raise AnnualTimeSeriesError('insert is not supported in AnnualTimeseries')
+    # def insert(self, index, item):
+    #     raise annual.AnnualTimeSeriesError('insert is not supported in AnnualTimeseries')
     
-    def append(self, item):
-        raise AnnualTimeSeriesError('append is not supported in AnnualTimeseries')
+    # def append(self, item):
+    #     raise annual.AnnualTimeSeriesError('append is not supported in AnnualTimeseries')
     
-    def extend(self, other):
-        raise AnnualTimeSeriesError('extend is not supported in AnnualTimeseries')
+    # def extend(self, other):
+    #     raise annual.AnnualTimeSeriesError('extend is not supported in AnnualTimeseries')
 
-    def __add__(self, other):
-        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
-    def __radd__(self, other):
-        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
-    def __iadd__(self, other):
-        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+    # def __add__(self, other):
+    #     raise annual.AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+    # def __radd__(self, other):
+    #     raise annual.AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+    # def __iadd__(self, other):
+    #     raise annual.AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
 
-    def __getitem__(self, index):
-        if type(index) is int:
-            yr = index-self.start_year
-        else: #slice
-            start = index.start - self.start_year
-            stop = index.stop - self.start_year if index.stop else None
-            step = index.step if index.step else None
-            yr = slice(start, stop, step)
-        return super().__getitem__(yr)
+    # def __getitem__(self, index):
+    #     if type(index) is int:
+    #         yr = index-self.start_year
+    #     else: #slice
+    #         start = index.start - self.start_year
+    #         stop = index.stop - self.start_year if index.stop else None
+    #         step = index.step if index.step else None
+    #         yr = slice(start, stop, step)
+    #     return super().__getitem__(yr)
 
-    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,resolution = None ):
-        tiles = []
-        for item in self.data:
-            if self.verbose: print(f'{item} clipping' )
-            c_tile = AnnualDaily(
-                item.year, 
-                item.get_by_extent(
-                    minx, maxx, miny, maxy, extent_crs, resolution
-                )
-            )
-            tiles.append(c_tile)
+    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs , **kwargs):
+        """"""
 
-        return AnnualTimeSeries(tiles)
+        resolution = kwargs['resolution'] if 'resolution' in kwargs else None
+        ADType = AnnualDaily
+        return super().get_by_extent(
+            minx, maxx, miny, maxy, extent_crs, 
+            resolution=resolution,
+            ADType=ADType
+        )
+        # tiles = []
+        # for item in self.data:
+        #     if self.verbose: print(f'{item} clipping' )
+        #     c_tile = AnnualDaily(
+        #         item.year, 
+        #         item.get_by_extent(
+        #             minx, maxx, miny, maxy, extent_crs, resolution
+        #         )
+        #     )
+        #     tiles.append(c_tile)
 
-    def save(self, where, name_pattern, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
-        climate_enc = {
-            '_FillValue':fill_value, 
-            'missing_value':missing_value, 
-            'zlib': True, 'complevel': 9 # USE COMPRESSION?
-        }
-        for item in self.data:
-            if self.verbose: print(f'{item} saving' )
-            op = Path(where)
-            op.mkdir(exist_ok=True, parents=True)
-            out_file = op.joinpath(name_pattern.format(year=item.year))
-            item.save(out_file, missing_value, fill_value, overwrite)
+        # return AnnualTimeSeries(tiles)
+
+    # def save(self, where, name_pattern, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
+    #     climate_enc = {
+    #         '_FillValue':fill_value, 
+    #         'missing_value':missing_value, 
+    #         'zlib': True, 'complevel': 9 # USE COMPRESSION?
+    #     }
+    #     for item in self.data:
+    #         if self.verbose: print(f'{item} saving' )
+    #         op = Path(where)
+    #         op.mkdir(exist_ok=True, parents=True)
+    #         out_file = op.joinpath(name_pattern.format(year=item.year))
+    #         item.save(out_file, missing_value, fill_value, overwrite)
         # # for _var in ds.data_vars:
         # #     print(_var)
         #     # # ds[_var].rio.update_encoding(climate_enc, inplace=True)
@@ -212,7 +213,7 @@ class AnnualTimeSeries(UserList):
 ## ---- end of AnnualTimeSeries ----
 
 
-class AnnualDaily(object):
+class AnnualDaily(annual.AnnualDaily):
     """
     AnnualDaily class for managing and processing daily CRU JRA climate data.
     This class provides functionality to load, process, and save daily climate
@@ -313,35 +314,37 @@ class AnnualDaily(object):
             When file/files to load is wrong format or do not exist
 
         """
-        self.year = year
-        self.dataset = None ## xarray data 
-        self.verbose = verbose 
-        self.vars = _vars
+        super().__init__(year, in_path, verbose, _vars,  **kwargs)
+
+        # self.year = year
+        # self.dataset = None ## xarray data 
+        # self.verbose = verbose 
+        # self.vars = _vars
 
 
-        if type(in_path) is xr.Dataset:
-            self.dataset=in_path
-        else:
-            in_path = Path(in_path)
-            if in_path.exists() and in_path.suffix == '.nc':
-                self.load(in_path, year_override=year, **kwargs)
-            elif in_path.exists() and in_path.is_dir(): 
-                self.load_from_raw(in_path, **kwargs)
-            else:
-                raise IOError('No Inputs found')
+        # if type(in_path) is xr.Dataset:
+        #     self.dataset=in_path
+        # else:
+        #     in_path = Path(in_path)
+        #     if in_path.exists() and in_path.suffix == '.nc':
+        #         self.load(in_path, year_override=year, **kwargs)
+        #     elif in_path.exists() and in_path.is_dir(): 
+        #         self.load_from_raw(in_path, **kwargs)
+        #     else:
+        #         raise IOError('No Inputs found')
 
-    def __repr__(self):
-        return(f"CRUJRAnnualDaily: {self.year}")
+    # def __repr__(self):
+    #     return(f"CRUJRAnnualDaily: {self.year}")
 
-    def __lt__(self, other):
-        """less than for sort
-        """
-        if self.year is None or other.year is None:
-            raise AnnualDailyYearUnknownError(
-                "One of the AnnualDaily objcets"
-                " in comparison is missing 'year' attribute"
-            )
-        return self.year < other.year
+    # def __lt__(self, other):
+    #     """less than for sort
+    #     """
+    #     if self.year is None or other.year is None:
+    #         raise AnnualDailyYearUnknownError(
+    #             "One of the AnnualDaily objcets"
+    #             " in comparison is missing 'year' attribute"
+    #         )
+    #     return self.year < other.year
 
 
     def load_from_raw(
@@ -475,7 +478,7 @@ class AnnualDaily(object):
             elif type(year_override) is int:
                 self.year = year_override
         except KeyError:
-            raise AnnualDailyYearUnknownError(
+            raise annual.AnnualDailyYearUnknownError(
                 f"Cannot load year form nc file {in_path}. "
                 "Missing 'data_year' attribute"
 

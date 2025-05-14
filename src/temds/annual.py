@@ -9,16 +9,22 @@ from pathlib import Path
 
 import xarray as xr
 
-class AnnualDailyYearUnknownError(Exception):
-    """Raise when self.year is unknown and cannot be loaded"""
-    pass
+
 
 class AnnualDailyContinuityError(Exception):
-    """Raise when if """
+    """Raise when if the there is a missing year in..."""
+    pass
+
+class InvalidCalendarError(Exception):
+    """Raise when the calendar attribute of the time dimension of the dataset is not 365_day or noleap"""
+    pass
+
+class AnnualDailyYearUnknownError(Exception):
+    """Raise when self.year is unkonwn and cannot be loaded."""
     pass
 
 class AnnualTimeSeriesError(Exception):
-    """ """
+    """Raise when for errors related to annual time series data."""
     pass
 
 class AnnualTimeSeries(UserList):
@@ -141,11 +147,14 @@ class AnnualTimeSeries(UserList):
             yr = slice(start, stop, step)
         return super().__getitem__(yr)
 
-    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,resolution = None ):
+    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs, **kwargs ):
         tiles = []
+
+        resolution = kwargs['resolution'] if 'resolution' in kwargs else None
+        ADType =  kwargs['ADType'] if 'ADType' in kwargs else AnnualDaily
         for item in self.data:
             if self.verbose: print(f'{item} clipping' )
-            c_tile = AnnualDaily(
+            c_tile = ADType(
                 item.year, 
                 item.get_by_extent(
                     minx, maxx, miny, maxy, extent_crs ,resolution
