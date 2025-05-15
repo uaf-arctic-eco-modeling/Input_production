@@ -37,7 +37,16 @@ CLIMATE_VARIABLES = {
 }
 
 def register(cv, source, alias):
-    """
+    """Registers an alias for a climate variable in CLIMATE_VARIABLES
+
+    Parameters
+    ----------
+    cv: str
+        climate variable in CLIMATE_VARIABLES
+    source: str
+        name of datasource
+    alias: str
+        variable alias for source
     """
     CLIMATE_VARIABLES[cv].aliases[source] = alias
 

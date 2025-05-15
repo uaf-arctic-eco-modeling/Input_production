@@ -139,8 +139,8 @@ def radiation (baseline, reference, keys):
     xr.dataset
         correction_factor
     """   
-    rk = keys['srad']
-    bk = keys['dswrf']
+    rk = keys['reference']
+    bk = keys['baseline']
 
     ref = (reference[rk] * 1000) /SECONDS_PER_DAY
     base = (baseline[bk] * 1000) /SECONDS_PER_DAY
