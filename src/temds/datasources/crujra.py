@@ -40,8 +40,7 @@ CRUJRA_RESAMPLE_LOOKUP = {
     'tmin': 'mean',
     'tmax': 'mean',
     'tmp': 'mean',
-    'pre': 'sum',  # Might have issue here with summing nans --> leads to 0, should be nan
-                   # hopefully fixed by pinning xarray version to one that leads to nans.
+    'pre': 'sum',  
     'dswrf': 'sum',
     'ugrd': 'mean',
     'vgrd': 'mean',
@@ -52,7 +51,7 @@ CRUJRA_RESAMPLE_LOOKUP = {
 
 CRUJRA_RESAMPLE_METHODS  = {
     'mean': lambda x: x.resample(time='1D').mean(),
-    'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna)
+    'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna), this should fix summing integer issues
 }
 
 
