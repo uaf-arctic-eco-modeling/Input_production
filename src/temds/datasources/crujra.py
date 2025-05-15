@@ -19,12 +19,22 @@ from shapely.geometry import box
 
 # from .clip_xarray import clip_xr_dataset
 from . import annual
+from temds import climate_variables 
 from temds import constants
 
-CRUJRA_VARS = (
-    'tmin','tmax','tmp','pre',
-    'dswrf','ugrd','vgrd','spfh','pres'
-)
+## REGISTER CLIMATE VARIABLES
+climate_variables.register('tair', 'crujra', 'tmp')
+climate_variables.register('tmin', 'crujra', 'tmin')
+climate_variables.register('tmax', 'crujra', 'tmax')
+climate_variables.register('prec', 'crujra', 'pre')
+climate_variables.register('nirr', 'crujra', 'dswrf')
+climate_variables.register('ugrd', 'crujra', 'ugrd')
+climate_variables.register('vgrd', 'crujra', 'vgrd')
+climate_variables.register('spfh', 'crujra', 'spfh')
+climate_variables.register('pres', 'crujra', 'pres')
+
+
+CRUJRA_VARS = climate_variables.aliases_for('crujra')
 
 CRUJRA_RESAMPLE_LOOKUP = {
     'tmin': 'mean',

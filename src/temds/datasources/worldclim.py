@@ -19,15 +19,24 @@ from osgeo import gdal
 
 from temds.remote_zip import RemoteZip
 from temds.constants import MONTH_START_DAYS 
+from temds import climate_variables
 from .base import TEMDataSet
+
 
 
 gdal.UseExceptions() ## gdal 4.0 future proofing
 
 
-WORLDCLIM_VARS = (
-    'tmin','tmax','tavg','prec','srad','wind','vapr'
-)
+## REGISTER CLIMATE VARIABLES
+climate_variables.register('tair', 'worldclim', 'tavg')
+climate_variables.register('tmin', 'worldclim', 'tmin')
+climate_variables.register('tmax', 'worldclim', 'tmax')
+climate_variables.register('prec', 'worldclim', 'prec')
+climate_variables.register('nirr', 'worldclim', 'srad')
+climate_variables.register('wind', 'worldclim', 'wind')
+climate_variables.register('vapo', 'worldclim', 'vapr')
+
+WORLDCLIM_VARS = climate_variables.aliases_for('worldclim')
 
 WORLDCLIM_NAMING_CONVENTION = 'wc2.1_30s_{var}'
 
