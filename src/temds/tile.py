@@ -147,7 +147,7 @@ class Tile(object):
             minx, maxx, miny, maxy, self.crs, **kwargs
         ) 
 
-    def save(self, where, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
+    def save(self, where, **kwargs): #missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
         """Save `dataset` as a netCDF file.
 
         Parameters
@@ -160,11 +160,21 @@ class Tile(object):
             headers
         """
         manifest = {}
+
+        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
+
+        fill_value = lookup(kwargs, 'fill_value', 1.0e+20 )
+        missing_value = lookup(kwargs, 'missing_value', 1.0e+20 )
+        compress = lookup(kwargs, 'use_zlib', True)
+        complevel = lookup(kwargs, 'complevel', 9)
+        overwrite = lookup(kwargs, 'overwrite', False)
+
         climate_enc = {
                 '_FillValue':fill_value, 
                 'missing_value':missing_value, 
-                'zlib': True, 'complevel': 9 # USE COMPRESSION?
+                'zlib': compress, 'complevel': complevel # USE COMPRESSION?
             }
+            
         for name, ds in self.data.items():
             
             H, V = self.index
