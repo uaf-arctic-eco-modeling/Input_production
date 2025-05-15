@@ -11,6 +11,7 @@ datasource objects and then calls this methods to populate/run the tile object
 
 """
 from pathlib import Path
+import shutil
 
 import xarray as xr
 import pandas as pd
@@ -18,8 +19,7 @@ import yaml
 
 from . import corrections 
 from . import downscalers
-from .datasources.annual import AnnualTimeSeries
-
+from .datasources import annual, downscaled
 
 
 
@@ -93,7 +93,7 @@ class Tile(object):
         self.buffer_pixels = buffer_px
         self.crs = crs
 
-
+        self.verbose=False
         # A valid tile will be constructed when self.data has enough
         # information start implementing the stuff that is in downscaling.sh
         # however we end up re-naming the load/import functions here...
@@ -150,6 +150,15 @@ class Tile(object):
         msg = f'Tile: {idx} with data for: {data}'
         return msg
 
+    def toggle_verbose(self):
+        """toggles verbose, and syncs with any items in data with `verbose`
+        attribute
+        """
+        self.verbose = not self.verbose
+        for item in self.data:
+            if hasattr(self.data[item], 'verbose'):
+                self.data[item].verbose = self.verbose
+
 
     def load_from_directory(self, directory):
         """
@@ -163,7 +172,7 @@ class Tile(object):
             in_path = Path(directory).joinpath(_file)
             if in_path.is_dir():
 
-                self.data[item] = AnnualTimeSeries(in_path, crs=self.crs)
+                self.data[item] = annual.AnnualTimeSeries(in_path, crs=self.crs)
             else:
                 self.data[item] = xr.open_dataset(in_path, engine="netcdf4")
 
@@ -187,12 +196,14 @@ class Tile(object):
         minx, maxx, miny, maxy = self.extent[
             ['minx','maxx','miny','maxy']
         ].iloc[0]
+        extent = minx, maxx, miny, maxy 
         if buffered:
             minx,maxx = minx-self.buffer_area,maxx+self.buffer_area
             miny,maxy = miny-self.buffer_area,maxy+self.buffer_area
 
-        print('res',self.resolution)
         kwargs['resolution'] = self.resolution
+        if self.verbose: 
+            print(f'importing {name} from {datasource} to {extent}')
         self.data[name] = datasource.get_by_extent(
             minx, maxx, miny, maxy, self.crs, **kwargs
         ) 
@@ -208,10 +219,15 @@ class Tile(object):
         fill_value: float, default 1.e+20
             values set as _FillValuem, and missing_value in netCDF variable
             headers
-        """
+        """ 
+        
+        minx, maxx, miny, maxy = self.extent[
+            ['minx','maxx','miny','maxy']
+        ].iloc[0]
+        extent = minx, maxx, miny, maxy
         manifest = {
             'index': self.index,
-            'extent': self.extent,
+            'extent': extent,
             'resolution': self.resolution,
             'crs': self.crs,
             'buffer_px': self.buffer_pixels,
@@ -225,22 +241,34 @@ class Tile(object):
         compress = lookup(kwargs, 'use_zlib', True)
         complevel = lookup(kwargs, 'complevel', 9)
         overwrite = lookup(kwargs, 'overwrite', False)
+        to_save = lookup(kwargs, 'items', self.data.keys())
+        update_manifest = lookup(kwargs, 'update_manifest', False)
+
+        clear_existing = lookup(kwargs, 'clear_existing', False)
 
         climate_enc = {
                 '_FillValue':fill_value, 
                 'missing_value':missing_value, 
                 'zlib': compress, 'complevel': complevel # USE COMPRESSION?
             }
+
+        H, V = self.index
+        if clear_existing:
+            root = Path(where).joinpath(f'H{H:02d}_V{V:02d}')
+            shutil.rmtree(str(root))
+
             
         for name, ds in self.data.items():
             
-            H, V = self.index
-            if isinstance(ds, AnnualTimeSeries):
+            if not name in to_save:
+                continue
+            if self.verbose: print(f'Saving: {name}')
+            
+            if isinstance(ds, annual.AnnualTimeSeries):
                 op = Path(where).joinpath(f'H{H:02d}_V{V:02d}', name) 
                 op.mkdir(exist_ok=True, parents=True)
                 for item in ds.data:
                     for _var in item.dataset.data_vars:
-                        print(_var)
                         item.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
                     out_file = Path(op).joinpath(f'{name}-{item.year}.nc') 
                     if  not out_file.exists() or overwrite:
@@ -271,7 +299,6 @@ class Tile(object):
             
             
             for _var in ds.data_vars:
-                print(_var)
                 ds[_var].rio.update_encoding(climate_enc, inplace=True)
                 # try: del ds[_var].attrs['_FillValue']
                 # except: pass
@@ -291,8 +318,17 @@ class Tile(object):
                 
             else:
                 raise FileExistsError('The file {out_file} exists and `overwrite` is False')
-        with Path(where).joinpath(f'H{H:02d}_V{V:02d}', 'manifest.yml').open('w') as fd:
-            yaml.safe_dump(manifest, fd)
+       
+        manifest_file = Path(where).joinpath(f'H{H:02d}_V{V:02d}', 'manifest.yml')
+        if manifest_file.exists() and update_manifest:
+            with manifest_file.open('r') as fd:
+                old = yaml.load(fd, yaml.Loader)
+            man_data = old['data']
+            man_data.update(manifest['data'])
+            manifest['data'] = man_data
+       
+        with manifest_file.open('w') as fd:
+            yaml.safe_dump(manifest, fd, sort_keys=False)
 
     def calculate_climate_baseline(self, start_year, end_year, target, source):
         """Calculate the climate baseline for the tile from data in an 
@@ -429,10 +465,11 @@ class Tile(object):
         Add downscaled to self.data dict as xarray dataset. 
         """
         results = []
-        for item in self.data[source_id]:
-            year = item.year
+        for year in self.data[source_id].range():
+            if self.verbose: print(f'Downscaling {year}')
+            data = self.downscale_year(year, source_id, correction_id, variables)
             results.append(
-                self.downscale_year(year, source_id, correction_id, variables)
+                downscaled.AnnualDaily(year, data, crs=self.crs)
             )
         
         self.data[downscaled_id] = downscaled.AnnualTimeSeries(results)

@@ -5,23 +5,22 @@ Downscaled
 Objects representing downscaled data
 """
 import xarray as xr
+
+from temds import climate_variables
 from . import annual
 
 
-DOWNSCALED_VARIABLES = {
-    'tavg': 'tair_oC',
-    'tmin': 'tmin_oC',
-    'tmax': 'tmax_oC',
-    'prec': 'prec_mm',
-    'vapo': 'vapo_Pa',
-    'nirr': 'nirr_Wm2',
-    'wdir': 'winddir_deg',
-    'wspd': 'wind_ms'
-    
+## REGISTER CLIMATE VARIABLES
+climate_variables.register('tair', 'downscaled', 'tair_oC')
+climate_variables.register('tmin', 'downscaled', 'tmin_oC')
+climate_variables.register('tmax', 'downscaled', 'tmax_oC')
+climate_variables.register('prec', 'downscaled', 'prec_mm')
+climate_variables.register('nirr', 'downscaled', 'nirr_Wm2')
+climate_variables.register('vapo', 'downscaled', 'vapo_Pa')
+climate_variables.register('wind', 'downscaled', 'wind_ms')
+climate_variables.register('winddir', 'downscaled', 'winddir_deg')
 
-}
-
-
+DOWNSCALED_VARIABLES = climate_variables.aliases_for('downscaled')
 
 
 class AnnualTimeSeries(annual.AnnualTimeSeries):

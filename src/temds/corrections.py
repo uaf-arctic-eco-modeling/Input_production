@@ -102,7 +102,7 @@ def vapor_pressure (baseline, reference, keys):
     xr.dataset
         correction_factor
     """  
-    r_vapor = keys['reference-vapor']
+    r_vapor = keys['reference']
     b_pres = keys['baseline-pres']
     b_spfh = keys['baseline-spfh']
 
@@ -173,7 +173,7 @@ def wind_speed (baseline, reference, keys):
     xr.dataset
         correction_factor
     """  
-    r_wind = keys['reference-vapor']
+    r_wind = keys['reference']
     b_ugrd = keys['baseline-ugrd']
     b_vgrd = keys['baseline-vgrd']
 

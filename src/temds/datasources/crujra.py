@@ -112,14 +112,11 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
 
     def get_by_extent(self, minx, maxx, miny, maxy, extent_crs , **kwargs):
         """"""
-
-        resolution = kwargs['resolution'] if 'resolution' in kwargs else None
-        ADType = AnnualDaily
+        kwargs['ADType'] = AnnualDaily
+        kwargs['ATsType'] =AnnualTimeSeries
         return super().get_by_extent(
             minx, maxx, miny, maxy, extent_crs, 
-            resolution=resolution,
-            ADType=ADType,
-            ATsType=AnnualTimeSeries
+            **kwargs
         )
         # tiles = []
         # for item in self.data:

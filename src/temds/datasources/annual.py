@@ -7,7 +7,7 @@ Base class Objects representing annual data
 from collections import UserList
 from pathlib import Path
 
-
+from joblib import Parallel, delayed
 
 import xarray as xr
 import rioxarray
@@ -16,7 +16,6 @@ import numpy as np
 from .base import TEMDataSet
 from .errors import AnnualDailyContinuityError, InvalidCalendarError
 from .errors import AnnualDailyYearUnknownError, AnnualTimeSeriesError
-
 
 
 class AnnualTimeSeries(UserList):
@@ -31,10 +30,15 @@ class AnnualTimeSeries(UserList):
 
     """
 
-    def __init__(self, data, verbose=True, **kwargs):
+    def __init__(self, data, verbose=False, **kwargs):
         """
         parameters
         ----------
+        data:
+        verbose: bool
+            verbosity flag
+        kwargs:
+            forwarded to AnnualDaily's kwargs 
         """
         if hasattr(data,'exists'): 
             if verbose: print(f'loading from directory: {data}')
@@ -108,26 +112,34 @@ class AnnualTimeSeries(UserList):
         return(f'{type(self).__module__}.{type(self).__name__}\n-'+'\n-'.join([str(i) for i in self.data]))
 
     def __setitem__(self, index, item):
-        """"""
+        """Disables setitem"""
         raise AnnualTimeSeriesError('__setitem__ is not supported in AnnualTimeseries')
 
     def insert(self, index, item):
+        """Disables insert"""
         raise AnnualTimeSeriesError('insert is not supported in AnnualTimeseries')
     
     def append(self, item):
+        """Disables append"""
         raise AnnualTimeSeriesError('append is not supported in AnnualTimeseries')
     
     def extend(self, other):
+        """Disables extend"""
         raise AnnualTimeSeriesError('extend is not supported in AnnualTimeseries')
 
     def __add__(self, other):
+        """Disables add"""
         raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
     def __radd__(self, other):
+        """Disables add"""
         raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
     def __iadd__(self, other):
+        """Disables add"""
         raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
 
     def __getitem__(self, index):
+        """Overload __getitem__ to allow year based indexing
+        """
         if type(index) is int:
             yr = index-self.start_year
         else: #slice
@@ -138,38 +150,82 @@ class AnnualTimeSeries(UserList):
         return super().__getitem__(yr)
 
     def get_by_extent(self, minx, maxx, miny, maxy, extent_crs, **kwargs ):
+        """Get by extent. Can optionally promote to child classes if 
+        ADType or ATsType are in kwargs
+
+        Parameters
+        ----------
+        minx: number
+        maxx: number
+        miny: number
+        maxy: number
+            extent coords
+        extent_crs:
+            crs of extent coords
+        kwargs:
+            resolution: number
+                pixel resolution to get
+            ADType: 
+                class that inherits from AnnualDaily
+            ATsType: 
+                class that inherits from AnnualTimeseries
+        """
         tiles = []
 
         resolution = kwargs['resolution'] if 'resolution' in kwargs else None
         ADType =  kwargs['ADType'] if 'ADType' in kwargs else AnnualDaily
         ATsType =  kwargs['ATsType'] if 'ATsType' in kwargs else AnnualTimeSeries
-        for item in self.data:
-            if self.verbose: print(f'{item} clipping' )
-            c_tile = ADType(
-                item.year, 
-                item.get_by_extent(
-                    minx, maxx, miny, maxy, extent_crs,
-                    resolution=resolution
-                )
+        parallel =  kwargs['parallel'] if 'parallel' in kwargs else False
+
+        helper = lambda item: ADType(
+            item.year, 
+            item.get_by_extent(
+                minx, maxx, miny, maxy, extent_crs,
+                resolution=resolution,
             )
-            tiles.append(c_tile)
+        )
+
+        if parallel:
+            # print('parallel')
+            tiles = Parallel(n_jobs=10)(
+                delayed(helper)(item) for item in self.data
+            )
+        else:
+            for item in self.data:
+                if self.verbose: print(f'{item} clipping' )
+                c_tile = helper(item)
+                tiles.append(c_tile)
 
         return ATsType(tiles)
 
-    def save(self, where, name_pattern, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
-        climate_enc = {
-            '_FillValue':fill_value, 
-            'missing_value':missing_value, 
-            'zlib': True, 'complevel': 9 # USE COMPRESSION?
-        }
+    def save(self, where, name_pattern, **kwargs):
+        """Saves each item in data
+
+        Parameters
+        ----------
+        where: Path
+            directory to save each item in
+        name_pattern: str
+            filename pattern containing {year}'
+        kwargs:
+            forwarded to each AnnualDaily.saves kwargs
+            see base.TEMDataSet for details
+        """
         for item in self.data:
             if self.verbose: print(f'{item} saving' )
             op = Path(where)
             op.mkdir(exist_ok=True, parents=True)
             out_file = op.joinpath(name_pattern.format(year=item.year))
-            item.save(out_file, missing_value, fill_value, overwrite)
+            item.save(out_file, **kwargs)
 
+    def range(self):
+        """get year range
 
+        Returns
+        -------
+        range
+        """
+        return range(self.data[0].year, self.data[-1].year+1)
 
 
 class AnnualDaily(TEMDataSet):
@@ -229,6 +285,8 @@ class AnnualDaily(TEMDataSet):
 
         if type(in_data) is xr.Dataset:
             self.dataset=in_data
+            if 'crs' in kwargs:
+                self.crs = kwargs['crs']
         else:
             in_data = Path(in_data)
             if in_data.exists() and in_data.suffix == '.nc':
