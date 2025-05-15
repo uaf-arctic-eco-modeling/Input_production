@@ -14,22 +14,10 @@ import rioxarray
 import numpy as np
 
 from .base import TEMDataSet
+from .errors import AnnualDailyContinuityError, InvalidCalendarError
+from .errors import AnnualDailyYearUnknownError, AnnualTimeSeriesError
 
-class AnnualDailyContinuityError(Exception):
-    """Raise when if the there is a missing year in..."""
-    pass
 
-class InvalidCalendarError(Exception):
-    """Raise when the calendar attribute of the time dimension of the dataset is not 365_day or noleap"""
-    pass
-
-class AnnualDailyYearUnknownError(Exception):
-    """Raise when self.year is unkonwn and cannot be loaded."""
-    pass
-
-class AnnualTimeSeriesError(Exception):
-    """Raise when for errors related to annual time series data."""
-    pass
 
 class AnnualTimeSeries(UserList):
     """
@@ -226,7 +214,6 @@ class AnnualDaily(TEMDataSet):
             When file/files to load is wrong format or do not exist
 
         """
-        print('parent')
         self.year = year
         self.dataset = None ## xarray data 
         self.verbose = verbose 

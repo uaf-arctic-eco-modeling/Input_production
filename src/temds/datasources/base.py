@@ -10,10 +10,7 @@ import xarray as xr
 import rioxarray  # activate 
 from abc import ABCMeta, abstractmethod
 
-class TEMDataSetUninitializeError(Exception):
-    """Raised of dataset is None and a base function is called
-    """
-    pass
+from .errors import TEMDataSetUninitializeError
 
 class TEMDataSet(object):
     """Base class for temds .nc representations
