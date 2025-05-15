@@ -7,9 +7,13 @@ Base class Objects representing annual data
 from collections import UserList
 from pathlib import Path
 
+
+
 import xarray as xr
+import rioxarray
+import numpy as np
 
-
+from .base import TEMDataSet
 
 class AnnualDailyContinuityError(Exception):
     """Raise when if the there is a missing year in..."""
@@ -36,7 +40,6 @@ class AnnualTimeSeries(UserList):
     data: list
     start_year: int
     verbose: bool
-
 
     """
 
@@ -152,17 +155,19 @@ class AnnualTimeSeries(UserList):
 
         resolution = kwargs['resolution'] if 'resolution' in kwargs else None
         ADType =  kwargs['ADType'] if 'ADType' in kwargs else AnnualDaily
+        ATsType =  kwargs['ATsType'] if 'ATsType' in kwargs else AnnualTimeSeries
         for item in self.data:
             if self.verbose: print(f'{item} clipping' )
             c_tile = ADType(
                 item.year, 
                 item.get_by_extent(
-                    minx, maxx, miny, maxy, extent_crs ,resolution
+                    minx, maxx, miny, maxy, extent_crs,
+                    resolution=resolution
                 )
             )
             tiles.append(c_tile)
 
-        return AnnualTimeSeries(tiles)
+        return ATsType(tiles)
 
     def save(self, where, name_pattern, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
         climate_enc = {
@@ -180,7 +185,7 @@ class AnnualTimeSeries(UserList):
 
 
 
-class AnnualDaily(object):
+class AnnualDaily(TEMDataSet):
     """Daily for a year, This class 
     assumes data for a single year in input file
     """
@@ -268,7 +273,11 @@ class AnnualDaily(object):
 
         self.naming.update(new_scheme)
 
-    def load(self, in_path, year_override=None):
+    def load(
+            self, in_path, year_override=None,
+            force_aoi_to='tmin', aoi_nodata = np.nan,
+            crs = 'EPSG:4326'
+        ):
         """Load daily data from a single file. Assumes file contains 
         all required variables, correct extent and daily timestep
         """
@@ -277,6 +286,20 @@ class AnnualDaily(object):
                   "region are set"
             )
         self.dataset = xr.open_dataset(in_path, engine="netcdf4")
+
+        try:
+            import dask
+            chunks = 'auto'
+        except ImportError:
+            chunks = None
+        if self.verbose: print(f'...loading dataset {chunks=}')
+        self.dataset = xr.open_dataset(in_path, engine="netcdf4", chunks=chunks)
+
+        if force_aoi_to:
+            aoi_idx = np.isnan(self.dataset[force_aoi_to].values)
+            for var in self.dataset.data_vars:
+                self.dataset[var].values[aoi_idx]=aoi_nodata
+
         try: 
             if self.year is None and year_override is None:
                 self.year = int(self.dataset.attrs['data_year'])
@@ -288,18 +311,20 @@ class AnnualDaily(object):
                 "Missing 'data_year' attribute"
 
             )
+        x_dim = 'x'
+        y_dim = 'y'
+        if crs == 'EPSG:4326':
+            x_dim = 'lat'
+            y_dim ='lon'
+        self.dataset = \
+            self.dataset.rio.write_crs(crs, inplace=True).\
+                 rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
+                 rio.write_coordinate_system(inplace=True) 
 
-        ## THIS needs to be done better
-        # try:
-        #     self.dataset = \
-        #         self.dataset.rio.write_crs('EPSG:4326', inplace=True).\
-        #             rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True).\
-        #             rio.write_coordinate_system(inplace=True) 
-        
+        self.dataset = \
+            self.dataset.rio.write_crs(crs, inplace=True).\
+                 rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
+                 rio.write_coordinate_system(inplace=True) 
+
 
         if self.verbose: print('dataset initialized')
-
-    def save(self):
-        """"""
-        pass 
-        ## needs to work with data with/without geo stuff

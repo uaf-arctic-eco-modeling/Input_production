@@ -10,15 +10,15 @@ tile.py is driven by a wrapper script/tool that creates a bunch of
 datasource objects and then calls this methods to populate/run the tile object
 
 """
-
 from pathlib import Path
 
 import xarray as xr
 import pandas as pd
+import yaml
 
 from . import corrections 
 from . import downscalers
-from .crujra import AnnualTimeSeries
+from .datasources.annual import AnnualTimeSeries
 
 
 class Tile(object):
@@ -100,20 +100,24 @@ class Tile(object):
         """
         Create in memory from a directory of file(s)
         """
-        pass
+        
+        with Path(directory).join('manifest.yml').open('r') as fd:
+            mainifest = yaml.safe_load(fd)
+
+        for item, in_path in mainifest.items():
+            if Path(in_path).is_dir():
+                self.data[item] = []
+            else:
+                self.data[item] = xr.open_dataset(in_path, engine="netcdf4")
+
 
     # def load_extent(self, extent_file):
     #     """
     #     """
     #     pass
 
-    def load_data(self, data): #or (self, name, data)? or all?
-        """
-        """
-        pass
 
-
-    def import_normalized(self, name, datasource, buffered=True):
+    def import_normalized(self, name, datasource, buffered=True, **kwargs):
         """Loads an item to `data` as name from datasource. Each datasource 
         (e.g. AnnualDaily, WorldClim) needs to implement a get_by_extent() 
         method that can return an xarray dataset or AnnualTimeseries to a 
@@ -136,8 +140,11 @@ class Tile(object):
         if buffered:
             minx,maxx = minx-self.buffer_area,maxx+self.buffer_area
             miny,maxy = miny-self.buffer_area,maxy+self.buffer_area
+
+        print('res',self.resolution)
+        kwargs['resolution'] = self.resolution
         self.data[name] = datasource.get_by_extent(
-            minx, maxx, miny, maxy, self.crs, self.resolution
+            minx, maxx, miny, maxy, self.crs, **kwargs
         ) 
 
     def save(self, where, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
@@ -152,6 +159,7 @@ class Tile(object):
             values set as _FillValuem, and missing_value in netCDF variable
             headers
         """
+        manifest = {}
         climate_enc = {
                 '_FillValue':fill_value, 
                 'missing_value':missing_value, 
@@ -160,7 +168,7 @@ class Tile(object):
         for name, ds in self.data.items():
             
             H, V = self.index
-            if type(ds) is AnnualTimeSeries:
+            if isinstance(ds, AnnualTimeSeries):
                 op = Path(where).joinpath(f'H{H:02d}_V{V:02d}', name) 
                 op.mkdir(exist_ok=True, parents=True)
                 for item in ds.data:
@@ -186,7 +194,7 @@ class Tile(object):
                 #     op, 'crujra-{year}.nc', 
                 #     missing_value, fill_value, overwrite
                 # )
-
+                manifest[name] = str(name)
                 continue
 
 
@@ -212,9 +220,12 @@ class Tile(object):
                         engine="netcdf4",
                         # unlimited_dims={'time':True}
                     )
+                manifest[name] = str( f'{name}.nc')
                 
             else:
                 raise FileExistsError('The file {out_file} exists and `overwrite` is False')
+        with Path(where).joinpath(f'H{H:02d}_V{V:02d}', 'manifest.yml').open('w') as fd:
+            yaml.safe_dump(manifest, fd)
 
     def calculate_climate_baseline(self, start_year, end_year, target, source):
         """Calculate the climate baseline for the tile from data in an 

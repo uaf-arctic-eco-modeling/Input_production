@@ -17,9 +17,9 @@ import xarray as xr
 from rasterio.enums import Resampling
 from shapely.geometry import box
 
-from .clip_xarray import clip_xr_dataset
+# from .clip_xarray import clip_xr_dataset
 from . import annual
-from . import worldclim
+from temds import constants
 
 CRUJRA_VARS = (
     'tmin','tmax','tmp','pre',
@@ -109,7 +109,8 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
         return super().get_by_extent(
             minx, maxx, miny, maxy, extent_crs, 
             resolution=resolution,
-            ADType=ADType
+            ADType=ADType,
+            ATsType=AnnualTimeSeries
         )
         # tiles = []
         # for item in self.data:
@@ -174,7 +175,7 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
             12 times steps
         """
         var_list = []
-        doy = [worldclim.MONTH_START_DAYS[mn] for mn in range(12)]
+        doy = [constants.MONTH_START_DAYS[mn] for mn in range(12)]
 
         for var, method in CRUJRA_RESAMPLE_LOOKUP.items():  
             if self.verbose: print('creating baseline for', var, 'with', method)
@@ -185,8 +186,8 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
             for mn in range(12):
                 mn_data = daily_avg.sel(
                     dayofyear=slice(
-                        worldclim.MONTH_START_DAYS[mn],
-                        worldclim.DAYS_PER_MONTH[mn]
+                        constants.MONTH_START_DAYS[mn],
+                        constants.DAYS_PER_MONTH[mn]
                     )
                 )
                 # print(mn, mn_data.dayofyear.shape, worldclim.DAYS_PER_MONTH[mn])
@@ -492,71 +493,72 @@ class AnnualDaily(annual.AnnualDaily):
 
         if self.verbose: print('dataset initialized')
     
-    def save(self, out_file, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
-        """Save `dataset` as a netCDF file.
+    # def save(self, out_file, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
+    #     """Save `dataset` as a netCDF file.
 
-        Parameters
-        ----------
-        out_file: path
-            file to save
-        missing_value: float, default 1.e+20
-        fill_value: float, default 1.e+20
-            values set as _FillValuem, and missing_value in netCDF variable
-            headers
-        """
+    #     Parameters
+    #     ----------
+    #     out_file: path
+    #         file to save
+    #     missing_value: float, default 1.e+20
+    #     fill_value: float, default 1.e+20
+    #         values set as _FillValuem, and missing_value in netCDF variable
+    #         headers
+    #     """
 
-        # probably going to want to add to the history global attribute. From CF
-        # conventions page: 
-        # 
-        # history: Provides an audit trail for modifications
-        # to the original data. Well-behaved generic netCDF filters will
-        # automatically append their name and the parameters with which they
-        # were invoked to the global history attribute of an input netCDF file.
-        # We recommend that each line begin by indicating the date and time of
-        # day that the program was executed.
+    #     # probably going to want to add to the history global attribute. From CF
+    #     # conventions page: 
+    #     # 
+    #     # history: Provides an audit trail for modifications
+    #     # to the original data. Well-behaved generic netCDF filters will
+    #     # automatically append their name and the parameters with which they
+    #     # were invoked to the global history attribute of an input netCDF file.
+    #     # We recommend that each line begin by indicating the date and time of
+    #     # day that the program was executed.
 
-        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        history_entry = f"{current_time}: Saved dataset to {out_file}. Resampled to daily and cropped to aoi extent by temds.crujra.AnnualDaily class, part of the Input_production project: https://github.com/uaf-arctic-eco-modeling/Input_production"
-        if 'history' in self.dataset.attrs:
-            self.dataset.attrs['history'] += "\n" + history_entry
-        else:
-            self.dataset.attrs['history'] = history_entry
+    #     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    #     history_entry = f"{current_time}: Saved dataset to {out_file}. Resampled to daily and cropped to aoi extent by temds.crujra.AnnualDaily class, part of the Input_production project: https://github.com/uaf-arctic-eco-modeling/Input_production"
+    #     if 'history' in self.dataset.attrs:
+    #         self.dataset.attrs['history'] += "\n" + history_entry
+    #     else:
+    #         self.dataset.attrs['history'] = history_entry
 
-        self.dataset.attrs['data_year'] = self.year
+    #     self.dataset.attrs['data_year'] = self.year
 
-        climate_enc = {
-            '_FillValue':fill_value, 
-            'missing_value':missing_value, 
-            'zlib': True, 'complevel': 9 # USE COMPRESSION?
-        }
-        encoding = {var: climate_enc for var in self.vars}
+    #     climate_enc = {
+    #         '_FillValue':fill_value, 
+    #         'missing_value':missing_value, 
+    #         'zlib': True, 'complevel': 9 # USE COMPRESSION?
+    #     }
+    #     encoding = {var: climate_enc for var in self.vars}
 
-        for axis in ['lat', 'lon', 'time']:
-            encoding[axis] =  {
-                '_FillValue':fill_value, 
-                'missing_value':missing_value, 
-                'dtype':'float'
-            }
+    #     for axis in ['lat', 'lon', 'time']:
+    #         encoding[axis] =  {
+    #             '_FillValue':fill_value, 
+    #             'missing_value':missing_value, 
+    #             'dtype':'float'
+    #         }
         
         
-        self.dataset.to_netcdf(
-            out_file, 
-            encoding=encoding, 
-            engine="netcdf4",
-            unlimited_dims={'time':True}
-        )
+    #     self.dataset.to_netcdf(
+    #         out_file, 
+    #         encoding=encoding, 
+    #         engine="netcdf4",
+    #         unlimited_dims={'time':True}
+    #     )
         
-
-        
-        
-    def reproject(self, crs):
-        if self.verbose: print(f'{self} Repojecting')
-        self.dataset = self.dataset.rio.reproject(crs)
+    # def reproject(self, crs):
+    #     if self.verbose: print(f'{self} Repojecting')
+    #     self.dataset = self.dataset.rio.reproject(crs)
 
 
-    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,resolution, alg=Resampling.bilinear):
+    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,**kwargs):#resolution, alg=):
         """Returns xr.dataset for use in downscaling
         """
+
+        resolution = kwargs['resolution'] if 'resolution' in kwargs else 4000
+        alg = kwargs['alg'] if 'alg' in kwargs else Resampling.bilinear
+
         # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
         if extent_crs != self.dataset.rio.crs:
             if self.verbose: print(f'{self} -- Repojecting to clip')
@@ -603,7 +605,7 @@ class AnnualDaily(annual.AnnualDaily):
             mask_x = ( local_dataset.x >= minx ) & ( local_dataset.x <= maxx )
             mask_y = ( local_dataset.y >= miny ) & ( local_dataset.y <= maxy )
         
-        tile = local_dataset.where(mask_x&mask_y, drop=True)
+        tile = local_dataset.where( mask_x & mask_y, drop=True)
         tile = tile.rio.write_crs(extent_crs, inplace=True)\
                    .rio.write_coordinate_system(inplace=True)
 

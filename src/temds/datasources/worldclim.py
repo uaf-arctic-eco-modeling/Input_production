@@ -5,18 +5,21 @@ WorldClim
 Data structures representing WorldClim data
 
 """
+from pathlib import Path
+import gc
+import shutil
+import copy
+
 
 from affine import Affine
 import xarray as xr
 import rioxarray  # activate 
 import numpy as np
 from osgeo import gdal
-from pathlib import Path
-import gc
-import shutil
 
-from .remote_zip import RemoteZip
-from .clip_xarray import clip_xr_dataset
+from temds.remote_zip import RemoteZip
+from temds.constants import MONTH_START_DAYS 
+from .base import TEMDataSet
 
 
 gdal.UseExceptions() ## gdal 4.0 future proofing
@@ -26,16 +29,27 @@ WORLDCLIM_VARS = (
     'tmin','tmax','tavg','prec','srad','wind','vapr'
 )
 
-DAYS_PER_MONTH = np.cumsum([31,28,31,30,31,30,31,31,30,31,30,31]) 
-MONTH_START_DAYS =  np.append([1], (DAYS_PER_MONTH + 1) )[:-1] 
+WORLDCLIM_NAMING_CONVENTION = 'wc2.1_30s_{var}'
 
-
-WORLDCLIM_2_1_URL_PATTERN = 'https://geodata.ucdavis.edu/climate/worldclim/2_1/base/wc2.1_30s_{var}.zip'
+WORLDCLIM_2_1_URL_PATTERN = f'https://geodata.ucdavis.edu/climate/worldclim/2_1/base/{WORLDCLIM_NAMING_CONVENTION}.zip'
 WORLDCLIM_URL_PATTERN = WORLDCLIM_2_1_URL_PATTERN
 
-class WorldClim(object):
+class WorldClim(TEMDataSet):
     """WorldClim data is monthly data that represents long term normal 
     climate conditions.
+
+    attributes
+    ----------
+    dataset: xr.Dataset
+        Contains a DataArray for each var in `vars` with a time step for
+        each month in `months`
+    vars: list
+        list of objects climate variables
+    verbose: bool
+        verbosity flag
+    months: list like
+        list of months represented by dataset
+        should contain only values from 1 to 12, non-repeating
     """
     def __init__ (self, 
             data_input,
@@ -104,14 +118,18 @@ class WorldClim(object):
                 cleanup_uncompressed=True, url_pattern=url,
                 **kwargs
             )
-
+        elif data_input.exists() and data_input.is_dir() and not extent_raster is None:
+            self.load_from_directory(
+                data_input, extent_raster, 
+                cleanup_uncompressed=True, 
+                resample_alg='bilinear', no_data=-3.4e+38
+            )
         ## elif...
         ## OTHER options could be implemented here. to load already downloaded
         ## data or whatever.
         else:
             if self.verbose: print('Data not initialized')
             # raise IOError('No data_inputs found')
-
     
     def new_from_raster_extent(self, raster):
         """Creates new xr.dataset for `self.dataset` using 
@@ -160,7 +178,9 @@ class WorldClim(object):
         shape = [n_months, rows, cols]
         empty_data = np.zeros(n_months * rows * cols)\
                        .reshape(shape).astype('float32')
-        data_vars = { var : (dims, empty_data ) for var in self.vars}
+        data_vars = { 
+            var : (dims, copy.deepcopy(empty_data) ) for var in self.vars
+        }
 
         doy = [MONTH_START_DAYS[mn-1] for mn in self.months]
         coords={
@@ -184,9 +204,6 @@ class WorldClim(object):
             .rio.write_crs(self.dataset.rio.crs.to_wkt(), inplace=True)\
             .rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)\
             .rio.write_coordinate_system(inplace=True)
-
-    
-
 
     def set_var_from_web(
             self, var, url, local_location, 
@@ -215,10 +232,6 @@ class WorldClim(object):
             when true clean up temporary unziped data
         **kwargs: dict
             arguments passed to non-default parameters of `set_var_from_zip`
-
-
-           
-
         """
         ## download with complete url so we need complete local location
         results = self.download(
@@ -267,7 +280,6 @@ class WorldClim(object):
         **kwargs: dict
             arguments passed to non-default parameters of `set_var_from_dir`
         """
-        
         if type(archive) is str:
             ## we can cheat and reuse this code if we manually set 
             # archive.local_file
@@ -282,7 +294,6 @@ class WorldClim(object):
 
         if cleanup:
             shutil.rmtree(in_dir)
-
 
     def set_var_from_dir(self, var, in_dir, file_format=None, **kwargs):
         """
@@ -381,91 +392,18 @@ class WorldClim(object):
             pixels = pixels[::-1]
             
         pixels[pixels <= -3e30] = np.nan # fix
-        pixels
-        del(result)
+        
         self.dataset[var][idx] = pixels # 0based index
         [gc.collect(i) for i in range(2)]
 
-
-    def save(self, out_file, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
-        """Save `dataset` as a netCDF file.
-
-        Parameters
-        ----------
-        out_file: path
-            file to save
-        missing_value: float, default 1.e+20
-        fill_value: float, default 1.e+20
-            values set as _FillValuem, and missing_value in netCDF variable
-            headers
-        """
-        climate_enc = {
-            '_FillValue':fill_value, 
-            'missing_value':missing_value, 
-            'zlib': True, 'complevel': 9 # USE COMPRESSION?
-        }
-        
-        for _var in self.vars:
-            self.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
-            
-        if  not out_file.exists() or overwrite:
-            self.dataset.to_netcdf(
-                    out_file, 
-                    # encoding=encoding, 
-                    engine="netcdf4",
-                    # unlimited_dims={'time':True}
-                )
-        else:
-            raise FileExistsError('The file {out_file} exists and `overwrite` is False')
-        
-    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs, resolution = None):
-        """Returns xr.dataset for use in downscaling
-
-        Parameters
-        ----------
-        minx: Float
-            Minimum x coord, in `self.dataset` projection
-        maxx: Float
-            Maximum x coord, in `self.dataset` projection
-        miny: Float
-            Minimum y coord, in `self.dataset` projection
-        maxy: Float
-            Maximum y coord, in `self.dataset` projection
-        resolution: float, Optional
-            Resolution of dataset to return, If None, The resolution is
-            not changed from `self.dataset`
-
-        Returns
-        -------
-        xarrray.Dataset
-            subset of data from extent (`minx`,`miny`)(`maxx`,`maxy`) and 
-            at `resolution`
-
-        """
-        if extent_crs != self.dataset.rio.crs:
-            local_dataset = self.dataset.rio.reproject(extent_crs)
-        else:
-            local_dataset = self.dataset
-
-        # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
-        if minx>maxx:
-            print('swap x')
-            minx, maxx = maxx,minx
-        if miny>maxy:
-            print('swap y')
-            miny, maxy = maxy,miny  
-                
-            
-        mask_x =  ( local_dataset.lon >= minx ) & ( local_dataset.lon <= maxx )
-        mask_y =  ( local_dataset.lat >= miny ) & ( local_dataset.lat <= maxy )
-        tile = local_dataset.where(mask_x&mask_y, drop=True)
-
-        tile.rio.write_crs(local_dataset.rio.crs, inplace=True)
-        return tile
-
     def load(self, in_path):
-        """Load daily data from a single file. Assumes file contains 
-        all required variables, correct extent and time steps
+        """loads monthly climate normals. Assumes file contains 
+        all required variables, correct extent and time steps.
+
+        Parameters
+        ----------
+        in_path: Path
+            path to nc file
         """
         if self.verbose: 
             print(f"...loading file '{in_path}' ...assuming correct time step and "
@@ -551,11 +489,33 @@ class WorldClim(object):
         if extent_raster:
             self.new_from_raster_extent(extent_raster)
         for var in self.vars:
-            self.set_var_from_web(
-                var, url_pattern.format(var=var), local_location,
-                cleanup=cleanup_uncompressed, 
-                resample_alg=resample_alg, no_data=no_data
-            )
+
+            
+            if Path(f'{local_location}/{var}').exists():
+                self.set_var_from_dir(
+                    var, 
+                    local_location, 
+                    resample_alg=resample_alg, 
+                    no_data=no_data
+                )
+            
+            else:
+                var_dir = WORLDCLIM_NAMING_CONVENTION.format(var=var)
+                archive = f'{local_location}/{var_dir}.zip'
+                self.set_var_from_zip(
+                    var, 
+                    archive, 
+                    local_location, 
+                    cleanup=cleanup_uncompressed, 
+                    resample_alg=resample_alg, 
+                    no_data=no_data
+                )
+        
+            # self.set_var_from_web(
+            #     var, url_pattern.format(var=var), local_location,
+            #     cleanup=cleanup_uncompressed, 
+            #     resample_alg=resample_alg, no_data=no_data
+            # )
 
     def download(self, url_pattern, local_location, vars='all', overwrite=False):
         """Download data, assumes remote data is in .zip format
@@ -603,3 +563,79 @@ class WorldClim(object):
                 key = 'download'
             completed[key] = archive
         return completed
+
+    # def save(self, out_file, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
+    #     """Save `dataset` as a netCDF file.
+
+    #     Parameters
+    #     ----------
+    #     out_file: path
+    #         file to save
+    #     missing_value: float, default 1.e+20
+    #     fill_value: float, default 1.e+20
+    #         values set as _FillValuem, and missing_value in netCDF variable
+    #         headers
+    #     """
+    #     climate_enc = {
+    #         '_FillValue':fill_value, 
+    #         'missing_value':missing_value, 
+    #         'zlib': True, 'complevel': 9 # USE COMPRESSION?
+    #     }
+        
+    #     for _var in self.vars:
+    #         self.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
+            
+    #     if  not out_file.exists() or overwrite:
+    #         self.dataset.to_netcdf(
+    #                 out_file, 
+    #                 # encoding=encoding, 
+    #                 engine="netcdf4",
+    #                 # unlimited_dims={'time':True}
+    #             )
+    #     else:
+    #         raise FileExistsError('The file {out_file} exists and `overwrite` is False')
+        
+    # def get_by_extent(self, minx, maxx, miny, maxy, extent_crs, resolution = None):
+    #     """Returns xr.dataset for use in downscaling
+
+    #     Parameters
+    #     ----------
+    #     minx: Float
+    #         Minimum x coord, in `self.dataset` projection
+    #     maxx: Float
+    #         Maximum x coord, in `self.dataset` projection
+    #     miny: Float
+    #         Minimum y coord, in `self.dataset` projection
+    #     maxy: Float
+    #         Maximum y coord, in `self.dataset` projection
+    #     resolution: float, Optional
+    #         Resolution of dataset to return, If None, The resolution is
+    #         not changed from `self.dataset`
+
+    #     Returns
+    #     -------
+    #     xarrray.Dataset
+    #         subset of data from extent (`minx`,`miny`)(`maxx`,`maxy`) and 
+    #         at `resolution`
+
+    #     """
+    #     if extent_crs != self.dataset.rio.crs:
+    #         local_dataset = self.dataset.rio.reproject(extent_crs)
+    #     else:
+    #         local_dataset = self.dataset
+
+    #     # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
+    #     if minx>maxx:
+    #         print('swap x')
+    #         minx, maxx = maxx,minx
+    #     if miny>maxy:
+    #         print('swap y')
+    #         miny, maxy = maxy,miny  
+                
+            
+    #     mask_x =  ( local_dataset.lon >= minx ) & ( local_dataset.lon <= maxx )
+    #     mask_y =  ( local_dataset.lat >= miny ) & ( local_dataset.lat <= maxy )
+    #     tile = local_dataset.where(mask_x&mask_y, drop=True)
+
+    #     tile.rio.write_crs(local_dataset.rio.crs, inplace=True)
+    #     return tile

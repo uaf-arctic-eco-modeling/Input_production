@@ -8,15 +8,7 @@ original bash script code is in each docstring
 import xarray as xr
 import numpy as np
 
-from .worldclim import MONTH_START_DAYS, DAYS_PER_MONTH
-
-
-from .constants import ZERO_C_IN_K, SECONDS_PER_DAY
-
- # - 1 for zero based adjustment
-get_month_slice = lambda mn: slice(MONTH_START_DAYS[mn]-1, DAYS_PER_MONTH[mn])
-
-
+from .constants import ZERO_C_IN_K, SECONDS_PER_DAY, get_month_slice
 
 def temperature(not_downscaled, correction_factors, keys):
     """downscaling code for tmin, tmax, tavg
