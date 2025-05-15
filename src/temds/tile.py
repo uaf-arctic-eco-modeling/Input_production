@@ -21,6 +21,9 @@ from . import downscalers
 from .datasources.annual import AnnualTimeSeries
 
 
+
+
+
 class Tile(object):
     """Object represents a "Tile" - a geographic area that can be
     downscaled. Downscaling refers to the process of taking coarse resolution
@@ -78,7 +81,7 @@ class Tile(object):
                       # }
         self.index = index # 2 tuple (H, V)
 
-        if isinstance(extent, list) and len(extent) == 4:
+        if (isinstance(extent, list) or isinstance (extent, tuple)) and len(extent) == 4:
             self.extent = pd.DataFrame([extent], columns=['minx', 'maxx', 'miny', 'maxy'])
         elif isinstance(extent, pd.DataFrame):
             self.extent = extent
@@ -95,27 +98,74 @@ class Tile(object):
         # information start implementing the stuff that is in downscaling.sh
         # however we end up re-naming the load/import functions here...
 
+    @staticmethod
+    def tile_from_manifest(in_file):
+        """create a new empty tile from a manifest file
+        
+        Parameters
+        ----------
+        in_file: Path
+            yml manifest file with 'index', 'extent', 'resolution', 'crs'
+            and 'buffer_px'
+
+        Returns
+        -------
+        Tile
+        """
+        with Path(in_file).open('r') as fd:
+            manifest = yaml.load(fd, yaml.Loader)
+
+        return Tile(
+            manifest['index'],
+            manifest['extent'],
+            manifest['resolution'],
+            manifest['crs'],
+            buffer_px = manifest['buffer_px'],
+        )
+
+    @staticmethod
+    def tile_from_directory(directory):
+        """load tile from a directory with a manifest file
+        
+        Parameters
+        ----------
+        directory: Path
+            must contain 'manifest.yml' with items needed by 
+            `tile_from_manifest` and 'data
+
+        Returns
+        -------
+        Tile
+        """
+        manifest = Path(directory).joinpath('manifest.yml')
+        new = Tile.tile_from_manifest(manifest)
+        new.load_from_directory(directory)
+        return new
+
+    
+    def __repr__(self):
+        """String Representation"""
+        idx = str(self.index)
+        data = ', '.join(self.data.keys())
+        msg = f'Tile: {idx} with data for: {data}'
+        return msg
+
 
     def load_from_directory(self, directory):
         """
         Create in memory from a directory of file(s)
         """
         
-        with Path(directory).join('manifest.yml').open('r') as fd:
-            mainifest = yaml.safe_load(fd)
+        with Path(directory).joinpath('manifest.yml').open('r') as fd:
+            manifest = yaml.load(fd, yaml.Loader)
 
-        for item, in_path in mainifest.items():
-            if Path(in_path).is_dir():
-                self.data[item] = []
+        for item, _file in manifest['data'].items():
+            in_path = Path(directory).joinpath(_file)
+            if in_path.is_dir():
+
+                self.data[item] = AnnualTimeSeries(in_path, crs=self.crs)
             else:
                 self.data[item] = xr.open_dataset(in_path, engine="netcdf4")
-
-
-    # def load_extent(self, extent_file):
-    #     """
-    #     """
-    #     pass
-
 
     def import_normalized(self, name, datasource, buffered=True, **kwargs):
         """Loads an item to `data` as name from datasource. Each datasource 
@@ -147,7 +197,7 @@ class Tile(object):
             minx, maxx, miny, maxy, self.crs, **kwargs
         ) 
 
-    def save(self, where, **kwargs): #missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
+    def save(self, where, **kwargs): 
         """Save `dataset` as a netCDF file.
 
         Parameters
@@ -159,7 +209,14 @@ class Tile(object):
             values set as _FillValuem, and missing_value in netCDF variable
             headers
         """
-        manifest = {}
+        manifest = {
+            'index': self.index,
+            'extent': self.extent,
+            'resolution': self.resolution,
+            'crs': self.crs,
+            'buffer_px': self.buffer_pixels,
+            'data': {}
+        }
 
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
 
@@ -204,7 +261,7 @@ class Tile(object):
                 #     op, 'crujra-{year}.nc', 
                 #     missing_value, fill_value, overwrite
                 # )
-                manifest[name] = str(name)
+                manifest['data'][name] = str(name)
                 continue
 
 
@@ -230,7 +287,7 @@ class Tile(object):
                         engine="netcdf4",
                         # unlimited_dims={'time':True}
                     )
-                manifest[name] = str( f'{name}.nc')
+                manifest['data'][name] = str( f'{name}.nc')
                 
             else:
                 raise FileExistsError('The file {out_file} exists and `overwrite` is False')

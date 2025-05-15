@@ -31,16 +31,15 @@ class AnnualTimeSeries(UserList):
 
     """
 
-    def __init__(self, data, verbose=True):
+    def __init__(self, data, verbose=True, **kwargs):
         """
         parameters
         ----------
         """
-        print(type(data))
-        if hasattr(data,'exists'): # TODO TEST
-            print('paths')
+        if hasattr(data,'exists'): 
+            if verbose: print(f'loading from directory: {data}')
             files = data.glob('*.nc')
-            data = [AnnualDaily(None, file) for file in files] 
+            data = [AnnualDaily(None, file, **kwargs) for file in files] 
 
 
         self.data = sorted(data)
@@ -233,7 +232,7 @@ class AnnualDaily(TEMDataSet):
         else:
             in_data = Path(in_data)
             if in_data.exists() and in_data.suffix == '.nc':
-                self.load(in_data, year_override=year)
+                self.load(in_data, year_override=year, **kwargs)
             elif in_data.exists() and in_data.is_dir(): 
                 self.load_from_raw(in_data, **kwargs)
             else:
@@ -262,7 +261,7 @@ class AnnualDaily(TEMDataSet):
 
     def load(
             self, in_path, year_override=None,
-            force_aoi_to='tmin', aoi_nodata = np.nan,
+            force_aoi_to=None, aoi_nodata = np.nan,
             crs = 'EPSG:4326'
         ):
         """Load daily data from a single file. Assumes file contains 
