@@ -176,6 +176,7 @@ class AnnualTimeSeries(UserList):
         ADType =  kwargs['ADType'] if 'ADType' in kwargs else AnnualDaily
         ATsType =  kwargs['ATsType'] if 'ATsType' in kwargs else AnnualTimeSeries
         parallel =  kwargs['parallel'] if 'parallel' in kwargs else False
+        n_jobs =  kwargs['n_jobs'] if 'n_jobs' in kwargs else None
 
         helper = lambda item: ADType(
             item.year, 
@@ -187,7 +188,7 @@ class AnnualTimeSeries(UserList):
 
         if parallel:
             # print('parallel')
-            tiles = Parallel(n_jobs=10)(
+            tiles = Parallel()(
                 delayed(helper)(item) for item in self.data
             )
         else:
