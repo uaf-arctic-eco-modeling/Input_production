@@ -150,7 +150,9 @@ class TEMDataSet(object):
         for _var in self.vars:
             self.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
             
+
         if  not Path(out_file).exists() or overwrite:
+            Path(out_file).mkdir(parents=True, exist_ok=True)
             self.dataset.to_netcdf(
                     out_file, 
                     # encoding=encoding, 
@@ -159,5 +161,5 @@ class TEMDataSet(object):
                 )
         else:
             raise FileExistsError(
-                'The file {out_file} exists and `overwrite` is False'
+                f'The file {out_file} exists and `overwrite` is False'
             )
