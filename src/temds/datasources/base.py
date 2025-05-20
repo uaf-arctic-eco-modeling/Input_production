@@ -74,7 +74,7 @@ class TEMDataSet(object):
             miny, maxy = maxy,miny  
                 
             
-        if hasattr(local_dataset, 'lat') and hasattr(local_dataset, 'lat'):
+        if hasattr(local_dataset, 'lat') and hasattr(local_dataset, 'lon'):
             print('ll')
             mask_x = ( local_dataset.lon >= minx ) & ( local_dataset.lon <= maxx )
             mask_y = ( local_dataset.lat >= miny ) & ( local_dataset.lat <= maxy )
