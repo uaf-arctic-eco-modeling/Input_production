@@ -140,25 +140,29 @@ class WorldClim(TEMDataSet):
             if self.verbose: print('Data not initialized')
             # raise IOError('No data_inputs found')
     
-    def new_from_raster_extent(self, raster):
+    def new_from_raster_extent(self, raster, buffer_px=30):
         """Creates new xr.dataset for `self.dataset` using 
-        the extent, transform, and projection of `raster`. `self.dataset` 
-        resolution and extent are calculated from `rasters` transform.
+        the extent, transform, and projection of `raster`. Also includes a
+        buffer, which ends up being helpful in downstream operations.
+        `self.dataset` resolution and extent are calculated from `rasters`
+        transform.
 
         Parameters
         ----------
         raster: path
             path to a raster file that can be opened as a gdal dataset
         """
+
         extent_ds = gdal.Open(raster)
         gt = extent_ds.GetGeoTransform()
-        minx = gt[0]
-        miny = gt[3]
-        maxx = minx + gt[1] * extent_ds.RasterXSize
-        maxy = miny + gt[5] * extent_ds.RasterYSize
+        minx = gt[0] - (buffer_px * extent_ds.RasterXSize)
+        miny = gt[3] - (buffer_px * extent_ds.RasterYSize)
+        maxx = minx + gt[1] * extent_ds.RasterXSize + (buffer_px * extent_ds.RasterXSize)
+        maxy = miny + gt[5] * extent_ds.RasterYSize + (buffer_px * extent_ds.RasterYSize)
         
         extent = (minx, miny, maxx, maxy) #_warp_order
         if self.verbose: print(f'extent {extent}')
+        if self.verbose: print(f'extents includes buffer of {buffer_px} pixels')
         x_res, y_res = gt[1], gt[5]
         if self.verbose: print(f'resolution, {x_res},{y_res}')
 
