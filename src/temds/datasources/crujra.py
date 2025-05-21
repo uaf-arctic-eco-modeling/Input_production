@@ -113,7 +113,7 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
     def get_by_extent(self, minx, maxx, miny, maxy, extent_crs , **kwargs):
         """"""
         kwargs['ADType'] = AnnualDaily
-        kwargs['ATsType'] =AnnualTimeSeries
+        kwargs['ATsType'] = AnnualTimeSeries
         return super().get_by_extent(
             minx, maxx, miny, maxy, extent_crs, 
             **kwargs
@@ -567,7 +567,7 @@ class AnnualDaily(annual.AnnualDaily):
 
         # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
         if extent_crs != self.dataset.rio.crs:
-            if self.verbose: print(f'{self} -- Repojecting to clip')
+            if self.verbose: print(f'{self} -- Reprojecting to clip')
             ballpark_buff = resolution * 10
             ballpark = gpd.GeoDataFrame(
                 geometry= [
