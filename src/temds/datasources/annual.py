@@ -284,7 +284,7 @@ class AnnualDaily(TEMDataSet):
         in_data: path
             When given an existing file (.nc), the file is loaded via `load`.
             or
-            When given an existing directly, raw data is loaded via 
+            When given an existing directory, raw data is loaded via 
             `load_from_raw`. Also provide **kwargs as needed to use as optional
             arguments in `load_from_raw`
         verbose: bool, default False
@@ -312,6 +312,7 @@ class AnnualDaily(TEMDataSet):
             When file/files to load is wrong format or do not exist
 
         """
+        # Why are we setting the year here and not looking it up?
         self.year = year
         self.dataset = None ## xarray data 
         self.verbose = verbose 
@@ -401,7 +402,7 @@ class AnnualDaily(TEMDataSet):
                 self.year = year_override
         except KeyError:
             raise AnnualDailyYearUnknownError(
-                f"Cannot load year form nc file {in_path}. "
+                f"Cannot load year from nc file {in_path}. "
                 "Missing 'data_year' attribute"
 
             )

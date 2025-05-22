@@ -1,25 +1,11 @@
 #!/usr/bin/env python
 
+#from temds import CloudShellBucketFiller
 
-
-from temds import CloudShellBucketFiller
-
-def test_1():
-
-  bf = CloudShellBucketFiller.CloudShellBucketFiller(root = "/home/tcarman2/")
-  for v in ('tmin', 'tmax',):# 'tmp', 'pre', 'dswrf', 'ugrd', 'vgrd', 'spfh', 'pres'):
-    for year in range(1901, 1905):
-      print(f"should get {v} {year}")
-      #bf.get_var(year)
-
-
-def test_2():
-  cbf = CloudShellBucketFiller.CloudShellBucketFiller(root = "/home/tcarman2")
-  vlist = ['ugrd', 'vgrd', 'spfh']
-  yrlist = range(1901,1905)
-  cbf.super_dl(vlist,yrlist) 
-
-
+# Not even sure how or if this should get tested using pytest on a local 
+# machine...abandoning for now, but here is a snipped of code that you can
+# user to interactively and manually experiment with the CloudShellBucketFiller
+# class.
 
 # INTERACTIVE SESSION...
 #

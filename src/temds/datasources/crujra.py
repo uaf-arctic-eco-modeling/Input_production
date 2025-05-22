@@ -5,13 +5,14 @@ CRU JRA
 Data structures representing CRU JRA data
 """
 import datetime
+import gc
 import os
 import gzip
 import shutil
 from pathlib import Path
 from collections import UserList
-import gc
 from copy import deepcopy
+
 
 import geopandas as gpd
 import numpy as np
@@ -19,9 +20,11 @@ import xarray as xr
 from rasterio.enums import Resampling
 from shapely.geometry import box
 from joblib import Parallel, delayed
+import cftime
 
 # from .clip_xarray import clip_xr_dataset
 from . import annual
+from . import errors
 from temds import climate_variables 
 from temds import constants
 
@@ -322,9 +325,12 @@ class AnnualDaily(annual.AnnualDaily):
                     cleanup = True
 
             temp = xr.open_dataset(_path, engine="netcdf4")
-            if temp.time.calendar not in ['365_day', 'noleap']:
-                raise InvalidCalendarError(
-                    f"Invalid calendar {temp.time.calendar} for file '{_path}'"
+            if not isinstance(temp.time.values[0], cftime.DatetimeNoLeap) and \
+                not hasattr(temp.time, 'calendar'):
+                raise errors.InvalidCalendarError(
+                    f"Unknown calendar for file '{_path}'. No time variable "
+                    "has no calendar attribute, and the time values are not in "
+                    "a recognized format."
                 )
 
             if aoi_extent is not None:
@@ -362,7 +368,8 @@ class AnnualDaily(annual.AnnualDaily):
             print('..All raw data successfully loaded clipped and resampled.')
             print('dataset initialized')
         
-
+    # This function is kinda similar to the base class load function???
+    # need to evaluate why we need both, or document why they are different!
     def load(self, in_path, **kwargs):
         """Load daily data from a single file. Assumes file contains 
         all required variables, correct extent and daily timestep
@@ -397,6 +404,9 @@ class AnnualDaily(annual.AnnualDaily):
             self.dataset = xr.ufuncs.add(self.dataset, mask)
 
 
+        # At this point self.year and year_override are both wrong, if 
+        # user passed a year to the __init__ that doesn't match the  year in the
+        # file name...
         try: 
             if self.year is None and year_override is None:
                 self.year = int(self.dataset.attrs['data_year'])
@@ -404,7 +414,7 @@ class AnnualDaily(annual.AnnualDaily):
                 self.year = year_override
         except KeyError:
             raise annual.AnnualDailyYearUnknownError(
-                f"Cannot load year form nc file {in_path}. "
+                f"Cannot load year from nc file {in_path}. "
                 "Missing 'data_year' attribute"
 
             )

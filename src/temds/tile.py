@@ -90,7 +90,7 @@ class Tile(object):
             raise TypeError("extent must be either a pandas DataFrame or a list of 4 items [minx, maxx, miny, maxy]")
 
         self.resolution = resolution # Maybe? Maybe inherent from TIF? 
-        self.buffer_area = buffer_px * self.resolution
+        self.buffer_area = buffer_px * self.resolution # maybe buffer_area is actually more of "buffer distance in projection units"
         self.buffer_pixels = buffer_px
         self.crs = crs
 
@@ -204,7 +204,7 @@ class Tile(object):
 
         kwargs['resolution'] = self.resolution
         if self.verbose: 
-            print(f'importing {name} from {datasource} to {extent}')
+            print(f'importing {name} from {datasource} for the extent: {extent}')
         self.data[name] = datasource.get_by_extent(
             minx, maxx, miny, maxy, self.crs, **kwargs
         ) 
