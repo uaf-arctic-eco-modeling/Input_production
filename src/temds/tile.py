@@ -21,6 +21,7 @@ from . import corrections
 from . import downscalers
 from .datasources import annual, downscaled
 
+from joblib import Parallel, delayed
 
 
 
@@ -330,7 +331,7 @@ class Tile(object):
         with manifest_file.open('w') as fd:
             yaml.safe_dump(manifest, fd, sort_keys=False)
 
-    def calculate_climate_baseline(self, start_year, end_year, target, source):
+    def calculate_climate_baseline(self, start_year, end_year, target, source, **kwargs):
         """Calculate the climate baseline for the tile from data in an 
         AnnulTimeseries object
 
@@ -348,7 +349,7 @@ class Tile(object):
         """
 
         self.data[target] = self.data[source].create_climate_baseline(
-            start_year, end_year
+            start_year, end_year, **kwargs
         )
 
     def calculate_correction_factors(
@@ -457,20 +458,27 @@ class Tile(object):
             temp.append(current)
         
         downscaled = xr.merge(temp)
+        downscaled.attrs['data_year'] = year
         return downscaled
 
 
-    def downscale_timeseries(self, downscaled_id, source_id, correction_id, variables):
+    def downscale_timeseries(self, downscaled_id, source_id, correction_id, variables, parallel=False):
         """
         Add downscaled to self.data dict as xarray dataset. 
         """
-        results = []
-        for year in self.data[source_id].range():
-            if self.verbose: print(f'Downscaling {year}')
-            data = self.downscale_year(year, source_id, correction_id, variables)
-            results.append(
-                downscaled.AnnualDaily(year, data, crs=self.crs)
+
+        if parallel:
+            results = Parallel()(
+                delayed(self.downscale_year)(year, source_id, correction_id, variables) for year in self.data[source_id].range()
             )
+        else:
+            results = []
+            for year in self.data[source_id].range():
+                if self.verbose: print(f'Downscaling {year}')
+                data = self.downscale_year(year, source_id, correction_id, variables)
+                results.append(
+                    downscaled.AnnualDaily(year, data, crs=self.crs)
+                )
         
-        self.data[downscaled_id] = downscaled.AnnualTimeSeries(results)
+        self.data[downscaled_id] = results#downscaled.AnnualTimeSeries(results)
 

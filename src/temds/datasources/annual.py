@@ -6,6 +6,8 @@ Base class Objects representing annual data
 """
 from collections import UserList
 from pathlib import Path
+from datetime import datetime
+import gc
 
 from joblib import Parallel, delayed
 
@@ -40,18 +42,42 @@ class AnnualTimeSeries(UserList):
         kwargs:
             forwarded to AnnualDaily's kwargs 
         """
-        if hasattr(data,'exists'): 
-            if verbose: print(f'loading from directory: {data}')
-            files = data.glob('*.nc')
-            data = [AnnualDaily(None, file, **kwargs) for file in files] 
+        ADType = AnnualDaily
+        if 'ADType' in kwargs:
+            ADType =  kwargs['ADType'] 
 
+        is_list_of_paths = isinstance(data, list) and isinstance(data[0], Path) 
+        is_dir = isinstance(data, Path) and data.is_dir()
+        if is_dir or is_list_of_paths: 
+
+            if is_dir:
+                if verbose: print(f'loading from directory: {data}')
+                files = list(data.glob('*.nc'))
+            else: # is list of paths
+                if verbose: print('loading from provided files')
+                files = data
+            
+            start = datetime.now()
+
+            data = []
+            for file in files:
+                if verbose: print(f'loading file{file}')
+                # print(f'loading file{file}')
+                data.append(ADType(None, file, verbose, **kwargs))
+
+             
+            total = (datetime.now()-start).total_seconds()
+            n_files = len(list(files))
+
+            if verbose:
+                print(f'Elapsed time: {total} seconds. Time per load {total/n_files} seconds')
 
         self.data = sorted(data)
         self.start_year = 0 ## start year not set
         self.verbose = verbose
         if hasattr(self.data[0], 'year'):
             self.start_year = self.data[0].year
-        elif  'data_year' in self.data[0].attrs['data_year']:
+        elif  'data_year' in self.data[0].attrs:
             self.start_year = self.data[0].attrs['data_year']
         
         self.check_continuity(raise_exception=True)
@@ -182,18 +208,20 @@ class AnnualTimeSeries(UserList):
             item.year, 
             item.get_by_extent(
                 minx, maxx, miny, maxy, extent_crs,
-                resolution=resolution,
+                **kwargs
             )
         )
 
         if parallel:
-            # print('parallel')
+            print('parallel')
             tiles = Parallel()(
                 delayed(helper)(item) for item in self.data
             )
         else:
+            print('not parallel')
             for item in self.data:
-                if self.verbose: print(f'{item} clipping' )
+                # if self.verbose: 
+                print(f'{item} clipping' )
                 c_tile = helper(item)
                 tiles.append(c_tile)
 
@@ -212,12 +240,26 @@ class AnnualTimeSeries(UserList):
             forwarded to each AnnualDaily.saves kwargs
             see base.TEMDataSet for details
         """
-        for item in self.data:
-            if self.verbose: print(f'{item} saving' )
-            op = Path(where)
-            op.mkdir(exist_ok=True, parents=True)
-            out_file = op.joinpath(name_pattern.format(year=item.year))
-            item.save(out_file, **kwargs)
+        parallel = kwargs['parallel'] if 'parallel' in kwargs else False
+
+        op = Path(where)
+        op.mkdir(exist_ok=True, parents=True)
+        # def helper(item):
+        #     out_file = op.joinpath(name_pattern.format(year=item.year))
+        #     item.save(out_file, **kwargs)
+        #     # gc.collect()
+            
+
+        if parallel:
+            Parallel()(
+                delayed(item.save)(op.joinpath(name_pattern.format(year=item.year)), **kwargs) for item in self.data
+            )
+        else:
+            for item in self.data:
+                if self.verbose: print(f'{item} saving' )
+                helper(item)
+                # out_file = op.joinpath(name_pattern.format(year=item.year))
+                # item.save(out_file, **kwargs)
 
     def range(self):
         """get year range
@@ -233,7 +275,7 @@ class AnnualDaily(TEMDataSet):
     """Daily for a year, This class 
     assumes data for a single year in input file
     """
-    def __init__ (self, year, in_data, verbose=False, _vars=[],  **kwargs):
+    def __init__ (self, year, in_data, verbose=False, _vars=[], **kwargs):
         """
         Parameters
         ----------
@@ -291,9 +333,11 @@ class AnnualDaily(TEMDataSet):
         else:
             in_data = Path(in_data)
             if in_data.exists() and in_data.suffix == '.nc':
+                if 'year_override_callback' in kwargs:
+                    year = int(kwargs['year_override_callback'](in_data.name))
                 self.load(in_data, year_override=year, **kwargs)
             elif in_data.exists() and in_data.is_dir(): 
-                self.load_from_raw(in_data, **kwargs)
+                self.load_from_raw(in_data, **kwargs) ## only on some types
             else:
                 raise IOError('No Inputs found')
 
@@ -318,32 +362,37 @@ class AnnualDaily(TEMDataSet):
 
         self.naming.update(new_scheme)
 
-    def load(
-            self, in_path, year_override=None,
-            force_aoi_to=None, aoi_nodata = np.nan,
-            crs = 'EPSG:4326'
-        ):
+    def load(self, in_path, **kwargs):
         """Load daily data from a single file. Assumes file contains 
         all required variables, correct extent and daily timestep
         """
+        print('annual')
+        
+        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
+        year_override = lookup(kwargs, 'year_override', None)
+        force_aoi_to = lookup(kwargs, 'force_aoi_to', None)
+        aoi_nodata = lookup(kwargs, 'aoi_nodata', np.nan)
+        crs = lookup(kwargs, 'crs', 'EPSG:4326')
+        chunks = lookup(kwargs, 'chunks', None)
+
+
         if self.verbose: 
             print(f"loading file '{in_path}' assuming correct timestemp and "
                   "region are set"
             )
         self.dataset = xr.open_dataset(in_path, engine="netcdf4")
 
-        try:
-            import dask
-            chunks = 'auto'
-        except ImportError:
-            chunks = None
         if self.verbose: print(f'...loading dataset {chunks=}')
-        self.dataset = xr.open_dataset(in_path, engine="netcdf4", chunks=chunks)
+        self.dataset = xr.open_dataset(
+            in_path, engine="netcdf4", chunks=chunks
+        )
 
-        if force_aoi_to:
+        if not force_aoi_to is None:
+            if self.verbose: print(f'force AOI to {force_aoi_to} AOI for all vars')
             aoi_idx = np.isnan(self.dataset[force_aoi_to].values)
-            for var in self.dataset.data_vars:
-                self.dataset[var].values[aoi_idx]=aoi_nodata
+            mask = aoi_idx.astype(float)
+            mask[mask == 1] = np.nan
+            self.dataset = self.dataset + mask
 
         try: 
             if self.year is None and year_override is None:

@@ -10,12 +10,15 @@ import gzip
 import shutil
 from pathlib import Path
 from collections import UserList
+import gc
+from copy import deepcopy
 
 import geopandas as gpd
 import numpy as np
 import xarray as xr
 from rasterio.enums import Resampling
 from shapely.geometry import box
+from joblib import Parallel, delayed
 
 # from .clip_xarray import clip_xr_dataset
 from . import annual
@@ -62,94 +65,20 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
         ----------
 
         """
-        super().__init__(data, verbose,  **kwargs)
-        
-        # if type(data) is Path: # TODO TEST
-        #     if verbose: print('loading form path')
-        #     files = data.glob('*.nc')
-        #     data = [AnnualDaily(file, verbose, **kwargs) for file in files] 
-
-
-        # self.data = sorted(data)
-        # self.start_year = 0 ## start year not set
-        # self.verbose = verbose
-        # if hasattr(self.data[0], 'year'):
-        #     self.start_year = self.data[0].year
-        # elif  'data_year' in self.data[0].attrs['data_year']:
-        #     self.start_year = self.data[0].attrs['data_year']
-
-    # def __repr__(self):
-    #     return('AnnualTimeSeries\n-'+'\n-'.join([str(i) for i in self.data]))
-
-    # def __setitem__(self, index, item):
-    #     raise annual.AnnualTimeSeriesError('__setitem__ is not supported in AnnualTimeseries')
-
-    # def insert(self, index, item):
-    #     raise annual.AnnualTimeSeriesError('insert is not supported in AnnualTimeseries')
-    
-    # def append(self, item):
-    #     raise annual.AnnualTimeSeriesError('append is not supported in AnnualTimeseries')
-    
-    # def extend(self, other):
-    #     raise annual.AnnualTimeSeriesError('extend is not supported in AnnualTimeseries')
-
-    # def __add__(self, other):
-    #     raise annual.AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
-    # def __radd__(self, other):
-    #     raise annual.AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
-    # def __iadd__(self, other):
-    #     raise annual.AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
-
-    # def __getitem__(self, index):
-    #     if type(index) is int:
-    #         yr = index-self.start_year
-    #     else: #slice
-    #         start = index.start - self.start_year
-    #         stop = index.stop - self.start_year if index.stop else None
-    #         step = index.step if index.step else None
-    #         yr = slice(start, stop, step)
-    #     return super().__getitem__(yr)
+        kwargs['ADType'] = AnnualDaily
+        super().__init__(data, verbose, **kwargs)
 
     def get_by_extent(self, minx, maxx, miny, maxy, extent_crs , **kwargs):
         """"""
         kwargs['ADType'] = AnnualDaily
-        kwargs['ATsType'] =AnnualTimeSeries
+        kwargs['ATsType'] = AnnualTimeSeries
         return super().get_by_extent(
             minx, maxx, miny, maxy, extent_crs, 
             **kwargs
         )
-        # tiles = []
-        # for item in self.data:
-        #     if self.verbose: print(f'{item} clipping' )
-        #     c_tile = AnnualDaily(
-        #         item.year, 
-        #         item.get_by_extent(
-        #             minx, maxx, miny, maxy, extent_crs, resolution
-        #         )
-        #     )
-        #     tiles.append(c_tile)
 
-        # return AnnualTimeSeries(tiles)
-
-    # def save(self, where, name_pattern, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
-    #     climate_enc = {
-    #         '_FillValue':fill_value, 
-    #         'missing_value':missing_value, 
-    #         'zlib': True, 'complevel': 9 # USE COMPRESSION?
-    #     }
-    #     for item in self.data:
-    #         if self.verbose: print(f'{item} saving' )
-    #         op = Path(where)
-    #         op.mkdir(exist_ok=True, parents=True)
-    #         out_file = op.joinpath(name_pattern.format(year=item.year))
-    #         item.save(out_file, missing_value, fill_value, overwrite)
-        # # for _var in ds.data_vars:
-        # #     print(_var)
-        #     # # ds[_var].rio.update_encoding(climate_enc, inplace=True)
-        #     # try: del ds[_var].attrs['_FillValue']
-        #     # except: pass
             
-    def create_climate_baseline(self, start_year, end_year):
+    def create_climate_baseline(self, start_year, end_year, parallel=False):
         """Create baseline climate variables for dataset; uses
         the methods defined in CRUJRA_RESAMPLE_LOOKUP Based on original 
         downscaling.sh line 77-80. Here calculations are split up by var
@@ -180,41 +109,50 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
             climate variable. Dimensions are x,y, time. Time dimensions has 
             12 times steps
         """
+
+        
         var_list = []
         doy = [constants.MONTH_START_DAYS[mn] for mn in range(12)]
 
-        for var, method in CRUJRA_RESAMPLE_LOOKUP.items():  
+        var_dict = {}
+        for var, method  in CRUJRA_RESAMPLE_LOOKUP.items():
             if self.verbose: print('creating baseline for', var, 'with', method)
-            ts = [self[yr].dataset[var] for yr in range(start_year, end_year+1)]
-            ts = xr.merge(ts)
-            daily_avg = ts.groupby(['time.dayofyear']).mean()
+            ts = [self[yr].dataset[var].values for yr in range(start_year, end_year)]
+            daily_avg = np.array(ts).mean(axis=0)
             temp = []
             for mn in range(12):
-                mn_data = daily_avg.sel(
-                    dayofyear=slice(
-                        constants.MONTH_START_DAYS[mn],
+                mn_slice = slice(
+                        constants.MONTH_START_DAYS[mn]-1, ## - 1 for 0 based
                         constants.DAYS_PER_MONTH[mn]
                     )
-                )
-                # print(mn, mn_data.dayofyear.shape, worldclim.DAYS_PER_MONTH[mn])
-                    
+                
+                mn_data = daily_avg[mn_slice]
+                if self.verbose: print('Monthly Shape:',mn_data.shape) 
                 if 'mean' == method:
-                    mn_ag = mn_data.mean('dayofyear')
-
+                    mn_ag=mn_data.mean(axis=0)
                 elif 'sum' == method:
-                    # skipna = False will preserve the no data areas instead 
-                    # of setting them to 0 
-                    mn_ag = mn_data.sum('dayofyear', skipna = False)
-
+                    mg_ag = np.nansum(mn_data, axis=0)
                 temp.append(mn_ag)
-            var_list.append(
-                xr.concat(temp, dim='time').assign_coords({'time': doy})
-            )
-        clim_ref = xr.merge(var_list)
+            var_cf = np.array(temp)
+            var_dict[var] = var_cf
+        
+        coords = {
+            'time': doy, 
+            'x': deepcopy(self[start_year].dataset.coords['x']), 
+            'y': deepcopy(self[start_year].dataset.coords['y'])
+        }
+
+        clim_ref = xr.Dataset(
+            {var: xr.DataArray(
+                var_dict[var], dims=['time','y','x'], coords=coords
+            ) for var in var_dict}
+        )
+        
         clim_ref.rio.write_crs(
             self[start_year].dataset.rio.crs.to_wkt(), 
             inplace=True
         )
+        gc.collect()
         return clim_ref
 
 ## ---- end of AnnualTimeSeries ----
@@ -323,35 +261,6 @@ class AnnualDaily(annual.AnnualDaily):
         """
         super().__init__(year, in_path, verbose, _vars,  **kwargs)
 
-        # self.year = year
-        # self.dataset = None ## xarray data 
-        # self.verbose = verbose 
-        # self.vars = _vars
-
-
-        # if type(in_path) is xr.Dataset:
-        #     self.dataset=in_path
-        # else:
-        #     in_path = Path(in_path)
-        #     if in_path.exists() and in_path.suffix == '.nc':
-        #         self.load(in_path, year_override=year, **kwargs)
-        #     elif in_path.exists() and in_path.is_dir(): 
-        #         self.load_from_raw(in_path, **kwargs)
-        #     else:
-        #         raise IOError('No Inputs found')
-
-    # def __repr__(self):
-    #     return(f"CRUJRAnnualDaily: {self.year}")
-
-    # def __lt__(self, other):
-    #     """less than for sort
-    #     """
-    #     if self.year is None or other.year is None:
-    #         raise AnnualDailyYearUnknownError(
-    #             "One of the AnnualDaily objcets"
-    #             " in comparison is missing 'year' attribute"
-    #         )
-    #     return self.year < other.year
 
 
     def load_from_raw(
@@ -454,30 +363,39 @@ class AnnualDaily(annual.AnnualDaily):
             print('dataset initialized')
         
 
-    def load(
-            self, in_path, year_override=None,
-            force_aoi_to='tmin', aoi_nodata = np.nan
-        ):
+    def load(self, in_path, **kwargs):
         """Load daily data from a single file. Assumes file contains 
         all required variables, correct extent and daily timestep
         """
+        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
+        year_override = lookup(kwargs, 'year_override', None)
+        force_aoi_to = lookup(kwargs, 'force_aoi_to', None)
+        aoi_nodata = lookup(kwargs, 'aoi_nodata', np.nan)
+        crs = lookup(kwargs, 'crs', 'EPSG:4326')
+        chunks = lookup(kwargs, 'chunks', None)
+
+
+
         if self.verbose: 
-            print(f"loading file '{in_path}' assuming correct timestemp and "
+            print(f"loading file '{in_path}' assuming correct timestep and "
                   "region are set"
             )
-            print(force_aoi_to, aoi_nodata)
-        try:
-            import dask
-            chunks = 'auto'
-        except ImportError:
-            chunks = None
-        if self.verbose: print(f'...loading dataset {chunks=}')
-        self.dataset = xr.open_dataset(in_path, engine="netcdf4", chunks=chunks)
 
-        if force_aoi_to:
-            aoi_idx = np.isnan(self.dataset[force_aoi_to].values)
-            for var in self.dataset.data_vars:
-                self.dataset[var].values[aoi_idx]=aoi_nodata
+
+        if self.verbose: print(f'...loading dataset {chunks=}')
+        self.dataset = xr.open_dataset(
+            in_path, engine="netcdf4", chunks=chunks
+        )
+
+
+        ## BUGGY with dask multiprocess
+        if not force_aoi_to is None:
+            if self.verbose: print(f'force AOI to {force_aoi_to} AOI for all vars')
+            aoi_idx = np.isnan(self.dataset[force_aoi_to].values[0])
+            mask = aoi_idx.astype(float)
+            mask[mask == 1] = np.nan
+            self.dataset = xr.ufuncs.add(self.dataset, mask)
+
 
         try: 
             if self.year is None and year_override is None:
@@ -497,78 +415,27 @@ class AnnualDaily(annual.AnnualDaily):
                  rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True).\
                  rio.write_coordinate_system(inplace=True) 
 
+            
+        gc.collect()
         if self.verbose: print('dataset initialized')
-    
-    # def save(self, out_file, missing_value=1.e+20, fill_value=1.e+20, overwrite=False):
-    #     """Save `dataset` as a netCDF file.
-
-    #     Parameters
-    #     ----------
-    #     out_file: path
-    #         file to save
-    #     missing_value: float, default 1.e+20
-    #     fill_value: float, default 1.e+20
-    #         values set as _FillValuem, and missing_value in netCDF variable
-    #         headers
-    #     """
-
-    #     # probably going to want to add to the history global attribute. From CF
-    #     # conventions page: 
-    #     # 
-    #     # history: Provides an audit trail for modifications
-    #     # to the original data. Well-behaved generic netCDF filters will
-    #     # automatically append their name and the parameters with which they
-    #     # were invoked to the global history attribute of an input netCDF file.
-    #     # We recommend that each line begin by indicating the date and time of
-    #     # day that the program was executed.
-
-    #     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    #     history_entry = f"{current_time}: Saved dataset to {out_file}. Resampled to daily and cropped to aoi extent by temds.crujra.AnnualDaily class, part of the Input_production project: https://github.com/uaf-arctic-eco-modeling/Input_production"
-    #     if 'history' in self.dataset.attrs:
-    #         self.dataset.attrs['history'] += "\n" + history_entry
-    #     else:
-    #         self.dataset.attrs['history'] = history_entry
-
-    #     self.dataset.attrs['data_year'] = self.year
-
-    #     climate_enc = {
-    #         '_FillValue':fill_value, 
-    #         'missing_value':missing_value, 
-    #         'zlib': True, 'complevel': 9 # USE COMPRESSION?
-    #     }
-    #     encoding = {var: climate_enc for var in self.vars}
-
-    #     for axis in ['lat', 'lon', 'time']:
-    #         encoding[axis] =  {
-    #             '_FillValue':fill_value, 
-    #             'missing_value':missing_value, 
-    #             'dtype':'float'
-    #         }
-        
-        
-    #     self.dataset.to_netcdf(
-    #         out_file, 
-    #         encoding=encoding, 
-    #         engine="netcdf4",
-    #         unlimited_dims={'time':True}
-    #     )
-        
-    # def reproject(self, crs):
-    #     if self.verbose: print(f'{self} Repojecting')
-    #     self.dataset = self.dataset.rio.reproject(crs)
-
 
     def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,**kwargs):#resolution, alg=):
         """Returns xr.dataset for use in downscaling
         """
+        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
 
-        resolution = kwargs['resolution'] if 'resolution' in kwargs else 4000
-        alg = kwargs['alg'] if 'alg' in kwargs else Resampling.bilinear
+        resolution = lookup(kwargs, 'resolution', 4000)
+        alg = lookup(kwargs, 'alg', Resampling.bilinear)
+        force_aoi_to = lookup(kwargs, 'force_aoi_to', None)
+        aoi_nodata = lookup(kwargs, 'aoi_nodata', np.nan)
+
+        # resolution = kwargs['resolution'] if 'resolution' in kwargs else 4000
+        # alg = kwargs['alg'] if 'alg' in kwargs else Resampling.bilinear
 
         # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
         if extent_crs != self.dataset.rio.crs:
             if self.verbose: print(f'{self} -- Repojecting to clip')
-            ballpark_buff = resolution * 10
+            ballpark_buff = resolution * 20
             ballpark = gpd.GeoDataFrame(
                 geometry= [
                     box(
@@ -578,24 +445,36 @@ class AnnualDaily(annual.AnnualDaily):
                 ],
                 crs = extent_crs
             )
-
             local_dataset = self.dataset\
                 .rio.clip(
                     ballpark.geometry.values, 
                     ballpark.crs, 
                     drop=True
-                )\
-                .rio.reproject(
+                )
+            gc.collect()
+
+            if not force_aoi_to is None:
+                ## this works, but dask doesn't like it 
+                if self.verbose: print(f'force AOI to {force_aoi_to} AOI for all vars')
+                aoi_idx = np.isnan(local_dataset[force_aoi_to].values[0])
+                mask = aoi_idx.astype(float)
+                mask[mask == 1] = aoi_nodata
+                local_dataset = xr.ufuncs.add(local_dataset, mask)
+
+            gc.collect()
+
+            local_dataset = local_dataset.rio.reproject(
                     extent_crs,
                     resolution=(resolution, resolution),
-                    resampling=alg
+                    resampling=alg,
+                    multithread=True,
+                    srcNodata=aoi_nodata,
+                    targetAlignedPixels=True
                 )
-
-
         else:
             local_dataset = self.dataset
 
-        # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
+        gc.collect()
         if minx>maxx:
             print('swap x')
             minx, maxx = maxx,minx
@@ -615,9 +494,16 @@ class AnnualDaily(annual.AnnualDaily):
         tile = tile.rio.write_crs(extent_crs, inplace=True)\
                    .rio.write_coordinate_system(inplace=True)
 
+        # fix, axes = plt.subplots(1,2)
+        # axes[0].imshow(tile['tmax'][0])
+        # axes[1].imshow(tile['pre'][0])
+        # plt.show()
+        # return
+
+
         # tile = tile\
         #     .rio.write_crs(extent_crs, inplace=True).rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True).rio.write_coordinate_system(inplace=True)
 
             # .rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)\
-            
+        gc.collect()
         return tile
