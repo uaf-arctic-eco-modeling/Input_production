@@ -10,6 +10,7 @@ import gzip
 import shutil
 from pathlib import Path
 from collections import UserList
+import cftime
 
 import geopandas as gpd
 import numpy as np
@@ -19,6 +20,7 @@ from shapely.geometry import box
 
 # from .clip_xarray import clip_xr_dataset
 from . import annual
+from . import errors
 from temds import climate_variables 
 from temds import constants
 
@@ -413,9 +415,12 @@ class AnnualDaily(annual.AnnualDaily):
                     cleanup = True
 
             temp = xr.open_dataset(_path, engine="netcdf4")
-            if temp.time.calendar not in ['365_day', 'noleap']:
-                raise InvalidCalendarError(
-                    f"Invalid calendar {temp.time.calendar} for file '{_path}'"
+            if not isinstance(temp.time.values[0], cftime.DatetimeNoLeap) and \
+                not hasattr(temp.time, 'calendar'):
+                raise errors.InvalidCalendarError(
+                    f"Unknown calendar for file '{_path}'. No time variable "
+                    "has no calendar attribute, and the time values are not in "
+                    "a recognized format."
                 )
 
             if aoi_extent is not None:
@@ -486,7 +491,7 @@ class AnnualDaily(annual.AnnualDaily):
                 self.year = year_override
         except KeyError:
             raise annual.AnnualDailyYearUnknownError(
-                f"Cannot load year form nc file {in_path}. "
+                f"Cannot load year from nc file {in_path}. "
                 "Missing 'data_year' attribute"
 
             )

@@ -352,7 +352,7 @@ class AnnualDaily(TEMDataSet):
                 self.year = year_override
         except KeyError:
             raise AnnualDailyYearUnknownError(
-                f"Cannot load year form nc file {in_path}. "
+                f"Cannot load year from nc file {in_path}. "
                 "Missing 'data_year' attribute"
 
             )
