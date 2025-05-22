@@ -6,8 +6,7 @@ custom exceptions for temds.datasources
 """
 
 class TEMDataSetUninitializeError(Exception):
-    """Raised of dataset is None and a base function is called
-    """
+    """Raised if dataset is None and a base function is called"""
     pass
 
 class AnnualDailyContinuityError(Exception):
@@ -16,6 +15,10 @@ class AnnualDailyContinuityError(Exception):
 
 class InvalidCalendarError(Exception):
     """Raise when the calendar attribute of the time dimension of the dataset is not 365_day or noleap"""
+    pass
+
+class AnnualDailyYearMismatchError(Exception):
+    """Raise when the year of the file does not match the year of the object"""
     pass
 
 class AnnualDailyYearUnknownError(Exception):
