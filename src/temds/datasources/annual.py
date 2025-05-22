@@ -270,6 +270,7 @@ class AnnualDaily(TEMDataSet):
             When file/files to load is wrong format or do not exist
 
         """
+        # Why are we setting the year here and not looking it up?
         self.year = year
         self.dataset = None ## xarray data 
         self.verbose = verbose 

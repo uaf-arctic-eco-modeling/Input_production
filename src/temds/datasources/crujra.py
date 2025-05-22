@@ -459,6 +459,8 @@ class AnnualDaily(annual.AnnualDaily):
             print('dataset initialized')
         
 
+    # This function is kinda similar to the base class load function???
+    # need to evaluate why we need both, or document why they are different!
     def load(
             self, in_path, year_override=None,
             force_aoi_to='tmin', aoi_nodata = np.nan
@@ -467,7 +469,7 @@ class AnnualDaily(annual.AnnualDaily):
         all required variables, correct extent and daily timestep
         """
         if self.verbose: 
-            print(f"loading file '{in_path}' assuming correct timestemp and "
+            print(f"loading file '{in_path}' assuming correct timestep and "
                   "region are set"
             )
             print(force_aoi_to, aoi_nodata)
@@ -484,6 +486,9 @@ class AnnualDaily(annual.AnnualDaily):
             for var in self.dataset.data_vars:
                 self.dataset[var].values[aoi_idx]=aoi_nodata
 
+        # At this point self.year and year_override are both wrong, if 
+        # user passed a year to the __init__ that doesn't match the  year in the
+        # file name...
         try: 
             if self.year is None and year_override is None:
                 self.year = int(self.dataset.attrs['data_year'])
