@@ -242,7 +242,7 @@ class AnnualDaily(TEMDataSet):
         in_data: path
             When given an existing file (.nc), the file is loaded via `load`.
             or
-            When given an existing directly, raw data is loaded via 
+            When given an existing directory, raw data is loaded via 
             `load_from_raw`. Also provide **kwargs as needed to use as optional
             arguments in `load_from_raw`
         verbose: bool, default False

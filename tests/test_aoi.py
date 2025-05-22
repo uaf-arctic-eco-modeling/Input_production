@@ -2,12 +2,9 @@
 
 
 import pytest
-import geopandas as gpd
 
 from temds import AOIMask
 from temds import tileindex
-from temds import tile
-from temds.datasources import worldclim
 
 
 def test_aoi_download():
