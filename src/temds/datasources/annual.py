@@ -6,6 +6,8 @@ Base class Objects representing annual data
 """
 from collections import UserList
 from pathlib import Path
+from datetime import datetime
+import gc
 
 from joblib import Parallel, delayed
 
@@ -16,6 +18,10 @@ import numpy as np
 from .base import TEMDataSet
 from .errors import AnnualDailyContinuityError, InvalidCalendarError
 from .errors import AnnualDailyYearUnknownError, AnnualTimeSeriesError
+
+
+import ctypes
+libc = ctypes.CDLL("libc.so.6") # clearing cache 
 
 
 class AnnualTimeSeries(UserList):
@@ -40,18 +46,48 @@ class AnnualTimeSeries(UserList):
         kwargs:
             forwarded to AnnualDaily's kwargs 
         """
-        if hasattr(data,'exists'): 
-            if verbose: print(f'loading from directory: {data}')
-            files = data.glob('*.nc')
-            data = [AnnualDaily(None, file, **kwargs) for file in files] 
+        ADType = AnnualDaily
+        if 'ADType' in kwargs:
+            ADType =  kwargs['ADType'] 
 
 
+        is_list_ds = isinstance(data, list) and isinstance(data[0], xr.Dataset)
+        is_list_of_paths = isinstance(data, list) and isinstance(data[0], Path) 
+        is_dir = isinstance(data, Path) and data.is_dir()
+        if is_dir or is_list_of_paths: 
+
+            if is_dir:
+                if verbose: print(f'loading from directory: {data}')
+                files = list(data.glob('*.nc'))
+            else: # is list of paths
+                if verbose: print('loading from provided files')
+                files = data
+            
+            start = datetime.now()
+
+            data = []
+            for file in files:
+                if verbose: print(f'loading file{file}')
+                # print(f'loading file{file}')
+                data.append(ADType(None, file, verbose, **kwargs))
+
+             
+            total = (datetime.now()-start).total_seconds()
+            n_files = len(list(files))
+
+            if verbose:
+                print(f'Elapsed time: {total} seconds. Time per load {total/n_files} seconds')
+
+        if is_list_ds:
+            data = [ADType(None, item, verbose, **kwargs) for item in data]
+
+        
         self.data = sorted(data)
         self.start_year = 0 ## start year not set
         self.verbose = verbose
         if hasattr(self.data[0], 'year'):
             self.start_year = self.data[0].year
-        elif  'data_year' in self.data[0].attrs['data_year']:
+        elif  'data_year' in self.data[0].attrs:
             self.start_year = self.data[0].attrs['data_year']
         
         self.check_continuity(raise_exception=True)
@@ -182,19 +218,30 @@ class AnnualTimeSeries(UserList):
             item.year, 
             item.get_by_extent(
                 minx, maxx, miny, maxy, extent_crs,
-                resolution=resolution,
+                **kwargs
             )
         )
 
         if parallel:
-            # print('parallel')
+            print('parallel')
             tiles = Parallel()(
                 delayed(helper)(item) for item in self.data
             )
         else:
+            print('not parallel')
             for item in self.data:
-                if self.verbose: print(f'{item} clipping' )
-                c_tile = helper(item)
+                # if self.verbose: 
+                print(f'{item} clipping' )
+                # c_tile = helper(item)
+                 
+                temp = item.get_by_extent(
+                        minx, maxx, miny, maxy, extent_crs,
+                        **kwargs
+                    )
+                c_tile = ADType(
+                    item.year,
+                    temp,
+                )
                 tiles.append(c_tile)
 
         return ATsType(tiles)
@@ -212,12 +259,26 @@ class AnnualTimeSeries(UserList):
             forwarded to each AnnualDaily.saves kwargs
             see base.TEMDataSet for details
         """
-        for item in self.data:
-            if self.verbose: print(f'{item} saving' )
-            op = Path(where)
-            op.mkdir(exist_ok=True, parents=True)
-            out_file = op.joinpath(name_pattern.format(year=item.year))
-            item.save(out_file, **kwargs)
+        parallel = kwargs['parallel'] if 'parallel' in kwargs else False
+
+        op = Path(where)
+        op.mkdir(exist_ok=True, parents=True)
+        # def helper(item):
+        #     out_file = op.joinpath(name_pattern.format(year=item.year))
+        #     item.save(out_file, **kwargs)
+        #     # gc.collect()
+            
+
+        if parallel:
+            Parallel()(
+                delayed(item.save)(op.joinpath(name_pattern.format(year=item.year)), **kwargs) for item in self.data
+            )
+        else:
+            for item in self.data:
+                if self.verbose: print(f'{item} saving' )
+                # helper(item)
+                out_file = op.joinpath(name_pattern.format(year=item.year))
+                item.save(out_file, **kwargs)
 
     def range(self):
         """get year range
@@ -233,7 +294,7 @@ class AnnualDaily(TEMDataSet):
     """Daily for a year, This class 
     assumes data for a single year in input file
     """
-    def __init__ (self, year, in_data, verbose=False, _vars=[],  **kwargs):
+    def __init__ (self, year, in_data, verbose=False, _vars=[], in_memory=True, **kwargs):
         """
         Parameters
         ----------
@@ -272,7 +333,7 @@ class AnnualDaily(TEMDataSet):
         """
         # Why are we setting the year here and not looking it up?
         self.year = year
-        self.dataset = None ## xarray data 
+        # self.dataset = None ## xarray data 
         self.verbose = verbose 
         
 
@@ -283,18 +344,31 @@ class AnnualDaily(TEMDataSet):
         ## GEOSPATIAL STUFF
         self.crs = None
         self.transform = None
+        self.in_memory = in_memory
 
 
-        if type(in_data) is xr.Dataset:
+        if isinstance(in_data, xr.Dataset):
+            # print(in_data.attrs['data_year'])
             self.dataset=in_data
+            if 'data_year' in in_data.attrs:
+                # print(year)
+                self.year = in_data.attrs['data_year']
             if 'crs' in kwargs:
                 self.crs = kwargs['crs']
         else:
             in_data = Path(in_data)
             if in_data.exists() and in_data.suffix == '.nc':
-                self.load(in_data, year_override=year, **kwargs)
+                if 'year_override_callback' in kwargs:
+                    year = int(kwargs['year_override_callback'](in_data.name))
+                if in_memory:
+                    self.load(in_data, year_override=year, **kwargs)
+                else:
+                    self.year = year
+                    self.dataset = in_data
+                    self.cached_load_kwargs = kwargs
+
             elif in_data.exists() and in_data.is_dir(): 
-                self.load_from_raw(in_data, **kwargs)
+                self.load_from_raw(in_data, **kwargs) ## only on some types
             else:
                 raise IOError('No Inputs found')
 
@@ -314,41 +388,48 @@ class AnnualDaily(TEMDataSet):
     def update_variable_names(self, new_scheme):
         """
         """
+        if not self.in_memory:
+            raise TypeError('Dataset must be in memory for this function')
         update_map = {self.naming[var] for var in new_scheme}
         self.dataset.rename(update_map)
 
         self.naming.update(new_scheme)
 
-    def load(
-            self, in_path, year_override=None,
-            force_aoi_to=None, aoi_nodata = np.nan,
-            crs = 'EPSG:4326'
-        ):
+    def load(self, in_path, **kwargs):
         """Load daily data from a single file. Assumes file contains 
         all required variables, correct extent and daily timestep
         """
+        if self.verbose: print('Loading With annual.AnnualDaily.load')
+        
+        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
+        year_override = lookup(kwargs, 'year_override', None)
+        force_aoi_to = lookup(kwargs, 'force_aoi_to', None)
+        aoi_nodata = lookup(kwargs, 'aoi_nodata', np.nan)
+        crs = lookup(kwargs, 'crs', 'EPSG:4326')
+        chunks = lookup(kwargs, 'chunks', None)
+
+
         if self.verbose: 
             print(f"loading file '{in_path}' assuming correct timestemp and "
                   "region are set"
             )
-        self.dataset = xr.open_dataset(in_path, engine="netcdf4")
 
-        try:
-            import dask
-            chunks = 'auto'
-        except ImportError:
-            chunks = None
         if self.verbose: print(f'...loading dataset {chunks=}')
-        self.dataset = xr.open_dataset(in_path, engine="netcdf4", chunks=chunks)
+        in_dataset = xr.open_dataset(
+            in_path, engine="netcdf4", chunks=chunks
+        )
 
-        if force_aoi_to:
-            aoi_idx = np.isnan(self.dataset[force_aoi_to].values)
-            for var in self.dataset.data_vars:
-                self.dataset[var].values[aoi_idx]=aoi_nodata
+        ## BUGGY with dask multiprocess
+        if not force_aoi_to is None:
+            if self.verbose: print(f'force AOI to {force_aoi_to} AOI for all vars')
+            aoi_idx = np.isnan(in_dataset[force_aoi_to].values)
+            mask = aoi_idx.astype(float)
+            mask[mask == 1] = np.nan
+            in_dataset = in_dataset + mask
 
         try: 
             if self.year is None and year_override is None:
-                self.year = int(self.dataset.attrs['data_year'])
+                self.year = int(in_dataset.attrs['data_year'])
             elif type(year_override) is int:
                 self.year = year_override
         except KeyError:
@@ -360,17 +441,24 @@ class AnnualDaily(TEMDataSet):
         x_dim = 'x'
         y_dim = 'y'
         if crs == 'EPSG:4326':
-            x_dim = 'lat'
-            y_dim ='lon'
-        self.dataset = \
-            self.dataset.rio.write_crs(crs, inplace=True).\
+            x_dim ='lon'
+            y_dim = 'lat'
+        in_dataset = \
+            in_dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
                  rio.write_coordinate_system(inplace=True) 
 
-        self.dataset = \
-            self.dataset.rio.write_crs(crs, inplace=True).\
+        in_dataset = \
+            in_dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
                  rio.write_coordinate_system(inplace=True) 
+        
+        gc.collect()
+        libc.malloc_trim(0)
+        if self.in_memory :
+            self._dataset=in_dataset
+            if self.verbose: print('dataset initialized')
+        else:
+            return in_dataset
 
-
-        if self.verbose: print('dataset initialized')
+       

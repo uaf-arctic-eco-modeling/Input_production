@@ -112,6 +112,7 @@ class WorldClim(TEMDataSet):
         self.vars = _vars
         self.months = list(months)
         
+        
         kwargs['local_location'] = kwargs['local_location'] \
                             if 'local_location' in kwargs else './_worldclim_'
         
@@ -139,7 +140,9 @@ class WorldClim(TEMDataSet):
         else:
             if self.verbose: print('Data not initialized')
             # raise IOError('No data_inputs found')
-    
+        self.resolution = abs(self.dataset.rio.transform().a)
+
+
     def new_from_raster_extent(self, raster, buffer_px=30):
         """Creates new xr.dataset for `self.dataset` using 
         the extent, transform, and projection of `raster`. Also includes a
