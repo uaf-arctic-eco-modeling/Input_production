@@ -51,7 +51,7 @@ def clip_opt_2 (dest, source, vars_dict, resample_alg, run_primer, nd_as_array):
     data_arrays = {}
     no_data = np.nan
     if nd_as_array:
-        no_data = [np.nan for i in range(n_ts)]
+        no_data = [np.nan for i in range(source.RasterCount)]
 
     for var in vars_dict:
         cur = vars_dict[var]
@@ -355,6 +355,8 @@ class TEMDataSet(object):
 
         """
         working_dataset = self.dataset
+        resolution = kwargs['resolution']
+
         if extent_crs != working_dataset.rio.crs:
             local_dataset = working_dataset.rio.reproject(extent_crs)
         else:
@@ -371,12 +373,25 @@ class TEMDataSet(object):
         if hasattr(local_dataset, 'lat') and hasattr(local_dataset, 'lon'):
             mask_x = ( local_dataset.lon >= minx ) & ( local_dataset.lon <= maxx )
             mask_y = ( local_dataset.lat >= miny ) & ( local_dataset.lat <= maxy )
+            
+            full_minx = int(local_dataset.lon.values[0])
+            full_miny = int(local_dataset.lat.values[0])
+            
+            full_maxx = int(local_dataset.lon.values[-1])
+            full_maxy = int(local_dataset.lat.values[-1])
         else: # x and y 
             mask_x = ( local_dataset.x >= minx ) & ( local_dataset.x <= maxx )
             mask_y = ( local_dataset.y >= miny ) & ( local_dataset.y <= maxy )
             
+            full_minx = int(local_dataset.x.values[0])
+            full_miny = int(local_dataset.y.values[0])
+            
+            full_maxx = int(local_dataset.x.values[-1])
+            full_maxy = int(local_dataset.y.values[-1])
+
         tile = local_dataset.where(mask_x&mask_y, drop=True)
 
+        
         if tile.rio.crs.to_epsg() != 4326:
             tile = tile.rename({'lat':'y', 'lon':'x'})
 
@@ -386,6 +401,19 @@ class TEMDataSet(object):
         else:
             tile = tile.rio.write_crs(extent_crs, inplace=True)\
                    .rio.write_coordinate_system(inplace=True)
+
+        pad_minx = max(0, int((full_minx - minx)//resolution))
+        pad_miny = max(0, int((full_miny - miny)//resolution))        
+        pad_maxx = max(0,int((maxx - full_maxx)//resolution))
+        pad_maxy = max(0,int((maxy - full_maxy)//resolution))
+
+        if not(pad_minx ==pad_miny == pad_maxx == pad_maxy==0):
+
+            tile = tile.pad({'x':(pad_minx, pad_maxx),'y':(pad_miny, pad_maxy)})
+            c_x, c_y = int((maxx-minx)/resolution), int((maxy-miny)/resolution)
+            x_coords = np.arange(minx+resolution/2, minx + c_x * resolution, resolution) 
+            y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
+            tile = tile.assign_coords({'x':x_coords, 'y':y_coords})
 
         return tile
 

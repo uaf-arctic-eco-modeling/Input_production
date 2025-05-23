@@ -254,7 +254,7 @@ class Tile(object):
             }
         H, V = self.index
         root = Path(where).joinpath(f'H{H:02d}_V{V:02d}')
-        if clear_existing and root.exists:
+        if clear_existing and root.exists():
             shutil.rmtree(str(root))
 
             
