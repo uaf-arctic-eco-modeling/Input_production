@@ -43,7 +43,7 @@ class Tile(object):
         the index (H,V) or N of the tile in the tile index primarily used for
         logging #TODO implement INT code
     extent: pandas.DataFrame
-        DataFrame with columns 'minx','maxx','miny','maxy', and a single row
+        DataFrame with columns 'minx', 'miny', 'maxx', 'maxy', and a single row
     resolution: float
         resolution of pixels for tile
     crs: ??
@@ -64,7 +64,7 @@ class Tile(object):
             the index (H,V) or N of the tile in the tile index
             primarily used for logging
         extent: pandas.DataFrame
-            DataFrame with columns 'minx','maxx','miny','maxy', and a single
+            DataFrame with columns 'minx', 'miny', 'maxx', 'maxy', and a single
             row
         resolution: float
             resolution of pixels for tile
@@ -87,7 +87,7 @@ class Tile(object):
         elif isinstance(extent, pd.DataFrame):
             self.extent = extent
         else:
-            raise TypeError("extent must be either a pandas DataFrame or a list of 4 items [minx, maxx, miny, maxy]")
+            raise TypeError("extent must be either a pandas DataFrame or a list of 4 items [minx, miny, maxx, maxy]")
 
         self.resolution = resolution # Maybe? Maybe inherent from TIF? 
         self.buffer_area = buffer_px * self.resolution # maybe buffer_area is actually more of "buffer distance in projection units"
@@ -194,10 +194,10 @@ class Tile(object):
         buffered: bool, Defaults True
             When true add buffer to tile data being clipped
         """
-        minx, maxx, miny, maxy = self.extent[
-            ['minx','maxx','miny','maxy']
+        minx, miny, maxx, maxy = self.extent[
+            ['minx', 'miny', 'maxx', 'maxy']
         ].iloc[0]
-        extent = minx, maxx, miny, maxy 
+        extent = minx, miny, maxx, maxy 
         if buffered:
             minx,maxx = minx-self.buffer_area,maxx+self.buffer_area
             miny,maxy = miny-self.buffer_area,maxy+self.buffer_area
@@ -222,10 +222,10 @@ class Tile(object):
             headers
         """ 
         
-        minx, maxx, miny, maxy = self.extent[
-            ['minx','maxx','miny','maxy']
+        minx, miny, maxx, maxy = self.extent[
+            ['minx', 'miny', 'maxx', 'maxy']
         ].iloc[0]
-        extent = minx, maxx, miny, maxy
+        extent = minx, miny, maxx, maxy
         manifest = {
             'index': self.index,
             'extent': extent,

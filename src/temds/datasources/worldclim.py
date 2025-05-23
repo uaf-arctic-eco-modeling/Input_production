@@ -611,7 +611,7 @@ class WorldClim(TEMDataSet):
     #     else:
     #         raise FileExistsError('The file {out_file} exists and `overwrite` is False')
         
-    # def get_by_extent(self, minx, maxx, miny, maxy, extent_crs, resolution = None):
+    # def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, resolution = None):
     #     """Returns xr.dataset for use in downscaling
 
     #     Parameters
@@ -640,7 +640,7 @@ class WorldClim(TEMDataSet):
     #     else:
     #         local_dataset = self.dataset
 
-    #     # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
+    #     # return clip_xr_dataset(self.dataset,minx, miny, maxx, maxy, resolution )
     #     if minx>maxx:
     #         print('swap x')
     #         minx, maxx = maxx,minx

@@ -185,7 +185,7 @@ class AnnualTimeSeries(UserList):
             yr = slice(start, stop, step)
         return super().__getitem__(yr)
 
-    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs, **kwargs ):
+    def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs ):
         """Get by extent. Can optionally promote to child classes if 
         ADType or ATsType are in kwargs
 
@@ -217,7 +217,7 @@ class AnnualTimeSeries(UserList):
         helper = lambda item: ADType(
             item.year, 
             item.get_by_extent(
-                minx, maxx, miny, maxy, extent_crs,
+                minx, miny, maxx, maxy, extent_crs,
                 **kwargs
             )
         )
@@ -235,7 +235,7 @@ class AnnualTimeSeries(UserList):
                 # c_tile = helper(item)
                  
                 temp = item.get_by_extent(
-                        minx, maxx, miny, maxy, extent_crs,
+                        minx, miny, maxx, maxy, extent_crs,
                         **kwargs
                     )
                 c_tile = ADType(

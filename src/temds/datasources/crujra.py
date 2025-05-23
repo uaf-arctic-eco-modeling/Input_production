@@ -71,12 +71,12 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
         kwargs['ADType'] = AnnualDaily
         super().__init__(data, verbose, **kwargs)
 
-    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs , **kwargs):
+    def get_by_extent(self, minx, miny, maxx, maxy, extent_crs , **kwargs):
         """"""
         kwargs['ADType'] = AnnualDaily
         kwargs['ATsType'] = AnnualTimeSeries
         return super().get_by_extent(
-            minx, maxx, miny, maxy, extent_crs, 
+            minx, miny, maxx, maxy, extent_crs, 
             **kwargs
         )
 
@@ -210,7 +210,7 @@ class AnnualDaily(annual.AnnualDaily):
         Saves the dataset as a NetCDF file.
     reproject(crs)
         Reprojects the dataset to a specified coordinate reference system (CRS).
-    get_by_extent(minx, maxx, miny, maxy, extent_crs, resolution, alg=Resampling.bilinear)
+    get_by_extent(minx, miny, maxx, maxy, extent_crs, resolution, alg=Resampling.bilinear)
         Extracts a subset of the dataset based on a specified geographic extent
         and resolution.
 
@@ -287,7 +287,7 @@ class AnnualDaily(annual.AnnualDaily):
             a directory containing raw cru jra files to be loaded by matching
             file_format. 
         aoi_extent: tuple, optional
-            clipping extent(minx, maxx, miny, maxy) geo-coordinates in 
+            clipping extent(minx, miny, maxx, maxy) geo-coordinates in 
             degrees(WGS84) # is this really the order we want?
         file_format: str, defaults None
             string that contains {var} and {yr} formatters to match. When 

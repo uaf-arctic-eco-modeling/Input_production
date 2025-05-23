@@ -395,12 +395,12 @@ class TEMDataSet(object):
         if tile.rio.crs.to_epsg() != 4326:
             tile = tile.rename({'lat':'y', 'lon':'x'})
 
-            tile = tile.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
-                     .rio.write_crs(extent_crs, inplace=True)\
-                     .rio.write_coordinate_system(inplace=True) 
-        else:
-            tile = tile.rio.write_crs(extent_crs, inplace=True)\
-                   .rio.write_coordinate_system(inplace=True)
+        tile = tile.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(extent_crs, inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+        # else:
+        #     tile = tile.rio.write_crs(extent_crs, inplace=True)\
+        #            .rio.write_coordinate_system(inplace=True)
 
         pad_minx = max(0, int((full_minx - minx)//resolution))
         pad_miny = max(0, int((full_miny - miny)//resolution))        
@@ -414,6 +414,10 @@ class TEMDataSet(object):
             x_coords = np.arange(minx+resolution/2, minx + c_x * resolution, resolution) 
             y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
             tile = tile.assign_coords({'x':x_coords, 'y':y_coords})
+            ## have to redo this here
+            tile = tile.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                     .rio.write_crs(extent_crs, inplace=True)\
+                     .rio.write_coordinate_system(inplace=True) 
 
         return tile
 
