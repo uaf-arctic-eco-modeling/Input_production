@@ -23,6 +23,10 @@ gdal.UseExceptions()
 
 from functools import cache
 
+
+import ctypes
+libc = ctypes.CDLL("libc.so.6") # clearing cache 
+
 @cache
 def clip_gdal_opt(dest, source, resample_alg, run_primer, nd_as_array):
     no_data = np.nan
@@ -162,6 +166,7 @@ class TEMDataSet(object):
         else:
             raise TypeError("get_by_extent: 'clip_with' must be 'gdal', or 'xarray'")
         gc.collect()
+        libc.malloc_trim(0)
         if flip_y: 
             tile = tile.reindex(y=list(reversed(tile.y)))
         if flip_x:
@@ -322,6 +327,7 @@ class TEMDataSet(object):
         del(source)
         del(dest)
         gc.collect()
+        libc.malloc_trim(0)
         return tile
 
     def get_by_extent_xr(self, minx, miny, maxx, maxy, extent_crs, **kwargs):

@@ -20,6 +20,10 @@ from .errors import AnnualDailyContinuityError, InvalidCalendarError
 from .errors import AnnualDailyYearUnknownError, AnnualTimeSeriesError
 
 
+import ctypes
+libc = ctypes.CDLL("libc.so.6") # clearing cache 
+
+
 class AnnualTimeSeries(UserList):
     """
     Base class for annual time series data
@@ -46,6 +50,8 @@ class AnnualTimeSeries(UserList):
         if 'ADType' in kwargs:
             ADType =  kwargs['ADType'] 
 
+
+        is_list_ds = isinstance(data, list) and isinstance(data[0], xr.Dataset)
         is_list_of_paths = isinstance(data, list) and isinstance(data[0], Path) 
         is_dir = isinstance(data, Path) and data.is_dir()
         if is_dir or is_list_of_paths: 
@@ -72,6 +78,10 @@ class AnnualTimeSeries(UserList):
             if verbose:
                 print(f'Elapsed time: {total} seconds. Time per load {total/n_files} seconds')
 
+        if is_list_ds:
+            data = [ADType(None, item, verbose, **kwargs) for item in data]
+
+        
         self.data = sorted(data)
         self.start_year = 0 ## start year not set
         self.verbose = verbose
@@ -266,9 +276,9 @@ class AnnualTimeSeries(UserList):
         else:
             for item in self.data:
                 if self.verbose: print(f'{item} saving' )
-                helper(item)
-                # out_file = op.joinpath(name_pattern.format(year=item.year))
-                # item.save(out_file, **kwargs)
+                # helper(item)
+                out_file = op.joinpath(name_pattern.format(year=item.year))
+                item.save(out_file, **kwargs)
 
     def range(self):
         """get year range
@@ -337,8 +347,12 @@ class AnnualDaily(TEMDataSet):
         self.in_memory = in_memory
 
 
-        if type(in_data) is xr.Dataset:
+        if isinstance(in_data, xr.Dataset):
+            # print(in_data.attrs['data_year'])
             self.dataset=in_data
+            if 'data_year' in in_data.attrs:
+                # print(year)
+                self.year = in_data.attrs['data_year']
             if 'crs' in kwargs:
                 self.crs = kwargs['crs']
         else:
@@ -440,6 +454,7 @@ class AnnualDaily(TEMDataSet):
                  rio.write_coordinate_system(inplace=True) 
         
         gc.collect()
+        libc.malloc_trim(0)
         if self.in_memory :
             self._dataset=in_dataset
             if self.verbose: print('dataset initialized')

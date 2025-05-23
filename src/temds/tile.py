@@ -230,7 +230,7 @@ class Tile(object):
             'index': self.index,
             'extent': extent,
             'resolution': self.resolution,
-            'crs': self.crs,
+            'crs': self.crs.to_wkt(),
             'buffer_px': self.buffer_pixels,
             'data': {}
         }
@@ -252,10 +252,9 @@ class Tile(object):
                 'missing_value':missing_value, 
                 'zlib': compress, 'complevel': complevel # USE COMPRESSION?
             }
-
         H, V = self.index
-        if clear_existing:
-            root = Path(where).joinpath(f'H{H:02d}_V{V:02d}')
+        root = Path(where).joinpath(f'H{H:02d}_V{V:02d}')
+        if clear_existing and root.exists:
             shutil.rmtree(str(root))
 
             
@@ -459,6 +458,13 @@ class Tile(object):
         
         downscaled = xr.merge(temp)
         downscaled.attrs['data_year'] = year
+
+        
+        downscaled.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
+        downscaled.rio.write_crs(source.rio.crs, inplace=True)
+        downscaled.rio.write_coordinate_system(inplace=True) 
+        downscaled.rio.write_transform(source.rio.transform(), inplace=True)
+
         return downscaled
 
 
@@ -480,5 +486,5 @@ class Tile(object):
                     downscaled.AnnualDaily(year, data, crs=self.crs)
                 )
         
-        self.data[downscaled_id] = results#downscaled.AnnualTimeSeries(results)
+        self.data[downscaled_id] = downscaled.AnnualTimeSeries(results)
 
