@@ -263,7 +263,7 @@ class AnnualDaily(annual.AnnualDaily):
 
         """
         super().__init__(year, in_path, verbose, _vars,  **kwargs)
-
+        self.resolution=None
 
 
     def load_from_raw(
@@ -298,6 +298,9 @@ class AnnualDaily(annual.AnnualDaily):
         cleanup_uncompressed: bool, default True
             if true uncompressed raw data is deleted when loading is complete
         """
+        if not self.in_memory:
+            raise TypeError('Feature requires in memory dataset')
+
         if self.verbose: print(f"Loading from raw data at '{data_path}'")
 
         if file_format is None:
@@ -361,159 +364,8 @@ class AnnualDaily(annual.AnnualDaily):
             temp = temp.assign_attrs( {'cell_methods':f'time:{method}'} )
             local_dataset = local_dataset.assign({var:temp})
             
-
-        
         self.dataset = local_dataset
         if self.verbose: 
             print('..All raw data successfully loaded clipped and resampled.')
             print('dataset initialized')
         
-    # This function is kinda similar to the base class load function???
-    # need to evaluate why we need both, or document why they are different!
-    def load(self, in_path, **kwargs):
-        """Load daily data from a single file. Assumes file contains 
-        all required variables, correct extent and daily timestep
-        """
-        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
-        year_override = lookup(kwargs, 'year_override', None)
-        force_aoi_to = lookup(kwargs, 'force_aoi_to', None)
-        aoi_nodata = lookup(kwargs, 'aoi_nodata', np.nan)
-        crs = lookup(kwargs, 'crs', 'EPSG:4326')
-        chunks = lookup(kwargs, 'chunks', None)
-
-
-
-        if self.verbose: 
-            print(f"loading file '{in_path}' assuming correct timestep and "
-                  "region are set"
-            )
-
-
-        if self.verbose: print(f'...loading dataset {chunks=}')
-        self.dataset = xr.open_dataset(
-            in_path, engine="netcdf4", chunks=chunks
-        )
-
-
-        ## BUGGY with dask multiprocess
-        if not force_aoi_to is None:
-            if self.verbose: print(f'force AOI to {force_aoi_to} AOI for all vars')
-            aoi_idx = np.isnan(self.dataset[force_aoi_to].values[0])
-            mask = aoi_idx.astype(float)
-            mask[mask == 1] = np.nan
-            self.dataset = xr.ufuncs.add(self.dataset, mask)
-
-
-        # At this point self.year and year_override are both wrong, if 
-        # user passed a year to the __init__ that doesn't match the  year in the
-        # file name...
-        try: 
-            if self.year is None and year_override is None:
-                self.year = int(self.dataset.attrs['data_year'])
-            elif type(year_override) is int:
-                self.year = year_override
-        except KeyError:
-            raise annual.AnnualDailyYearUnknownError(
-                f"Cannot load year from nc file {in_path}. "
-                "Missing 'data_year' attribute"
-
-            )
-
-        ## THIS needs to be done better
-        self.dataset = \
-            self.dataset.rio.write_crs('EPSG:4326', inplace=True).\
-                 rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True).\
-                 rio.write_coordinate_system(inplace=True) 
-
-            
-        gc.collect()
-        if self.verbose: print('dataset initialized')
-
-    def get_by_extent(self, minx, maxx, miny, maxy, extent_crs ,**kwargs):#resolution, alg=):
-        """Returns xr.dataset for use in downscaling
-        """
-        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
-
-        resolution = lookup(kwargs, 'resolution', 4000)
-        alg = lookup(kwargs, 'alg', Resampling.bilinear)
-        force_aoi_to = lookup(kwargs, 'force_aoi_to', None)
-        aoi_nodata = lookup(kwargs, 'aoi_nodata', np.nan)
-
-        # resolution = kwargs['resolution'] if 'resolution' in kwargs else 4000
-        # alg = kwargs['alg'] if 'alg' in kwargs else Resampling.bilinear
-
-        # return clip_xr_dataset(self.dataset,minx, maxx, miny, maxy, resolution )
-        if extent_crs != self.dataset.rio.crs:
-            if self.verbose: print(f'{self} -- Repojecting to clip')
-            ballpark_buff = resolution * 20
-            ballpark = gpd.GeoDataFrame(
-                geometry= [
-                    box(
-                        minx-ballpark_buff, miny-ballpark_buff,
-                        maxx+ballpark_buff, maxy+ballpark_buff,
-                    )
-                ],
-                crs = extent_crs
-            )
-            local_dataset = self.dataset\
-                .rio.clip(
-                    ballpark.geometry.values, 
-                    ballpark.crs, 
-                    drop=True
-                )
-            gc.collect()
-
-            if not force_aoi_to is None:
-                ## this works, but dask doesn't like it 
-                if self.verbose: print(f'force AOI to {force_aoi_to} AOI for all vars')
-                aoi_idx = np.isnan(local_dataset[force_aoi_to].values[0])
-                mask = aoi_idx.astype(float)
-                mask[mask == 1] = aoi_nodata
-                local_dataset = xr.ufuncs.add(local_dataset, mask)
-
-            gc.collect()
-
-            local_dataset = local_dataset.rio.reproject(
-                    extent_crs,
-                    resolution=(resolution, resolution),
-                    resampling=alg,
-                    multithread=True,
-                    srcNodata=aoi_nodata,
-                    targetAlignedPixels=True
-                )
-        else:
-            local_dataset = self.dataset
-
-        gc.collect()
-        if minx>maxx:
-            print('swap x')
-            minx, maxx = maxx,minx
-        if miny>maxy:
-            print('swap y')
-            miny, maxy = maxy,miny  
-                
-
-        if hasattr(local_dataset, 'lat') and hasattr(local_dataset, 'lat'):
-            mask_x = ( local_dataset.lon >= minx ) & ( local_dataset.lon <= maxx )
-            mask_y = ( local_dataset.lat >= miny ) & ( local_dataset.lat <= maxy )
-        else: # x and y 
-            mask_x = ( local_dataset.x >= minx ) & ( local_dataset.x <= maxx )
-            mask_y = ( local_dataset.y >= miny ) & ( local_dataset.y <= maxy )
-        
-        tile = local_dataset.where( mask_x & mask_y, drop=True)
-        tile = tile.rio.write_crs(extent_crs, inplace=True)\
-                   .rio.write_coordinate_system(inplace=True)
-
-        # fix, axes = plt.subplots(1,2)
-        # axes[0].imshow(tile['tmax'][0])
-        # axes[1].imshow(tile['pre'][0])
-        # plt.show()
-        # return
-
-
-        # tile = tile\
-        #     .rio.write_crs(extent_crs, inplace=True).rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True).rio.write_coordinate_system(inplace=True)
-
-            # .rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)\
-        gc.collect()
-        return tile

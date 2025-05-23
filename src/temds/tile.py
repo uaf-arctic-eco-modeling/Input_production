@@ -206,7 +206,7 @@ class Tile(object):
         if self.verbose: 
             print(f'importing {name} from {datasource} for the extent: {extent}')
         self.data[name] = datasource.get_by_extent(
-            minx, maxx, miny, maxy, self.crs, **kwargs
+            minx, miny, maxx, maxy, self.crs, **kwargs
         ) 
 
     def save(self, where, **kwargs): 

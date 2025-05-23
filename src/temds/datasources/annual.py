@@ -222,7 +222,16 @@ class AnnualTimeSeries(UserList):
             for item in self.data:
                 # if self.verbose: 
                 print(f'{item} clipping' )
-                c_tile = helper(item)
+                # c_tile = helper(item)
+                 
+                temp = item.get_by_extent(
+                        minx, maxx, miny, maxy, extent_crs,
+                        **kwargs
+                    )
+                c_tile = ADType(
+                    item.year,
+                    temp,
+                )
                 tiles.append(c_tile)
 
         return ATsType(tiles)
@@ -275,7 +284,7 @@ class AnnualDaily(TEMDataSet):
     """Daily for a year, This class 
     assumes data for a single year in input file
     """
-    def __init__ (self, year, in_data, verbose=False, _vars=[], **kwargs):
+    def __init__ (self, year, in_data, verbose=False, _vars=[], in_memory=True, **kwargs):
         """
         Parameters
         ----------
@@ -314,7 +323,7 @@ class AnnualDaily(TEMDataSet):
         """
         # Why are we setting the year here and not looking it up?
         self.year = year
-        self.dataset = None ## xarray data 
+        # self.dataset = None ## xarray data 
         self.verbose = verbose 
         
 
@@ -325,6 +334,7 @@ class AnnualDaily(TEMDataSet):
         ## GEOSPATIAL STUFF
         self.crs = None
         self.transform = None
+        self.in_memory = in_memory
 
 
         if type(in_data) is xr.Dataset:
@@ -336,7 +346,13 @@ class AnnualDaily(TEMDataSet):
             if in_data.exists() and in_data.suffix == '.nc':
                 if 'year_override_callback' in kwargs:
                     year = int(kwargs['year_override_callback'](in_data.name))
-                self.load(in_data, year_override=year, **kwargs)
+                if in_memory:
+                    self.load(in_data, year_override=year, **kwargs)
+                else:
+                    self.year = year
+                    self.dataset = in_data
+                    self.cached_load_kwargs = kwargs
+
             elif in_data.exists() and in_data.is_dir(): 
                 self.load_from_raw(in_data, **kwargs) ## only on some types
             else:
@@ -358,6 +374,8 @@ class AnnualDaily(TEMDataSet):
     def update_variable_names(self, new_scheme):
         """
         """
+        if not self.in_memory:
+            raise TypeError('Dataset must be in memory for this function')
         update_map = {self.naming[var] for var in new_scheme}
         self.dataset.rename(update_map)
 
@@ -367,7 +385,7 @@ class AnnualDaily(TEMDataSet):
         """Load daily data from a single file. Assumes file contains 
         all required variables, correct extent and daily timestep
         """
-        print('annual')
+        if self.verbose: print('Loading With annual.AnnualDaily.load')
         
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
         year_override = lookup(kwargs, 'year_override', None)
@@ -381,23 +399,23 @@ class AnnualDaily(TEMDataSet):
             print(f"loading file '{in_path}' assuming correct timestemp and "
                   "region are set"
             )
-        self.dataset = xr.open_dataset(in_path, engine="netcdf4")
 
         if self.verbose: print(f'...loading dataset {chunks=}')
-        self.dataset = xr.open_dataset(
+        in_dataset = xr.open_dataset(
             in_path, engine="netcdf4", chunks=chunks
         )
 
+        ## BUGGY with dask multiprocess
         if not force_aoi_to is None:
             if self.verbose: print(f'force AOI to {force_aoi_to} AOI for all vars')
-            aoi_idx = np.isnan(self.dataset[force_aoi_to].values)
+            aoi_idx = np.isnan(in_dataset[force_aoi_to].values)
             mask = aoi_idx.astype(float)
             mask[mask == 1] = np.nan
-            self.dataset = self.dataset + mask
+            in_dataset = in_dataset + mask
 
         try: 
             if self.year is None and year_override is None:
-                self.year = int(self.dataset.attrs['data_year'])
+                self.year = int(in_dataset.attrs['data_year'])
             elif type(year_override) is int:
                 self.year = year_override
         except KeyError:
@@ -409,17 +427,23 @@ class AnnualDaily(TEMDataSet):
         x_dim = 'x'
         y_dim = 'y'
         if crs == 'EPSG:4326':
-            x_dim = 'lat'
-            y_dim ='lon'
-        self.dataset = \
-            self.dataset.rio.write_crs(crs, inplace=True).\
+            x_dim ='lon'
+            y_dim = 'lat'
+        in_dataset = \
+            in_dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
                  rio.write_coordinate_system(inplace=True) 
 
-        self.dataset = \
-            self.dataset.rio.write_crs(crs, inplace=True).\
+        in_dataset = \
+            in_dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
                  rio.write_coordinate_system(inplace=True) 
+        
+        gc.collect()
+        if self.in_memory :
+            self._dataset=in_dataset
+            if self.verbose: print('dataset initialized')
+        else:
+            return in_dataset
 
-
-        if self.verbose: print('dataset initialized')
+       

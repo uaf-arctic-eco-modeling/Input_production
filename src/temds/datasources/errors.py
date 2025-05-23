@@ -9,6 +9,12 @@ class TEMDataSetUninitializeError(Exception):
     """Raised if dataset is None and a base function is called"""
     pass
 
+class TEMDataSetMissingResolutionError(Exception):
+    """Raised if dataset has unset resolution and the resolution is required to
+    proceed.
+    """
+    pass
+
 class AnnualDailyContinuityError(Exception):
     """Raise when if the there is a missing year in..."""
     pass
