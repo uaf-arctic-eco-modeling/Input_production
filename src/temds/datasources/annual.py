@@ -20,8 +20,13 @@ from .errors import AnnualDailyContinuityError, InvalidCalendarError
 from .errors import AnnualDailyYearUnknownError, AnnualTimeSeriesError
 
 
-import ctypes
-libc = ctypes.CDLL("libc.so.6") # clearing cache 
+try:
+    import ctypes
+    libc = ctypes.CDLL("libc.so.6") # clearing cache 
+    malloc_trim = libc.malloc_trim
+except:
+    malloc_trim = lambda x: x ## do nothing 
+
 
 
 class AnnualTimeSeries(UserList):
@@ -454,7 +459,7 @@ class AnnualDaily(TEMDataSet):
                  rio.write_coordinate_system(inplace=True) 
         
         gc.collect()
-        libc.malloc_trim(0)
+        malloc_trim(0)
         if self.in_memory :
             self._dataset=in_dataset
             if self.verbose: print('dataset initialized')
