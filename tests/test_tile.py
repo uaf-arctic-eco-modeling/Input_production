@@ -2,9 +2,16 @@
 
 import pytest
 import xarray
+import pyproj
 
 from temds import tile
 from temds.datasources import crujra
+
+
+def test_tile_crs(basic_tile):
+  assert isinstance(basic_tile.crs, pyproj.crs.crs.CRS)
+  assert basic_tile.crs.to_epsg() == 6931
+
 
 
 

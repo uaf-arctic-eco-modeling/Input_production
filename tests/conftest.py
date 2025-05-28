@@ -48,7 +48,7 @@ def basic_tile():
   hdx = tile_index['H'] == HIDX
   vdx = tile_index['V'] == VIDX
   bounds = tile_index[vdx & hdx].bounds
-  mytile = tile.Tile((HIDX,VIDX), bounds, 4000, tile_index.crs.to_wkt(), buffer_px=20)
+  mytile = tile.Tile((HIDX,VIDX), bounds, 4000, tile_index.crs, buffer_px=20)
 
   return mytile
 

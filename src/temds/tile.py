@@ -68,7 +68,7 @@ class Tile(object):
             row
         resolution: float
             resolution of pixels for tile
-        crs: ??
+        crs: pyproj.crs.crs.CRS
             CRS of tile. Items imported will be converted to this crs with
             pixel size of `resolution`
         buffer_px: int, Optional, Default = 20
@@ -188,9 +188,10 @@ class Tile(object):
         name: str
             used as key for datasource in `data`
         datasource: Object
-            Object must implement `get_by_extent` with 6 arguments (minx: float,
-            maxx: float, miny: float, maxy: float, crs:??, resolution: float)
-        ) 
+            Object must implement `get_by_extent` with 6 arguments
+            (minx: float, maxx: float, miny: float, maxy: float, 
+            extent_crs: pyproj.crs.crs.CRS, resolution: float)
+
         buffered: bool, Defaults True
             When true add buffer to tile data being clipped
         """
