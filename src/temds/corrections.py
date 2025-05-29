@@ -12,9 +12,8 @@ original bash script code is in each docstring
     # Shaman, J., and M. Kohn. 2009. “Absolute Humidity Modulates Influenza Survival, 
     # Transmission, and Seasonality.” PNAS 106 (9): 3243–8)
 """
-import xarray as xr
+import xarray as xr # unused import, but needed for type hints
 
-#TODO create constants.py
 from .constants import ZERO_C_IN_K, SECONDS_PER_DAY
 
 
@@ -30,7 +29,7 @@ def temperature(baseline, reference, keys):
         baseline climate data [monthly]
     reference: xr.Dataset
         reference climate data [monthly]
-     keys: dict 
+    keys: dict
         lookup table for variables in `baseline` and `reference`
 
         must contain items for:
