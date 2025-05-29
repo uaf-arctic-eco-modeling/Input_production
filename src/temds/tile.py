@@ -17,6 +17,7 @@ import xarray as xr
 import pandas as pd
 import yaml
 
+import pyproj # For handling CRS in a variety of formats
 from . import corrections 
 from . import downscalers
 from .datasources import annual, downscaled
@@ -221,8 +222,17 @@ class Tile(object):
         fill_value: float, default 1.e+20
             values set as _FillValuem, and missing_value in netCDF variable
             headers
-        """ 
-        
+        """
+        if isinstance(self.crs, str):
+            crs = pyproj.crs.CRS.from_wkt(self.crs)
+        elif isinstance(self.crs, pyproj.crs.crs.CRS):
+            crs = self.crs.to_wkt()
+        else:
+            raise TypeError(
+                f'CRS must be a string or pyproj.crs.crs.CRS, not {type(self.crs)}'
+            )
+
+
         minx, miny, maxx, maxy = self.extent[
             ['minx', 'miny', 'maxx', 'maxy']
         ].iloc[0]
@@ -231,7 +241,7 @@ class Tile(object):
             'index': self.index,
             'extent': extent,
             'resolution': self.resolution,
-            'crs': self.crs.to_wkt(),
+            'crs': crs,
             'buffer_px': self.buffer_pixels,
             'data': {}
         }
