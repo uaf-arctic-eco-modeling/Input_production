@@ -20,7 +20,7 @@ import yaml
 import pyproj # For handling CRS in a variety of formats
 from . import corrections 
 from . import downscalers
-from .datasources import annual, downscaled
+from .datasources import annual, downscaled, crujra
 
 from joblib import Parallel, delayed
 
@@ -173,8 +173,11 @@ class Tile(object):
         for item, _file in manifest['data'].items():
             in_path = Path(directory).joinpath(_file)
             if in_path.is_dir():
-
-                self.data[item] = annual.AnnualTimeSeries(in_path, crs=self.crs)
+                self.data[item] = crujra.AnnualTimeSeries(
+                    in_path, 
+                    crs=self.crs, 
+                    verbose=self.verbose
+                )
             else:
                 self.data[item] = xr.open_dataset(in_path, engine="netcdf4")
 
