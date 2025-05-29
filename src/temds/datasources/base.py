@@ -213,7 +213,7 @@ class TEMDataSet(object):
 
         ## Clipping with gdal ensures alignment
         ##  1) set up scratch gdal datasets in memory
-        ##  1.a) need to clipped find shape, abd geotransform from extent/resolution
+        ##  1.a) need to find clipped shape, and geotransform from extent/resolution
         ##  1.b) need same from source
         ##  1.c) N time steps from `dataset`
         ##  1.d) bounds in gdal order
@@ -451,9 +451,10 @@ class TEMDataSet(object):
                 Compression level for 'zlib'
         """
         if self.dataset is None:
-            raise TEMDataSetUninitializeError()
+            raise errors.TEMDataSetUninitializeError()
 
-        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
+        def lookup(kw, ke, de):
+            return kw[ke] if ke in kw else de
 
         fill_value = lookup(kwargs, 'fill_value', 1.0e+20 )
         missing_value = lookup(kwargs, 'missing_value', 1.0e+20 )
