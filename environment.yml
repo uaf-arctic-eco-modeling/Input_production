@@ -1,0 +1,27 @@
+name: temds
+channels:
+  - conda-forge
+dependencies:
+  - python >=3.9,<3.12
+  - xarray=2025.4.0
+  - dask=2025.4.0
+  - rioxarray=0.18.2
+  - jupyter=1.1.1
+  - numpy=2.2.1
+  - requests=2.32.3
+  - pandas=2.2.3
+  - cryptography=44.0.0
+  - netCDF4=1.7.2
+  - geopandas=1.0.1
+  - nco=5.3.0
+  - udunits=2.2.17 
+  - gdal=3.10.0
+  - libgdal-netcdf=3.10.0
+  - pytest=8.3.4 
+  - typer=0.15.2 
+  - pip # for --editable install...maybe there is a way to do with with conda?
+
+
+
+
+

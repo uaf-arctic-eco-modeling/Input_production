@@ -1,0 +1,76 @@
+
+global: # global settings
+  overwrite: True 
+  directories: # directories
+    root: './working'
+    aoi: aoi 
+    download: downloads
+    preprocessed: arctic
+    tiles: tiles
+    final: downscaleds
+
+##<aoi> as shortcut sto indicate in aoi 
+## code currently only supports full path
+## but this is an Idea 
+aoi:
+  name: 'arctic' ## short name for aoi
+  ##<aoi> as shortcut sto indicate in aoi 
+  ## code currently only supports full path
+  ## but this is an Idea 
+  raster: <in-aoi>aoi_5km_buffer_6931.tiff
+
+worldclim: # worldclim settings
+  url: default ## default finds url saved in code
+  vars: 'all' # test with ['prec'] for speed reasons # or a list of specific variables i.e ['tmin', 'tmax', 'pre']
+
+
+
+
+
+### other potential STUFF
+# general:
+#   alpha: "a general setting of some sort"
+#   work_directory: working # <-- could be somewhere elese on your computer.
+
+# mask:
+#   resolution: 4000            # meters
+#   dest_dir: 'build/mask/'     # 
+
+# tiling:
+#   #outdir: 'build/tile_index/'
+#   mask: 'build/mask/aoi_5k_buff_6931.tiff'
+#   ### Output directory
+#   outdir='?'
+
+#   ### CRU-JRA input directory
+#   cjdir : 'bucket_data/'
+#   cjdir='/Volumes/5TII/DATA/CLIMATE/CRU_JRA_daily'
+#   ## Resolution in degree
+
+#   ## List of variables to download
+#   cjvarlist=('tmin' 'tmax' 'tmp' 'pre' 'dswrf' 'ugrd' 'vgrd' 'spfh' 'pres')
+#   ### WORLDCLIM input directory
+#   wcdir='/Volumes/5TII/DATA/CLIMATE/WorldClim'
+#   ### CMIP input directory
+#   cmipdir='/Volumes/5TII/DATA/CLIMATE/CMIP'
+#   ### Path to the mask
+#   mask='/Volumes/5TI/DATAprocessed/MASK/processed_data/aoi_5k_buff_6931.tiff'
+#   ### Longitudinal and latitudinal sizes of the tiles in number of pixels, npx and npy respectively.
+#   npx=100
+#   npy=100
+
+
+# crujra:
+#   version:
+#     - 2.5
+#   creds:
+#    - uname: 
+#    - pw: 
+#   start_year: 1901
+#   end_year: 2023
+#   varlist: tmin tmax tmp pre dswrf ugrd vgrd spfh pres
+#   resolution: 0.5
+#   dest_dir:
+#   name_pattern:
+
+# cmip6:
