@@ -219,12 +219,19 @@ class Tile(object):
 
         Parameters
         ----------
-        out_file: path
-            file to save
-        missing_value: float, default 1.e+20
-        fill_value: float, default 1.e+20
-            values set as _FillValuem, and missing_value in netCDF variable
-            headers
+        where: str or Path
+            Directory to save tile data to. A subdirectory Hxx_Vxx will be
+            created if it does not exist.
+
+        **kwargs
+            fill_value: float, default 1.0e+20
+            missing_value: float, default 1.0e+20
+            use_zlib: bool, default True
+            complevel: int, default 9
+            overwrite: bool, default False
+            items: list, default self.data.keys()
+            update_manifest: bool, default False
+            clear_existing: bool, default False
         """
         if isinstance(self.crs, str):
             crs = pyproj.crs.CRS.from_wkt(self.crs)
@@ -274,7 +281,7 @@ class Tile(object):
             
         for name, ds in self.data.items():
             
-            if not name in to_save:
+            if name not in to_save:
                 continue
             if self.verbose: print(f'Saving: {name}')
             
