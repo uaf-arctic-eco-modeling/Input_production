@@ -242,6 +242,8 @@ class Tile(object):
                 f'CRS must be a string or pyproj.crs.crs.CRS, not {type(self.crs)}'
             )
 
+        # Maybe better force to either WKT or pyproj.crs.crs.CRS object above?
+        # Prevents having to do type checking later...
 
         minx, miny, maxx, maxy = self.extent[
             ['minx', 'miny', 'maxx', 'maxy']
@@ -251,7 +253,7 @@ class Tile(object):
             'index': self.index,
             'extent': extent,
             'resolution': self.resolution,
-            'crs': crs,
+            'crs': crs if isinstance(crs, str) else crs.to_wkt(),
             'buffer_px': self.buffer_pixels,
             'data': {}
         }
