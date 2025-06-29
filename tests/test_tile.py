@@ -6,7 +6,7 @@ import pyproj
 
 from temds import tile
 from temds.datasources import crujra
-
+from temds import datasources 
 
 def test_tile_crs(basic_tile):
   assert isinstance(basic_tile.crs, pyproj.crs.crs.CRS)
@@ -55,4 +55,10 @@ def test_tile_loaded_datasets(loaded_tile):
   
   # CRS of all parties involved?
   # Check bounds of cru and world clim?
+
+def test_tile_downscaled(downscaled_tile):
+
+  assert isinstance(downscaled_tile.data['downscaled_cru'], datasources.crujra.AnnualTimeSeries)
+  assert isinstance(downscaled_tile.data['downscaled_cru'], datasources.crujra.AnnualDaily)
+
 
