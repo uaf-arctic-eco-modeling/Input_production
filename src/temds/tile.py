@@ -516,8 +516,22 @@ class Tile(object):
         [[ DRAFT ]]
         Convert downscaled data to a format suitable for TEM (Terrestrial Ecosystem Model).
 
+        This implements the "Synthesize to monthly" logic from 
+        original-scripts/downscaling.sh:259.
+
         Returns the unbuffered tile data, as an xarray Dataset with variables renamed to match TEM expectations.
         '''
+        # the self.data['downscaled_cru'] is an AnnualTimeSeries object which is
+        # a list of AnnualDaily objects. Each AnnualDaily object has a data 
+        # attribute which is an xarray Dataset with daily data for a single year.
+
+        # Here we are resampling from daily to monthly data and renaming variable.
+
+        # Note: it might be better to concat this first and the resample...might provide
+        # better numbers at the year boundaries?
+        # Note: might need to confirm that the precip resample is doing what we 
+        # want...does it sum over the previous month? This month? or a window 
+        # around the start of the month?
         ds_lst = []
         for year in self.data['downscaled_cru'].range():
 
