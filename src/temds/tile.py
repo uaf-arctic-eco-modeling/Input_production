@@ -511,10 +511,12 @@ class Tile(object):
         
         self.data[downscaled_id] = downscaled.AnnualTimeSeries(results)
 
-    def to_TEM(self, where, **kwargs):
+    def to_TEM(self):
         '''
         [[ DRAFT ]]
         Convert downscaled data to a format suitable for TEM (Terrestrial Ecosystem Model).
+
+        Returns the unbuffered tile data, as an xarray Dataset with variables renamed to match TEM expectations.
         '''
         ds_lst = []
         for year in self.data['downscaled_cru'].range():
