@@ -57,3 +57,9 @@ def loaded_tile(basic_tile, worldclim_object, cru_arctic_timeseries_micro):
   basic_tile.import_normalized('worldclim', worldclim_object)
   basic_tile.import_normalized('crujra', cru_arctic_timeseries_micro)
   return basic_tile
+
+@pytest.fixture(scope='module')
+def downscaled_tile():
+  '''Takes ~30s to load full timeseries.'''
+  _tile = tile.Tile.tile_from_directory("working/04-tiles-downscaled/H00_V08/")
+  return _tile
