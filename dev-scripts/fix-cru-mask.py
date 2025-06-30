@@ -1,19 +1,33 @@
-"""code to fix cru precip and dswrf data masks"""
+#!/usr/bin/env python
+"""code to fix cru precip and dswrf data masks
+
+This exists because in our initial run on the cloud of the "crop to arctic,
+resample to daily from hourly", the cru precip and dswrf data was summed with an
+algorithm that did not properly handle no data values, resulting in some grid
+cells being zero when they should have been nodata.
+
+We fixed the code that does the crop/resample, but that step was slow and never
+got bundled up into an easy thing to run, so here we just fix the data that has
+already been processed. It is fixed by applying the tmax mask to the other
+variables.
+"""
 
 from temds.datasources import crujra, annual
 from pathlib import Path
 import numpy as np
 import xarray as xr
 import gc
+import joblib
+
+
 
 
 ## UPDATE THIS IF RUNNING LOCALLY
-data_root = Path('...')
+data_root = Path('working')
 
 callback = lambda fn: int(Path(fn).name.split('.')[-4])
 
-files = data_root.joinpath('02-arctic/cru-jra/')
-import joblib
+files = data_root.joinpath('02-arctic/cru-jra-25/')
 
 out_root = data_root.joinpath('02-arctic/cru-jra-fixed')
 
