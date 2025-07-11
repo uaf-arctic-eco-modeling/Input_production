@@ -1,10 +1,21 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = [
+  "setuptools>=61.0",
+  "versioningit" 
+]
+# Including versioningit in the build system requires seems to work for 
+# "distributions" but does not stay up-to-date when running code in development
+# development... seems like we need to specify tool in environemnt.yml file for 
+# that...
+
 build-backend = "setuptools.build_meta"
+
+
+
 
 [project]
 name = "temds"
-dynamic = ["version", "readme"]
+dynamic = ["version"]
 license = {file = "LICENSE.txt"}
 description = 'TODO'
 requires-python = ">=3.8"
@@ -26,8 +37,8 @@ dependencies = [
 ]
 
 [tool.setuptools.dynamic]
-version = {attr = "temds.__version__"} 
-readme = {file = ["README.md"]}
+
+[tool.versioningit]
 
 [project.urls]
 Homepage = "https://github.com/uaf-arctic-eco-modeling/Input_production"

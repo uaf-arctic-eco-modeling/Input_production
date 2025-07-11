@@ -18,8 +18,11 @@ import pandas as pd
 import yaml
 
 import pyproj # For handling CRS in a variety of formats
+
 from . import corrections 
 from . import downscalers
+from . import util
+
 from .datasources import annual, downscaled, crujra
 
 from joblib import Parallel, delayed
@@ -298,6 +301,7 @@ class Tile(object):
                         if overwrite and out_file.exists():
                             out_file.unlink()
                         item.dataset.attrs['data_year'] = item.year    
+                        item.dataset.attrs['temds_git_version'] = f"{util.Version()}"
                         item.dataset.to_netcdf(
                             out_file, 
                             # encoding=encoding, 
@@ -560,5 +564,11 @@ class Tile(object):
         mask_y = (buffered_ds.y >= self.extent['miny'].squeeze()) & (buffered_ds.y <= self.extent['maxy'].squeeze())
 
         unbuffered_ds = buffered_ds.where(mask_x & mask_y, drop=True)
+
+        # This is kind of the fast/dirty way to do this...might be better to 
+        # use the .save(...) method to standardize the output a bit more...
+
+        print("Putting metadata in attrs....{}".format(util.Version()))
+        unbuffered_ds.attrs['temds_git_version'] = f"{util.Version()}"
 
         return unbuffered_ds

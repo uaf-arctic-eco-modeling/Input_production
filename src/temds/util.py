@@ -6,6 +6,16 @@ import errno
 
 from osgeo import gdal
 
+from importlib.metadata import version
+
+
+def Version():
+  '''Return the dynamic version string. Managed by a special tool called
+  versioningit which is driven by git tags. Its magic.'''
+
+  __version__ = version("temds")
+  return f"{__version__}"
+
 '''
 '''
 
