@@ -55,6 +55,19 @@ CRUJRA_RESAMPLE_LOOKUP = {
     
 }
 
+CRUJRA_BASELINE_LOOKUP = {
+    'tmin': 'mean',
+    'tmax': 'mean',
+    'tmp': 'mean',
+    'pre': 'sum',  
+    'dswrf': 'mean',
+    'ugrd': 'mean',
+    'vgrd': 'mean',
+    'spfh': 'mean',
+    'pres': 'mean',
+    
+}
+
 CRUJRA_RESAMPLE_METHODS  = {
     'mean': lambda x: x.resample(time='1D').mean(),
     'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna), this should fix summing integer issues
@@ -83,7 +96,7 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
             
     def create_climate_baseline(self, start_year, end_year, parallel=False):
         """Create baseline climate variables for dataset; uses
-        the methods defined in CRUJRA_RESAMPLE_LOOKUP Based on original 
+        the methods defined in CRUJRA_BASELINE_LOOKUP Based on original 
         downscaling.sh line 77-80. Here calculations are split up by var
         and the result is combined into a single dataset at the end.
 
@@ -118,7 +131,7 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
         doy = [constants.MONTH_START_DAYS[mn] for mn in range(12)]
 
         var_dict = {}
-        for var, method  in CRUJRA_RESAMPLE_LOOKUP.items():
+        for var, method  in CRUJRA_BASELINE_LOOKUP.items():
             if self.verbose: print('creating baseline for', var, 'with', method)
             ts = [self[yr].dataset[var].values for yr in range(start_year, end_year)]
             daily_avg = np.array(ts).mean(axis=0)
@@ -131,10 +144,13 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
                 
                 mn_data = daily_avg[mn_slice]
                 if self.verbose: print('Monthly Shape:',mn_data.shape) 
+                mn_ag = None
                 if 'mean' == method:
-                    mn_ag=mn_data.mean(axis=0)
+                    mn_ag = mn_data.mean(axis=0)
                 elif 'sum' == method:
-                    mg_ag = np.nansum(mn_data, axis=0)
+                    mn_ag = np.nansum(mn_data, axis=0)
+                else:
+                    raise ValueError(f"[crujra.AnnualTimeSeries.create_climate_baseline] Unknown method '{method}' for variable '{var}'")
                 temp.append(mn_ag)
             var_cf = np.array(temp)
             var_dict[var] = var_cf
