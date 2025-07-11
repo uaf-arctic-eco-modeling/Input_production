@@ -142,7 +142,7 @@ def radiation (baseline, reference, keys):
     bk = keys['baseline']
 
     ref = (reference[rk] * 1000) /SECONDS_PER_DAY
-    base = (baseline[bk] * 1000) /SECONDS_PER_DAY
+    base = (baseline[bk]) /SECONDS_PER_DAY
 
     return ref/base
 
