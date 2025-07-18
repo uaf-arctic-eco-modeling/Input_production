@@ -37,7 +37,8 @@ def Version():
     os.chdir(os.path.dirname(__file__))
     __version__ = subprocess.check_output(['git', 'describe', '--tags']).strip().decode('utf-8')
     os.chdir(currentDir)
-  except Exception:
+  except subprocess.CalledProcessError as e:
+    print(f"Warning: Couldn't get version from git, using installed version. {e}")
     os.chdir(currentDir)
     # Return the version string of the installed software. Managed by a special
     # tool called versioningit which is driven by git tags.
