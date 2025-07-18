@@ -122,7 +122,7 @@ class Tile(object):
 
         return Tile(
             manifest['index'],
-            manifest['extent'],
+            pd.DataFrame(manifest['extent'], index=[0]),
             manifest['resolution'],
             manifest['crs'],
             buffer_px = manifest['buffer_px'],
@@ -251,7 +251,7 @@ class Tile(object):
         minx, miny, maxx, maxy = self.extent[
             ['minx', 'miny', 'maxx', 'maxy']
         ].iloc[0]
-        extent = minx, miny, maxx, maxy
+        extent = dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
         manifest = {
             'index': self.index,
             'extent': extent,
@@ -326,6 +326,9 @@ class Tile(object):
             
             
             for _var in ds.data_vars:
+                if _var == 'spatial_ref':
+                    if self.verbose: print(f'Skipping {_var}; it causes encoding issues.')
+                    continue
                 ds[_var].rio.update_encoding(climate_enc, inplace=True)
                 # try: del ds[_var].attrs['_FillValue']
                 # except: pass
@@ -536,6 +539,19 @@ class Tile(object):
         # Note: might need to confirm that the precip resample is doing what we 
         # want...does it sum over the previous month? This month? or a window 
         # around the start of the month?
+        
+        '''
+        Ensure that the tile object (self) has a 'downscaled_cru' key in its data dictionary.
+        This key should correspond to an AnnualTimeSeries object containing the downscaled climate data.
+        make sure that the key passed to this method matches the key used in downscale_timeseries
+        method to store the downscaled data.
+
+        want to change the API so that the to_TEM logic goes specifically with the downscaled data object
+        rather than the tile object...
+        self.data['downscaled_cru'].to_TEM()
+        
+        '''
+        
         ds_lst = []
         for year in self.data['downscaled_cru'].range():
 

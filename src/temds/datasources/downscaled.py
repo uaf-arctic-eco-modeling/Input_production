@@ -27,6 +27,8 @@ class AnnualTimeSeries(annual.AnnualTimeSeries):
     """
     """
     pass
+    def to_TEM(self):
+        raise NotImplementedError("to_TEM not implemented for downscaled data yet")
 
 
 class AnnualDaily(annual.AnnualDaily):
