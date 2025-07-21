@@ -247,7 +247,6 @@ class Tile(object):
 
         # Maybe better force to either WKT or pyproj.crs.crs.CRS object above?
         # Prevents having to do type checking later...
-
         minx, miny, maxx, maxy = self.extent[
             ['minx', 'miny', 'maxx', 'maxy']
         ].iloc[0]
@@ -534,12 +533,10 @@ class Tile(object):
 
         # Here we are resampling from daily to monthly data and renaming variable.
 
-        # Note: it might be better to concat this first and the resample...might provide
-        # better numbers at the year boundaries?
-        # Note: might need to confirm that the precip resample is doing what we 
-        # want...does it sum over the previous month? This month? or a window 
-        # around the start of the month?
-        
+        # Note: Tried re-writing this to do the resampling after concatenating, 
+        # thinking this might change the numbers around the year boundaries, but 
+        # it didn't seem to make a difference and was slower to run...
+
         '''
         Ensure that the tile object (self) has a 'downscaled_cru' key in its data dictionary.
         This key should correspond to an AnnualTimeSeries object containing the downscaled climate data.
@@ -552,6 +549,9 @@ class Tile(object):
         
         '''
         
+        if 'downscaled_cru' not in self.data:
+            raise ValueError("The tile object must have a 'downscaled_cru' key in its data dictionary.")
+
         ds_lst = []
         for year in self.data['downscaled_cru'].range():
 
