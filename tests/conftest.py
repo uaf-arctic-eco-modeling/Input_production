@@ -61,5 +61,5 @@ def loaded_tile(basic_tile, worldclim_object, cru_arctic_timeseries_micro):
 @pytest.fixture(scope='module')
 def downscaled_tile():
   '''Takes ~30s to load full timeseries.'''
-  _tile = tile.Tile.tile_from_directory("working/04-tiles-downscaled/H00_V08/")
+  _tile = tile.Tile.tile_from_directory("working/04-downscaled-tiles/H00_V08/")
   return _tile
