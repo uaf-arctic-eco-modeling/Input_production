@@ -513,15 +513,16 @@ class AnnualDaily(TEMDataSet):
         """
         #TODO: support target vars == None or 'all' and run all vars
         monthly = xr.Dataset()
-        for var, method in _vars.items():
+
+        for var, method in target_vars.items():
             if method == 'mean':
                 monthly[var] = self.dataset[var].resample(time='MS').mean()
-            elif method = 'sum':
+            elif method == 'sum':
                 monthly[var] = self.dataset[var].resample(time='MS').sum()
             else:
                 raise TypeError (f'method {method} not supported in AnnualDaily.synthesize_to_monthly')
 
-        if not new_names is None:
+        if new_names is not None:
             monthly = monthly.rename(new_names)
 
         return monthly
