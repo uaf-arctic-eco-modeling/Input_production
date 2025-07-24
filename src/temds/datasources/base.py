@@ -94,11 +94,15 @@ class TEMDataSet(object):
         self._dataset = dataset
         self.verbose = verbose
         self.vars = _vars
-        self.resolution = None# default Project Resoloution
+        self.resolution = None# default Project Resolution
         self.cached_load_kwargs={}
 
     @property
     def dataset(self):
+        """This Property allow the objects data to be represneted as a
+        path in low memory systems instead of an open xr.Dataset.
+        The file at the path can be open as needed.
+        """
         if isinstance(self._dataset, xr.Dataset):
             return self._dataset
         elif isinstance(self._dataset, Path):
@@ -108,6 +112,7 @@ class TEMDataSet(object):
 
     @dataset.setter
     def dataset(self, value):
+        """Setting of dataset property."""
         self._dataset = value
 
     def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs):

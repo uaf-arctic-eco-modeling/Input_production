@@ -552,25 +552,21 @@ class Tile(object):
         if 'downscaled_cru' not in self.data:
             raise ValueError("The tile object must have a 'downscaled_cru' key in its data dictionary.")
 
-        ds_lst = []
-        for year in self.data['downscaled_cru'].range():
+        target_vars = {
+            'tavg': 'mean', 
+            'vapo': 'mean', 
+            'nirr': 'mean',
+            'prec': 'sum'
+        }
 
-            yr_data = self.data['downscaled_cru'][year].dataset
+        new_names = {
+            'tavg':'tair', 
+            'vapo':'vapor_press', 
+            'nirr':'nirr', 
+            'prec':'precip'
+        }
 
-            ds = xr.Dataset()
-
-            for v in ['tavg', 'vapo', 'nirr']:
-                new_v = yr_data[v].resample(time='MS').mean()
-                ds[v] = new_v
-
-            for v in ['prec']:
-                new_v = yr_data[v].resample(time='MS').sum()
-                ds[v] = new_v
-
-            ds = ds.rename_vars(name_dict={'tavg':'tair', 'vapo':'vapor_press', 'nirr':'nirr', 'prec':'precip'})
-            ds_lst.append(ds)
-
-        buffered_ds = xr.concat(ds_lst, dim='time')
+        buffered_ds = self.data['downscaled_cru'].synthesize_to_monthly(target_vars, new_names)
         buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
         buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
         buffered_ds.rio.write_crs(self.crs, inplace=True)

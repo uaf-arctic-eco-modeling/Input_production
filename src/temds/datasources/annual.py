@@ -53,7 +53,7 @@ class AnnualTimeSeries(UserList):
         """
         ADType = AnnualDaily
         if 'ADType' in kwargs:
-            ADType =  kwargs['ADType'] 
+            ADType = kwargs['ADType'] 
 
 
         is_list_ds = isinstance(data, list) and isinstance(data[0], xr.Dataset)
@@ -294,6 +294,33 @@ class AnnualTimeSeries(UserList):
         """
         return range(self.data[0].year, self.data[-1].year+1)
 
+    def synthesize_to_monthly(self, target_vars, new_names=None):
+        """Converts target_vars to monthly data (12*N_years timesteps)
+
+        Parameters
+        ----------
+        target_vars: dict
+            vars to convert to monthly data, and the methods to use
+            for conversion 'mean', or 'sum':
+            i. e. {'nirr': 'mean', 'prec': 'sum'}
+        new_names: dict
+            Maps var names in new dataset
+            i.e: {'nirr':'nirr', 'prec':'precip'}
+
+        Returns
+        -------
+        xr.Dataset:
+            With 12*n_years time steps. Where n_years is the length if
+            `self.data`
+        """
+        monthly = []
+        for year in self.range():
+            monthly.append(self[year].synthesize_to_monthly(target_vars, new_names))
+
+        return xr.concat(monthly, dim='time')
+
+
+
 
 class AnnualDaily(TEMDataSet):
     """Daily for a year, This class 
@@ -466,4 +493,35 @@ class AnnualDaily(TEMDataSet):
         else:
             return in_dataset
 
-       
+    def synthesize_to_monthly(self, target_vars, new_names=None):
+        """Converts target_vars to monthly data (12 time steps)
+
+        Parameters
+        ----------
+        target_vars: dict
+            vars to convert to monthly data, and the methods to use
+            for conversion 'mean', or 'sum':
+            i. e. {'nirr': 'mean', 'prec': 'sum'}
+        new_names: dict
+            Maps var names in new dataset
+            i.e: {'nirr':'nirr', 'prec':'precip'}
+
+        Returns
+        -------
+        xr.Dataset:
+            With 12 time steps.
+        """
+        #TODO: support target vars == None or 'all' and run all vars
+        monthly = xr.Dataset()
+        for var, method in _vars.items():
+            if method == 'mean':
+                monthly[var] = self.dataset[var].resample(time='MS').mean()
+            elif method = 'sum':
+                monthly[var] = self.dataset[var].resample(time='MS').sum()
+            else:
+                raise TypeError (f'method {method} not supported in AnnualDaily.synthesize_to_monthly')
+
+        if not new_names is None:
+            monthly = monthly.rename(new_names)
+
+        return monthly

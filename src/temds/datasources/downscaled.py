@@ -26,7 +26,6 @@ DOWNSCALED_VARIABLES = climate_variables.aliases_for('downscaled')
 class AnnualTimeSeries(annual.AnnualTimeSeries):
     """
     """
-    pass
     def to_TEM(self):
         raise NotImplementedError("to_TEM not implemented for downscaled data yet")
 
@@ -39,15 +38,5 @@ class AnnualDaily(annual.AnnualDaily):
 
         super().__init__(year, in_data, verbose, _vars,  **kwargs)
     
-    def synthesize_to_monthly(self, _vars):
-        """
-        """
-        monthly = []
-
-        for var in _vars:
-            thing = 'some action'
-            monthly.append(thing)
-
-        monthly = xr.concat(monthly, dim='time')
 
         
