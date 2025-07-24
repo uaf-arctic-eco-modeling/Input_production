@@ -494,17 +494,23 @@ class AnnualDaily(TEMDataSet):
             return in_dataset
 
     def synthesize_to_monthly(self, target_vars, new_names=None):
-        """Converts target_vars to monthly data (12 time steps)
+        """Converts target_vars to monthly data (12 time steps). In other words,
+        resample daily data to monthly data using the method specified in
+        target_vars.
+
+        This AnnualDaily object is expected to have daily data for a single year.
+        The target_vars is a dictionary where the keys are the variable names
+        and the values are the methods to use for conversion, either 'mean' or
+        'sum'. The new_names parameter is a dictionary that maps the variable
+        names in the new dataset to the desired names.
 
         Parameters
         ----------
         target_vars: dict
-            vars to convert to monthly data, and the methods to use
-            for conversion 'mean', or 'sum':
-            i. e. {'nirr': 'mean', 'prec': 'sum'}
+            vars to convert to monthly data, and the methods to use for
+            conversion 'mean', or 'sum': i. e. {'nirr': 'mean', 'prec': 'sum'}
         new_names: dict
-            Maps var names in new dataset
-            i.e: {'nirr':'nirr', 'prec':'precip'}
+            Maps var names in new dataset i.e: {'nirr':'nirr', 'prec':'precip'}
 
         Returns
         -------
@@ -512,6 +518,14 @@ class AnnualDaily(TEMDataSet):
             With 12 time steps.
         """
         #TODO: support target vars == None or 'all' and run all vars
+
+        # TODO: experiment/confirm resampling to month-middle ('M' vs 'MS') and
+        # see if the results are different...
+
+        # Note: Tried re-writing this to do the resampling after concatenating, 
+        # thinking this might change the numbers around the year boundaries, but 
+        # it didn't seem to make a difference and was slower to run...
+
         monthly = xr.Dataset()
 
         for var, method in target_vars.items():

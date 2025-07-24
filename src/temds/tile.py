@@ -519,34 +519,37 @@ class Tile(object):
 
     def to_TEM(self):
         '''
-        [[ DRAFT ]]
-        Convert downscaled data to a format suitable for TEM (Terrestrial Ecosystem Model).
+        Convert downscaled data to a format suitable for TEM (Terrestrial
+        Ecosystem Model).
 
-        This implements the "Synthesize to monthly" logic from 
+        This implements the "Synthesize to monthly" logic from
         original-scripts/downscaling.sh:259.
 
-        Returns the unbuffered tile data, as an xarray Dataset with variables renamed to match TEM expectations.
-        '''
-        # the self.data['downscaled_cru'] is an AnnualTimeSeries object which is
-        # a list of AnnualDaily objects. Each AnnualDaily object has a data 
-        # attribute which is an xarray Dataset with daily data for a single year.
+        Returns the unbuffered tile data, as an xarray.Dataset with variables
+        renamed to match TEM expectations.
 
-        # Here we are resampling from daily to monthly data and renaming variable.
-
-        # Note: Tried re-writing this to do the resampling after concatenating, 
-        # thinking this might change the numbers around the year boundaries, but 
-        # it didn't seem to make a difference and was slower to run...
-
-        '''
-        Ensure that the tile object (self) has a 'downscaled_cru' key in its data dictionary.
-        This key should correspond to an AnnualTimeSeries object containing the downscaled climate data.
-        make sure that the key passed to this method matches the key used in downscale_timeseries
+        Ensure that the tile object (self) has a 'downscaled_cru' key in its
+        data dictionary. This key should correspond to an AnnualTimeSeries
+        object containing the downscaled climate data. Make sure that the key
+        passed to this method matches the key used in downscale_timeseries
         method to store the downscaled data.
 
-        want to change the API so that the to_TEM logic goes specifically with the downscaled data object
-        rather than the tile object...
-        self.data['downscaled_cru'].to_TEM()
+        Logic particular to TEM should be implemented here, such as renaming
+        variables to match TEM's expectations. There should be general methods
+        for resampling ('synthesizing') data to different time resolutions in
+        the datasources classes. Whenever possible, use those methods to avoid
+        duplicating logic across different data sources.
         
+        Returns
+        -------
+        xarray.Dataset
+            An xarray dataset with the downscaled data synthesized to monthly
+            resolution, with variables renamed to match TEM expectations. The
+            dataset will not include the buffer area, and will be clipped to the
+            tile's extent. The dataset will have the following variables: -
+            'tair': mean air temperature - 'vapor_press': mean vapor pressure -
+            'nirr': mean net incoming shortwave radiation - 'precip': total
+            precipitation
         '''
         
         if 'downscaled_cru' not in self.data:
@@ -566,6 +569,8 @@ class Tile(object):
             'prec':'precip'
         }
 
+        # TODO: write general method in the Tile for returning data without
+        # the buffer...
         buffered_ds = self.data['downscaled_cru'].synthesize_to_monthly(target_vars, new_names)
         buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
         buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
