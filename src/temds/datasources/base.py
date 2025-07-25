@@ -94,11 +94,15 @@ class TEMDataSet(object):
         self._dataset = dataset
         self.verbose = verbose
         self.vars = _vars
-        self.resolution = None# default Project Resoloution
+        self.resolution = None# default Project Resolution
         self.cached_load_kwargs={}
 
     @property
     def dataset(self):
+        """This Property allow the objects data to be represneted as a
+        path in low memory systems instead of an open xr.Dataset.
+        The file at the path can be open as needed.
+        """
         if isinstance(self._dataset, xr.Dataset):
             return self._dataset
         elif isinstance(self._dataset, Path):
@@ -108,6 +112,7 @@ class TEMDataSet(object):
 
     @dataset.setter
     def dataset(self, value):
+        """Setting of dataset property."""
         self._dataset = value
 
     def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
@@ -141,9 +146,11 @@ class TEMDataSet(object):
         lookup = lambda key, default: kwargs[key] if key in kwargs else default
         update_kw = lambda key, default: kwargs.update({key: lookup(key, default)})
 
-        
-        flip_x = lookup('flip_y', False)
-        flip_y = lookup('flip_x', False)
+        # This is a relic of some previous bugs...it seems that now, if you load
+        # a dataset, it loads the correct direction and writes out in the 
+        # correction orientation. So flip_y and flip_x are no longer needed.
+        # flip_y = lookup('flip_y', False)
+        # flip_x = lookup('flip_x', False)
 
         ## gdal kwargs
         update_kw('resample_alg', 'bilinear')
@@ -171,10 +178,10 @@ class TEMDataSet(object):
             raise TypeError("get_by_extent: 'clip_with' must be 'gdal', or 'xarray'")
         gc.collect()
         malloc_trim(0)
-        if flip_y: 
-            tile = tile.reindex(y=list(reversed(tile.y)))
-        if flip_x:
-            tile = tile.reindex(x=list(reversed(tile.x)))
+        # if flip_y: 
+        #     tile = tile.reindex(y=list(reversed(tile.y)))
+        # if flip_x:
+        #     tile = tile.reindex(x=list(reversed(tile.x)))
         return tile
         
 

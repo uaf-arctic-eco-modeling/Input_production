@@ -122,7 +122,7 @@ class Tile(object):
 
         return Tile(
             manifest['index'],
-            manifest['extent'],
+            pd.DataFrame(manifest['extent'], index=[0]),
             manifest['resolution'],
             manifest['crs'],
             buffer_px = manifest['buffer_px'],
@@ -247,11 +247,10 @@ class Tile(object):
 
         # Maybe better force to either WKT or pyproj.crs.crs.CRS object above?
         # Prevents having to do type checking later...
-
         minx, miny, maxx, maxy = self.extent[
             ['minx', 'miny', 'maxx', 'maxy']
         ].iloc[0]
-        extent = minx, miny, maxx, maxy
+        extent = dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
         manifest = {
             'index': self.index,
             'extent': extent,
@@ -326,6 +325,9 @@ class Tile(object):
             
             
             for _var in ds.data_vars:
+                if _var == 'spatial_ref':
+                    if self.verbose: print(f'Skipping {_var}; it causes encoding issues.')
+                    continue
                 ds[_var].rio.update_encoding(climate_enc, inplace=True)
                 # try: del ds[_var].attrs['_FillValue']
                 # except: pass
@@ -517,44 +519,59 @@ class Tile(object):
 
     def to_TEM(self):
         '''
-        [[ DRAFT ]]
-        Convert downscaled data to a format suitable for TEM (Terrestrial Ecosystem Model).
+        Convert downscaled data to a format suitable for TEM (Terrestrial
+        Ecosystem Model).
 
-        This implements the "Synthesize to monthly" logic from 
+        This implements the "Synthesize to monthly" logic from
         original-scripts/downscaling.sh:259.
 
-        Returns the unbuffered tile data, as an xarray Dataset with variables renamed to match TEM expectations.
+        Returns the unbuffered tile data, as an xarray.Dataset with variables
+        renamed to match TEM expectations.
+
+        Ensure that the tile object (self) has a 'downscaled_cru' key in its
+        data dictionary. This key should correspond to an AnnualTimeSeries
+        object containing the downscaled climate data. Make sure that the key
+        passed to this method matches the key used in downscale_timeseries
+        method to store the downscaled data.
+
+        Logic particular to TEM should be implemented here, such as renaming
+        variables to match TEM's expectations. There should be general methods
+        for resampling ('synthesizing') data to different time resolutions in
+        the datasources classes. Whenever possible, use those methods to avoid
+        duplicating logic across different data sources.
+        
+        Returns
+        -------
+        xarray.Dataset
+            An xarray dataset with the downscaled data synthesized to monthly
+            resolution, with variables renamed to match TEM expectations. The
+            dataset will not include the buffer area, and will be clipped to the
+            tile's extent. The dataset will have the following variables: -
+            'tair': mean air temperature - 'vapor_press': mean vapor pressure -
+            'nirr': mean net incoming shortwave radiation - 'precip': total
+            precipitation
         '''
-        # the self.data['downscaled_cru'] is an AnnualTimeSeries object which is
-        # a list of AnnualDaily objects. Each AnnualDaily object has a data 
-        # attribute which is an xarray Dataset with daily data for a single year.
+        
+        if 'downscaled_cru' not in self.data:
+            raise ValueError("The tile object must have a 'downscaled_cru' key in its data dictionary.")
 
-        # Here we are resampling from daily to monthly data and renaming variable.
+        target_vars = {
+            'tavg': 'mean', 
+            'vapo': 'mean', 
+            'nirr': 'mean',
+            'prec': 'sum'
+        }
 
-        # Note: it might be better to concat this first and the resample...might provide
-        # better numbers at the year boundaries?
-        # Note: might need to confirm that the precip resample is doing what we 
-        # want...does it sum over the previous month? This month? or a window 
-        # around the start of the month?
-        ds_lst = []
-        for year in self.data['downscaled_cru'].range():
+        new_names = {
+            'tavg':'tair', 
+            'vapo':'vapor_press', 
+            'nirr':'nirr', 
+            'prec':'precip'
+        }
 
-            yr_data = self.data['downscaled_cru'][year].dataset
-
-            ds = xr.Dataset()
-
-            for v in ['tavg', 'vapo', 'nirr']:
-                new_v = yr_data[v].resample(time='MS').mean()
-                ds[v] = new_v
-
-            for v in ['prec']:
-                new_v = yr_data[v].resample(time='MS').sum()
-                ds[v] = new_v
-
-            ds = ds.rename_vars(name_dict={'tavg':'tair', 'vapo':'vapor_press', 'nirr':'nirr', 'prec':'precip'})
-            ds_lst.append(ds)
-
-        buffered_ds = xr.concat(ds_lst, dim='time')
+        # TODO: write general method in the Tile for returning data without
+        # the buffer...
+        buffered_ds = self.data['downscaled_cru'].synthesize_to_monthly(target_vars, new_names)
         buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
         buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
         buffered_ds.rio.write_crs(self.crs, inplace=True)

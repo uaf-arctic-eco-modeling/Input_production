@@ -3,21 +3,49 @@
 import os
 import pathlib
 import errno
+import subprocess
 
 from osgeo import gdal
 
-from importlib.metadata import version
+import importlib.metadata # for version lookup
 
 
 def Version():
-  '''Return the dynamic version string. Managed by a special tool called
-  versioningit which is driven by git tags. Its magic.'''
+  '''Return a version string. First try to get it from git, otherwise use the
+  version from the installed package.
 
-  __version__ = version("temds")
+  This way for a developer's repo the reported version is always up to date with
+  the latest commit. But for an copy of the repo that doesn't have the git
+  history, (e.g. pip installed version from a shallow checkout) it will still
+  report a version - the version that was packaged up.
+
+  Even with a pip editable install, the versioningit number doesn't seem to keep
+  up with the commits unless you reinstall the package. So the subprocess
+  approach is still better for a developer's repo where you might make a lot of
+  commits between installations (pip install -e .)
+
+  Strange that the command line versioningit tool does manage to keep up with
+  commits, but the version available through importlib.metadata.version()
+  doesn't....
+  '''
+
+  try:
+    # Need to check current directory, save it, and then change to the 
+    # directory of the module then run the git command, then change back.
+    # Otherwise if the current directory is not in the repo, git will complain.
+    currentDir = os.getcwd()
+    os.chdir(os.path.dirname(__file__))
+    __version__ = subprocess.check_output(['git', 'describe', '--tags']).strip().decode('utf-8')
+    os.chdir(currentDir)
+  except subprocess.CalledProcessError as e:
+    print(f"Warning: Couldn't get version from git, using installed version. {e}")
+    os.chdir(currentDir)
+    # Return the version string of the installed software. Managed by a special
+    # tool called versioningit which is driven by git tags.
+    __version__ = importlib.metadata.version("temds")
+
   return f"{__version__}"
 
-'''
-'''
 
 def gdalGeoTransformHelp():
   '''Print some handy info.'''

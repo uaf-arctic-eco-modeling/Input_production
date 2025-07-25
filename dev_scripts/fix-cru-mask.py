@@ -32,18 +32,15 @@ files = data_root.joinpath('02-arctic/cru-jra-25/')
 out_root = data_root.joinpath('02-arctic/cru-jra-fixed')
 
 files = sorted(list(files.glob('*.nc')))
-# print(files)
+
 last = 0
-for idx in range(0,len(files),5):
-    if idx == 0:
-        continue
-    
-    # print(last, idx)
-    local = files[last:idx]
-    # print(files[last:idx])
-    last = idx
+block_size = 5
+for idx in range(0,len(files),block_size):
     data = []
-    for file in local:
+    block = files[idx:idx + block_size]
+    print(block)
+
+    for file in block:
         print(file)
         if out_root.joinpath(file.name).exists():
             continue
