@@ -53,7 +53,7 @@ class AnnualTimeSeries(UserList):
         """
         ADType = AnnualDaily
         if 'ADType' in kwargs:
-            ADType =  kwargs['ADType'] 
+            ADType = kwargs['ADType'] 
 
 
         is_list_ds = isinstance(data, list) and isinstance(data[0], xr.Dataset)
@@ -294,6 +294,33 @@ class AnnualTimeSeries(UserList):
         """
         return range(self.data[0].year, self.data[-1].year+1)
 
+    def synthesize_to_monthly(self, target_vars, new_names=None):
+        """Converts target_vars to monthly data (12*N_years timesteps)
+
+        Parameters
+        ----------
+        target_vars: dict
+            vars to convert to monthly data, and the methods to use
+            for conversion 'mean', or 'sum':
+            i. e. {'nirr': 'mean', 'prec': 'sum'}
+        new_names: dict
+            Maps var names in new dataset
+            i.e: {'nirr':'nirr', 'prec':'precip'}
+
+        Returns
+        -------
+        xr.Dataset:
+            With 12*n_years time steps. Where n_years is the length if
+            `self.data`
+        """
+        monthly = []
+        for year in self.range():
+            monthly.append(self[year].synthesize_to_monthly(target_vars, new_names))
+
+        return xr.concat(monthly, dim='time')
+
+
+
 
 class AnnualDaily(TEMDataSet):
     """Daily for a year, This class 
@@ -466,4 +493,50 @@ class AnnualDaily(TEMDataSet):
         else:
             return in_dataset
 
-       
+    def synthesize_to_monthly(self, target_vars, new_names=None):
+        """Converts target_vars to monthly data (12 time steps). In other words,
+        resample daily data to monthly data using the method specified in
+        target_vars.
+
+        This AnnualDaily object is expected to have daily data for a single year.
+        The target_vars is a dictionary where the keys are the variable names
+        and the values are the methods to use for conversion, either 'mean' or
+        'sum'. The new_names parameter is a dictionary that maps the variable
+        names in the new dataset to the desired names.
+
+        Parameters
+        ----------
+        target_vars: dict
+            vars to convert to monthly data, and the methods to use for
+            conversion 'mean', or 'sum': i. e. {'nirr': 'mean', 'prec': 'sum'}
+        new_names: dict
+            Maps var names in new dataset i.e: {'nirr':'nirr', 'prec':'precip'}
+
+        Returns
+        -------
+        xr.Dataset:
+            With 12 time steps.
+        """
+        #TODO: support target vars == None or 'all' and run all vars
+
+        # TODO: experiment/confirm resampling to month-middle ('M' vs 'MS') and
+        # see if the results are different...
+
+        # Note: Tried re-writing this to do the resampling after concatenating, 
+        # thinking this might change the numbers around the year boundaries, but 
+        # it didn't seem to make a difference and was slower to run...
+
+        monthly = xr.Dataset()
+
+        for var, method in target_vars.items():
+            if method == 'mean':
+                monthly[var] = self.dataset[var].resample(time='MS').mean()
+            elif method == 'sum':
+                monthly[var] = self.dataset[var].resample(time='MS').sum()
+            else:
+                raise TypeError (f'method {method} not supported in AnnualDaily.synthesize_to_monthly')
+
+        if new_names is not None:
+            monthly = monthly.rename(new_names)
+
+        return monthly
