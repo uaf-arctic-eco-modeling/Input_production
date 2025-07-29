@@ -138,17 +138,17 @@ class TEMDataset(object):
         extent = (minx, miny, maxx, maxy) #_warp_order
         
 
-        logger.pedantic(f'TEMdataset.from_raster_extent: extent {extent}')
+        logger.debug(f'TEMdataset.from_raster_extent: extent {extent}')
         if buffer_px > 0:
             logger.info(f'TEMdataset.from_raster_extent: extents includes buffer of {buffer_px} pixels')
         x_res, y_res = gt[1], gt[5]
 
-        logger.pedantic(f'TEMdataset.from_raster_extent: resolution, {x_res},{y_res}')
+        logger.debug(f'TEMdataset.from_raster_extent: resolution, {x_res},{y_res}')
 
         out_x_size = extent_ds.RasterXSize
         out_y_size = extent_ds.RasterYSize
         
-        logger.pedantic(f'TEMdataset.from_raster_extent: out size {out_x_size}, {out_y_size}')
+        logger.debug(f'TEMdataset.from_raster_extent: out size {out_x_size}, {out_y_size}')
         
         
         lat_dim = np.arange( miny, maxy, abs(y_res) ) + (abs(y_res)/2)
@@ -250,7 +250,7 @@ class TEMDataset(object):
        
             
 
-        logger.pedantic((
+        logger.debug((
                 f'TEMdataset.from_worldclim: '
                 f'Initializing with extent from {extent_raster}'
         ))
@@ -284,7 +284,7 @@ class TEMDataset(object):
         
                 
                 
-                logger.pedantic(f'TEMdataset.from_worldclim: Running gdal.Warp to extent {extent}')
+                logger.debug(f'TEMdataset.from_worldclim: Running gdal.Warp to extent {extent}')
 
                 # load result to memory so we don't have temp files
                 result = gdal.Warp(
@@ -365,7 +365,7 @@ class TEMDataset(object):
                 'get_by_extent needs a resolution, either from kwargs or with class attribute `resolution` != None'
             )
 
-        self.logger.pedantic(f'TEMDataset.get_by_extent kwargs: {kwargs}')
+        self.logger.debug(f'TEMDataset.get_by_extent kwargs: {kwargs}')
 
         use = lookup('clip_with', 'gdal')
         if use == 'gdal':
@@ -449,11 +449,11 @@ class TEMDataset(object):
         n_ts = working_dataset['time'].shape[0]
 
     
-        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
-        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: source GeoTransform: {s_gt}')
-        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: destination dimensions (for each Variable): x={c_x}, y={c_y}, time={n_ts}')
-        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: destination GeoTransform: {c_gt}')
-        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: Resampling Algorithm: {resample_alg}')
+        self.logger.debug(f'TEMDataset.get_by_extent_gdal: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
+        self.logger.debug(f'TEMDataset.get_by_extent_gdal: source GeoTransform: {s_gt}')
+        self.logger.debug(f'TEMDataset.get_by_extent_gdal: destination dimensions (for each Variable): x={c_x}, y={c_y}, time={n_ts}')
+        self.logger.debug(f'TEMDataset.get_by_extent_gdal: destination GeoTransform: {c_gt}')
+        self.logger.debug(f'TEMDataset.get_by_extent_gdal: Resampling Algorithm: {resample_alg}')
 
 
         dest_crs = extent_crs.to_wkt()

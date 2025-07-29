@@ -10,7 +10,7 @@ from collections import UserList
 from datetime import datetime
 from pathlib import Path
 
-MsgType = Enum('MsgType', [('pedantic', 0 ), ('info', 1), ('warn', 2), ('error', 3)])
+MsgType = Enum('MsgType', [('debug', 0 ), ('info', 1), ('warn', 2), ('error', 3)])
 
 @dataclass
 class LogMsg:
@@ -48,8 +48,8 @@ class Logger(UserList):
     def log(self, text, msg_type=MsgType.info):
         self.append(LogMsg(text, msg_type))
 
-    def pedantic(self, text):
-        self.log(text, MsgType.pedantic)
+    def debug(self, text):
+        self.log(text, MsgType.debug)
 
     def info(self, text):
         self.log(text, MsgType.info)
