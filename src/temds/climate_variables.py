@@ -67,7 +67,7 @@ def list_for(source: str):
         if source in CLIMATE_VARIABLES[n].aliases
     ]
 
-def aliases_for(source, _as='list'):
+def aliases_for(source: str, _as: str='list'):
     """Returns sources aliases as a list or dict
 
     Parameters
@@ -75,7 +75,8 @@ def aliases_for(source, _as='list'):
     source: str
         a source i.e worldclim, crujra
     _as: str, default 'list'
-        'list' or 'dict' which determines type to return
+        'list' or 'dict' or, 'dict_r' which determines type to return
+        'dict_r' is a dict with the key/values reversed
 
     Returns
     -------
@@ -85,5 +86,7 @@ def aliases_for(source, _as='list'):
     """
     if _as == 'dict':
         return {cv.abbr: cv.aliases[source] for cv in list_for(source)}
+    elif _as == 'dict_r':
+        return {cv.aliases[source]: cv.abbr for cv in list_for(source)}
     else:
         return [cv.aliases[source] for cv in list_for(source)]

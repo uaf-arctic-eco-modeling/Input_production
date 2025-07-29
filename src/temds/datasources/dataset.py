@@ -39,10 +39,6 @@ try:
 except:
     malloc_trim = lambda x: x ## do nothing 
 
-
-
-
-
 class TEMDataset(object):
     """Class for managing .nc based data in TEMDS
 
@@ -67,27 +63,44 @@ class TEMDataset(object):
         dataset is read only.
     """
 
-    def __init__(self, dataset, in_memory=True, logger=Logger()):
+    def __init__(self, dataset, in_memory=True, logger=Logger(), **kwargs):
         """
         Parameters
         ----------
-        dataset: xr.dataset
+        dataset: xr.dataset or Path
             the dataset
         in_memory: Bool
         logger: logger.Logger, defaults to new object
             Logger to use for printing or saving messages
 
         """
-        self._dataset = dataset
+        self._dataset = None
+        self.vars = [] # TODO load from data
+        
         self.logger = logger
-        self.vars = [] # TODO 
-
+    
         self.crs = None
         self.transform = None
-        self.in_memory = in_memory
         self.resolution = None # default Project Resolution
+        
+        self.in_memory = in_memory
         self.cached_load_kwargs={}
 
+        if isinstance(dataset, xr.Dataset):
+            self.dataset=dataset
+        else: # Path
+            dataset = Path(dataset)
+            if dataset.exists() and dataset.suffix == '.nc':
+                
+                if in_memory:
+                    self.load(dataset, **kwargs)
+                else:
+                    self.dataset = dataset
+                    self.cached_load_kwargs = kwargs
+
+            else:
+                raise IOError('input data is missing or not a .nc file')
+        
     @property
     def dataset(self):
         """This Property allow the objects data to be represented as a
@@ -633,8 +646,7 @@ class TEMDataset(object):
                      .rio.write_coordinate_system(inplace=True) 
 
         return tile
-
-    
+ 
     def save(self, out_file, **kwargs): 
         """Save `dataset` as a netCDF file.
 
@@ -698,6 +710,58 @@ class TEMDataset(object):
                 f'The file {out_file} exists and `overwrite` is False'
             )
 
+    def load(self, in_path, **kwargs):
+        """Loads existing .nc dataset formatted for temds.
+        """
+        func_name ='TEMDdataset.load'
+        self.logger.info(f'{func_name}: reading {in_path}')
+        
+        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
+        # year_override = lookup(kwargs, 'year_override', None)
+        force_aoi_to = lookup(kwargs, 'force_aoi_to', None)
+        aoi_nodata = lookup(kwargs, 'aoi_nodata', np.nan)
+        crs = lookup(kwargs, 'crs', 'EPSG:4326')
+        chunks = lookup(kwargs, 'chunks', None)
+
+        self.logger.debug(f'{func_name}: loading dataset {chunks=}')
+        in_dataset = xr.open_dataset(
+            in_path, engine="netcdf4", chunks=chunks
+        )
+
+        ## BUGGY with dask multiprocess
+        if not force_aoi_to is None:
+            self.logger.debug((
+                f'{func_name}: force AOI to {force_aoi_to} '
+                'AOI for all vars'
+            ))
+            aoi_idx = np.isnan(in_dataset[force_aoi_to].values)
+            mask = aoi_idx.astype(float)
+            mask[mask == 1] = np.nan
+            in_dataset = in_dataset + mask
+
+        x_dim = 'x'
+        y_dim = 'y'
+        if crs == 'EPSG:4326':
+            x_dim ='lon'
+            y_dim = 'lat'
+        in_dataset = \
+            in_dataset.rio.write_crs(crs, inplace=True).\
+                 rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
+                 rio.write_coordinate_system(inplace=True) 
+
+        in_dataset = \
+            in_dataset.rio.write_crs(crs, inplace=True).\
+                 rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
+                 rio.write_coordinate_system(inplace=True) 
+        
+        gc.collect()
+        malloc_trim(0)
+        if self.in_memory :
+            self._dataset=in_dataset
+            self.logger.debug(f'{func_name}: dataset initialized')
+        else:
+            return in_dataset
+    
     def update_variable_names(self, new_scheme):
         """ do we need this?
         """
@@ -719,6 +783,42 @@ class YearlyDataset(TEMDataset):
         self.year = year
         super().__init__(dataset, **kwargs)
 
+        ## extra checks for year
+        if isinstance(dataset, xr.Dataset):
+            ## if the dataset as a 'data_year' attr always
+            ## use that year
+            if 'data_year' in self.dataset.attrs: 
+                self.year = dataset.attrs['data_year']
+        else: 
+            dataset = Path(dataset)
+            if dataset.exists() and dataset.suffix == '.nc':
+                if 'year_override_callback' in kwargs:
+                    year = int(kwargs['year_override_callback'](dataset.name))
+
+    def load(self, in_path, **kwargs):
+        """Load with year code added
+        """
+        in_dataset = super().load(in_path, **kwargs))
+        if self.in_memory:
+            in_dataset = self._dataset
+
+        try: 
+            if self.year is None and year_override is None:
+                self.year = int(in_dataset.attrs['data_year'])
+            elif type(year_override) is int:
+                self.year = year_override
+        except KeyError:
+            raise AnnualDailyYearUnknownError(
+                f"Cannot load year from nc file {in_path}. "
+                "Missing 'data_year' attribute"
+
+            )
+        
+        if not in_memory:
+            return in_dataset
+
+
+
     def __repr__(self):
         return(f"{type(self).__module__}.{type(self).__name__}: {self.year}")
 
@@ -739,7 +839,6 @@ class YearlyDataset(TEMDataset):
         # self.cached_load_kwargs
 
         return YearlyDataset(year, inds.dataset, **kwargs)
-
 
     def __lt__(self, other):
         """less than for sort
