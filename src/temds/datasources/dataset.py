@@ -233,14 +233,14 @@ class TEMDataset(object):
         if download: # get from web
             logger.info(f'{func_name}: Downloading data.')
             for var in in_vars:
-                url = worldclim.worldclim_url_for(var, version, resolution)
+                url = worldclim.url_for(var, version, resolution)
                 logger.debug(f'{func_name}: downloading {url}')
                 file_tools.download(url, data_path, overwrite)
 
 
         #get available data, unzip if needed
         for var in in_vars:
-            var_dir = worldclim.worldclim_name_for(var, version, resolution)
+            var_dir = worldclim.name_for(var, version, resolution)
             in_dir = Path(f'{data_path}/{var_dir}')
             if not in_dir.exists():
                 archive = Path(f'{data_path}/{var_dir}.zip')
@@ -274,7 +274,7 @@ class TEMDataset(object):
             in_dir = completed[var]
             for month in range(1,13):
                 idx = month-1
-                name = worldclim.worldclim_name_for(
+                name = worldclim.name_for(
                     var, version, resolution, month
                 )
                 data_raster = Path(in_dir, f'{name}.tif')
@@ -762,8 +762,6 @@ class TEMDataset(object):
     #         raise TypeError('Dataset must be in memory for this function')
     #     update_map = {self.naming[var] for var in new_scheme}
     #     self.dataset.rename(update_map)
-
-
 
 
 class YearlyDataset(TEMDataset):
