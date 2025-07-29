@@ -16,16 +16,22 @@ from affine import Affine
 from pyproj import CRS
 
 
-from . import errors
 
+from . import errors
+from . import worldclim
+from temds import file_tools
 from temds.logger import Logger
 
-import matplotlib.pyplot as plt
+from temds.constants import MONTH_START_DAYS 
+from temds import climate_variables
+
+
 
 gdal.UseExceptions()
 
-from functools import cache
 
+## We can better clear the memory cache on some OS's with this 
+## trick. If libc.so.6 is not present the code dose nothing
 try:
     import ctypes
     libc = ctypes.CDLL("libc.so.6") # clearing cache 
@@ -115,19 +121,19 @@ class TEMDataset(object):
         raster: path
             path to a raster file that can be opened as a gdal dataset
         """
-        logger.info((
-                f'TEMdataset.from_raster_extent: '
-                f'Initializing with extent from {raster}'
-        ))
-        verbose = True
+        func_name = 'TEMdataset.from_raster_extent'
+        logger.info(f'{func_name}: Initializing with extent from {raster}')
         extent_ds = gdal.Open(raster)
 
         ds_crs = CRS.from_wkt(extent_ds.GetProjection() )
         if ds_crs == CRS.from_epsg(4326):
-            logger.warn('TEMdataset.from_raster_extent: When projection is wgs84(EPSG:4326) buffer_px is ignored')
+            logger.warn((
+                f'{func_name}: When projection is wgs84(EPSG:4326) buffer_px '
+                'is ignored'
+            ))
             buffer_px = 0
 
-        ## if wgs84 we need some kind of check on bounds
+        ## TODO: if wgs84 we need some kind of check on bounds
             
         gt = extent_ds.GetGeoTransform()
         minx = gt[0] - (buffer_px * extent_ds.RasterXSize)
@@ -138,17 +144,17 @@ class TEMDataset(object):
         extent = (minx, miny, maxx, maxy) #_warp_order
         
 
-        logger.debug(f'TEMdataset.from_raster_extent: extent {extent}')
+        logger.debug(f'{func_name}: extent {extent}')
         if buffer_px > 0:
-            logger.info(f'TEMdataset.from_raster_extent: extents includes buffer of {buffer_px} pixels')
+            logger.info(f'{func_name}: extents includes buffer of {buffer_px} pixels')
         x_res, y_res = gt[1], gt[5]
 
-        logger.debug(f'TEMdataset.from_raster_extent: resolution, {x_res},{y_res}')
+        logger.debug(f'{func_name}: resolution, {x_res},{y_res}')
 
         out_x_size = extent_ds.RasterXSize
         out_y_size = extent_ds.RasterYSize
         
-        logger.debug(f'TEMdataset.from_raster_extent: out size {out_x_size}, {out_y_size}')
+        logger.debug(f'{func_name}: out size {out_x_size}, {out_y_size}')
         
         
         lat_dim = np.arange( miny, maxy, abs(y_res) ) + (abs(y_res)/2)
@@ -176,11 +182,13 @@ class TEMDataset(object):
             var : (dims, deepcopy(empty_data) ) for var in in_vars
         }
 
-        
+        ## the deep copy is to prevent shared memory issues
+        ## might not be necessary here, but included just in
+        ## case
         coords={
             'lat': lat_dim, 
             'lon': lon_dim,
-            'time': ds_time_dim
+            'time': deepcopy(ds_time_dim)
         }
 
         ## change to x,y from lat,lon
@@ -203,89 +211,85 @@ class TEMDataset(object):
         return TEMDataset(dataset, logger=logger)
 
     @staticmethod
-    def from_worldclim(data_path, url_pattern=None, in_vars='all', extent_raster=None, overwrite=False, logger=Logger(), resample_alg='bilinear'):
-        # 
-        # return worldclim.load()? like this instead?
+    def from_worldclim(
+            data_path, 
+            download=False, 
+            version='2.1', 
+            resolution='30s', 
+            in_vars='all', 
+            extent_raster=None,
+            overwrite=False, 
+            logger=Logger(),
+            resample_alg='bilinear'
+        ):
+        """"""
+        ## used in messages.
+        func_name = "TEMdataset.from_worldclim"
 
-        from temds.remote_zip import RemoteZip
-        from temds.constants import MONTH_START_DAYS 
-        from temds import climate_variables
-        WORLDCLIM_NAMING_CONVENTION = 'wc2.1_30s_{var}'
 
+        
         if in_vars == 'all':
             in_vars = worldclim.__vars
         if not type(in_vars) is list:
             in_vars = [in_vars]
         completed = {}
+        logger.info(f'{func_name}: Processing Worldclim data in {data_path}')
 
-        ## download first if url is provided
-        if not url_pattern is None: # get from web
-        
-            ## TODO Update msg
-            logger.info(f'TEMdataset.from_worldclim: {data_path}')
-            
-            if in_vars is None and url_pattern.format(in_vars) != url_pattern:
-                raise TypeError('URL is a formatter and no var is provided')
-            
+        ## download first if needed
+        if download: # get from web
+            logger.info(f'{func_name}: Downloading data.')
             for var in in_vars:
-                url =  url_pattern.format(var=var)
-                archive = RemoteZip(url, verbose)
-                archive.download(data_path, overwrite)
-                key = var
-                if key is None:
-                    key = 'download'
-                # completed[key] = archive
+                url = worldclim.worldclim_url_for(var, version, resolution)
+                logger.debug(f'{func_name}: downloading {url}')
+                file_tools.download(url, data_path, overwrite)
+
 
         #get available data, unzip if needed
         for var in in_vars:
-            in_dir = Path(f'{data_path}/{var}')
+            var_dir = worldclim.worldclim_name_for(var, version, resolution)
+            in_dir = Path(f'{data_path}/{var_dir}')
             if not in_dir.exists():
-                var_dir = WORLDCLIM_NAMING_CONVENTION.format(var=var)
-                archive = f'{data_path}/{var_dir}.zip'
-                temp = RemoteZip('', verbose)
-                temp.local_file = Path(archive)
-                temp.unzip(in_dir)
+                archive = Path(f'{data_path}/{var_dir}.zip')
+                logger.debug(f'TEMDataset.from_worldclim: unzipping {archive}')
+                file_tools.extract(archive, in_dir)
             completed[var] = in_dir
 
-       
-            
-
-        logger.debug((
-                f'TEMdataset.from_worldclim: '
-                f'Initializing with extent from {extent_raster}'
-        ))
+        logger.debug(
+            f'{func_name}: Initializing with extent from {extent_raster}'
+        )
         if extent_raster is None:
             key = list(completed.keys())[0]
             extent_raster = list(completed[key].glob('*.tif'))[0]
         
-
-        months=range(1,13)
-        doy = [MONTH_START_DAYS[mn-1] for mn in months]
         new = YearlyDataset.from_raster_extent(
-            extent_raster, in_vars=in_vars, ds_time_dim=doy, logger=logger
+            extent_raster, 
+            in_vars=in_vars, 
+            ds_time_dim=MONTH_START_DAYS, 
+            logger=logger
         )
 
         gt = new.dataset.rio.transform().to_gdal()
-
-        minx = gt[0]
-        miny = gt[3]
+        minx, miny = gt[0], gt[3]
         maxx = minx + abs(gt[1]) * new.dataset.lon.size
         maxy = miny + abs(gt[5]) * new.dataset.lat.size
         extent = (minx, miny, maxx, maxy) #_warp_order
-        
+        logger.info(
+            f'{func_name}: Running gdal.Warp to extent {extent} on all data'
+        )
         for var in in_vars:
             in_dir = completed[var]
-            for month in months:
+            for month in range(1,13):
                 idx = month-1
-                file_format = 'wc2.1_30s_{var}_{mn:02d}.tif' # TODO> move
-                data_raster = Path(in_dir, file_format.format(var=var, mn=month))
-
-                logger.info(f'TEMdataset.from_worldclim: loading {var} data from {data_raster} at index {idx}')
-        
+                name = worldclim.worldclim_name_for(
+                    var, version, resolution, month
+                )
+                data_raster = Path(in_dir, f'{name}.tif')
                 
+                logger.debug((
+                    f'{func_name}: loading {var} data from {data_raster} for '
+                    f'month {month} at index {idx}'
+                ))
                 
-                logger.debug(f'TEMdataset.from_worldclim: Running gdal.Warp to extent {extent}')
-
                 # load result to memory so we don't have temp files
                 result = gdal.Warp(
                     '', data_raster, 
