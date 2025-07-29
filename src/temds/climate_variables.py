@@ -4,7 +4,16 @@ Climate Variables
 
 Metadata Management for TEM climate Variables
 """
-from collections import namedtuple
+# from collections import namedtuple
+from dataclasses import dataclass, field
+
+@dataclass
+class StandardUnit:
+    name: str
+    symbol: str
+    conversions : dict = field(default_factory={})
+
+
 
 ## ClimateVariable  namedtuple type
 ## 
@@ -16,23 +25,34 @@ from collections import namedtuple
 ##    abbreviation used in final TEM downscaled data     
 ## aliases: dict{str: str} 
 ##    aliases for each data source
-ClimateVariable = namedtuple('ClimateVariable', ['name', 'abbr', 'aliases'])
+@dataclass
+class ClimateVariable:
+    name: str
+    abbr: str
+    std_unit: str = ''# chante to std_units
+    aliases: dict = field(default_factory={})
+    
+
+
+
+
+# ClimateVariable = namedtuple('ClimateVariable', ['name', 'abbr', 'aliases'])
 
 CLIMATE_VARIABLES = {
     ## FINAL downscaled variables
-    'tair': ClimateVariable('Average Air Temperature', 'tair', {}),
-    'tmax': ClimateVariable('Max Air Temperature', 'tmax', {}),
-    'tmin': ClimateVariable('Minimum Air Temperature', 'tmin', {}),
-    'prec': ClimateVariable('Precipitation', 'prec', {}), 
-    'nirr': ClimateVariable('Radiation', 'nirr', {}), 
-    'wind': ClimateVariable('Wind Speed', 'wind', {}), 
-    'vapo': ClimateVariable('Vapor Pressure', 'vapo', {}), 
-    'winddir': ClimateVariable('Wind Direction', 'winddir', {}), 
+    'tair': ClimateVariable('Average Air Temperature', 'tair'),
+    'tmax': ClimateVariable('Max Air Temperature', 'tmax'),
+    'tmin': ClimateVariable('Minimum Air Temperature', 'tmin'),
+    'prec': ClimateVariable('Precipitation', 'prec'), 
+    'nirr': ClimateVariable('Radiation', 'nirr'), 
+    'wind': ClimateVariable('Wind Speed', 'wind'), 
+    'vapo': ClimateVariable('Vapor Pressure', 'vapo'), 
+    'winddir': ClimateVariable('Wind Direction', 'winddir'), 
     ## Component Variables
-    'ugrd': ClimateVariable('CRUJRA  Wind Direction U Component', 'ugrd', {}),
-    'vgrd': ClimateVariable('CRUJRA Wind Direction V Component', 'vgrd', {}),
-    'spfh': ClimateVariable('spfh', 'spfh', {}),
-    'pres': ClimateVariable('pres', 'pres', {}),
+    'ugrd': ClimateVariable('CRUJRA  Wind Direction U Component', 'ugrd'),
+    'vgrd': ClimateVariable('CRUJRA Wind Direction V Component', 'vgrd'),
+    'spfh': ClimateVariable('spfh', 'spfh'),
+    'pres': ClimateVariable('pres', 'pres'),
 
 }
 

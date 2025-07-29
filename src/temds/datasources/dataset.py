@@ -15,20 +15,12 @@ from osgeo import gdal
 from affine import Affine
 from pyproj import CRS
 
-
-
 from . import errors
 from . import worldclim
 from temds import file_tools
-from temds.logger import Logger
-
-from temds.constants import MONTH_START_DAYS 
 from temds import climate_variables
-
-
-
-gdal.UseExceptions()
-
+from temds.logger import Logger
+from temds.constants import MONTH_START_DAYS 
 
 ## We can better clear the memory cache on some OS's with this 
 ## trick. If libc.so.6 is not present the code dose nothing
@@ -38,6 +30,8 @@ try:
     malloc_trim = libc.malloc_trim
 except:
     malloc_trim = lambda x: x ## do nothing 
+
+gdal.UseExceptions()
 
 class TEMDataset(object):
     """Class for managing .nc based data in TEMDS
@@ -51,8 +45,6 @@ class TEMDataset(object):
     in_memory: Bool
     logger: logger.Logger
         Logger to use for printing or saving messages
-
-
 
     Properties
     ----------
@@ -324,6 +316,8 @@ class TEMDataset(object):
                 
                 new.dataset[var][idx] = pixels # 0based index
                 [gc.collect(i) for i in range(2)]
+
+        new.dataset.rename(climate_variables.aliases_for('worldclim', 'dict_r'))
 
         return new
     
@@ -762,13 +756,13 @@ class TEMDataset(object):
         else:
             return in_dataset
     
-    def update_variable_names(self, new_scheme):
-        """ do we need this?
-        """
-        if not self.in_memory:
-            raise TypeError('Dataset must be in memory for this function')
-        update_map = {self.naming[var] for var in new_scheme}
-        self.dataset.rename(update_map)
+    # def update_variable_names(self, new_scheme):
+    #     """ do we need this?
+    #     """
+    #     if not self.in_memory:
+    #         raise TypeError('Dataset must be in memory for this function')
+    #     update_map = {self.naming[var] for var in new_scheme}
+    #     self.dataset.rename(update_map)
 
 
 
@@ -798,7 +792,7 @@ class YearlyDataset(TEMDataset):
     def load(self, in_path, **kwargs):
         """Load with year code added
         """
-        in_dataset = super().load(in_path, **kwargs))
+        in_dataset = super().load(in_path, **kwargs)
         if self.in_memory:
             in_dataset = self._dataset
 
@@ -811,7 +805,6 @@ class YearlyDataset(TEMDataset):
             raise AnnualDailyYearUnknownError(
                 f"Cannot load year from nc file {in_path}. "
                 "Missing 'data_year' attribute"
-
             )
         
         if not in_memory:
