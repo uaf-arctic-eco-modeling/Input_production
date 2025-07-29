@@ -1,20 +1,36 @@
 """
-WorldClim
+Worldclim
 ---------
 
-Data structures representing WorldClim data
+Metadata for worldclim dataset
+
+See: for dataset details (for v2.1) 
+https://www.worldclim.org/data/worldclim21.html
 
 """
+from cf_units import Unit
+
 from temds import climate_variables
 
+
+## citation for worldclim 2.1 dataset
+citation = (
+    'Fick, S.E. and R.J. Hijmans, 2017. WorldClim 2: new 1km spatial resolution' 
+    ' climate surfaces for global land areas. International Journal of '
+    ' Climatology 37 (12): 4302-4315.'
+)
+
+
 ## REGISTER CLIMATE VARIABLES
-climate_variables.register('tair', 'worldclim', 'tavg')
-climate_variables.register('tmin', 'worldclim', 'tmin')
-climate_variables.register('tmax', 'worldclim', 'tmax')
+climate_variables.register('tair_avg', 'worldclim', 'tavg')
+climate_variables.register('tair_min', 'worldclim', 'tmin')
+climate_variables.register('tair_max', 'worldclim', 'tmax')
 climate_variables.register('prec', 'worldclim', 'prec')
 climate_variables.register('nirr', 'worldclim', 'srad')
 climate_variables.register('wind', 'worldclim', 'wind')
 climate_variables.register('vapo', 'worldclim', 'vapr')
+
+climate_variables.register_source_unit('nirr', 'worldclim', Unit('kJ m-2 day-1'))
 
 WORLDCLIM_VARS = climate_variables.aliases_for('worldclim')
 

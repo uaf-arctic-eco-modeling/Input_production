@@ -3,16 +3,14 @@ Climate Variables
 -----------------
 
 Metadata Management for TEM climate Variables
+
+
+In the context of this file standard units refers
+to the units used in downscaling process
 """
 # from collections import namedtuple
 from dataclasses import dataclass, field
-
-@dataclass
-class StandardUnit:
-    name: str
-    symbol: str
-    conversions : dict = field(default_factory={})
-
+from cf_units import Unit
 
 
 ## ClimateVariable  namedtuple type
@@ -29,30 +27,27 @@ class StandardUnit:
 class ClimateVariable:
     name: str
     abbr: str
-    std_unit: str = ''# chante to std_units
-    aliases: dict = field(default_factory={})
-    
-
-
-
+    std_unit: Unit
+    aliases: dict = field(default_factory=dict)
+    source_units: dict = field(default_factory=dict)
 
 # ClimateVariable = namedtuple('ClimateVariable', ['name', 'abbr', 'aliases'])
 
 CLIMATE_VARIABLES = {
     ## FINAL downscaled variables
-    'tair': ClimateVariable('Average Air Temperature', 'tair'),
-    'tmax': ClimateVariable('Max Air Temperature', 'tmax'),
-    'tmin': ClimateVariable('Minimum Air Temperature', 'tmin'),
-    'prec': ClimateVariable('Precipitation', 'prec'), 
-    'nirr': ClimateVariable('Radiation', 'nirr'), 
-    'wind': ClimateVariable('Wind Speed', 'wind'), 
-    'vapo': ClimateVariable('Vapor Pressure', 'vapo'), 
-    'winddir': ClimateVariable('Wind Direction', 'winddir'), 
+    'tair_avg': ClimateVariable('Average Air Temperature', 'tair_avg',  Unit('celsius')),
+    'tair_max': ClimateVariable('Maximum Air Temperature', 'tair_max',  Unit('celsius')),
+    'tair_min': ClimateVariable('Minimum Air Temperature', 'tair_min',  Unit('celsius')),
+    'prec': ClimateVariable('Precipitation', 'prec', Unit('mm')), 
+    'nirr': ClimateVariable('Radiation', 'nirr', Unit('W/m^2')), 
+    'wind': ClimateVariable('Wind Speed', 'wind', Unit('m/s')), 
+    'vapo': ClimateVariable('Vapor Pressure', 'vapo', Unit('kPa')), 
+    'winddir': ClimateVariable('Wind Direction', 'winddir', Unit('degree')), ## CHECK if correct 
     ## Component Variables
-    'ugrd': ClimateVariable('CRUJRA  Wind Direction U Component', 'ugrd'),
-    'vgrd': ClimateVariable('CRUJRA Wind Direction V Component', 'vgrd'),
-    'spfh': ClimateVariable('spfh', 'spfh'),
-    'pres': ClimateVariable('pres', 'pres'),
+    'ugrd': ClimateVariable('Zonal component of wind speed', 'ugrd', Unit('m/s')),
+    'vgrd': ClimateVariable('Meridional component of wind speed', 'vgrd', Unit('m/s')),
+    'spfh': ClimateVariable('Specific humidity', 'spfh', Unit('kg/kg')),
+    'pres': ClimateVariable('Pressure', 'pres', Unit('Pa')),
 
 }
 
@@ -69,6 +64,20 @@ def register(cv, source, alias):
         variable alias for source
     """
     CLIMATE_VARIABLES[cv].aliases[source] = alias
+
+def register_source_unit(cv, source, unit):
+    """Registers an alias for a climate variable in CLIMATE_VARIABLES
+
+    Parameters
+    ----------
+    cv: str
+        climate variable in CLIMATE_VARIABLES
+    source: str
+        name of datasource
+    unit: Unit
+        Unit of source
+    """
+    CLIMATE_VARIABLES[cv].source_units[source] = unit
 
 def list_for(source: str):
     """Returns sources registered ClimateVariables as a list
@@ -110,3 +119,43 @@ def aliases_for(source: str, _as: str='list'):
         return {cv.aliases[source]: cv.abbr for cv in list_for(source)}
     else:
         return [cv.aliases[source] for cv in list_for(source)]
+
+def has_conversion(std_var, source):
+    """Checks if conversion is present
+
+    Parameters
+    ----------
+    std_var: str
+        var in  CLIMATE_VARIABLES
+    source: str
+        datasource name
+
+    Returns
+    -------
+    Bool
+    """
+    return source in CLIMATE_VARIABLES[std_var].source_units
+
+def to_std_units(data, std_var, source):
+    """convert data to standard units if conversion is present
+
+    Parameters
+    ----------
+    data: np.array like
+        data to convert
+    std_var: str
+        var in  CLIMATE_VARIABLES
+    source: str
+        datasource name
+
+    Returns
+    -------
+    np.array like
+        Converted data if data is preset, otherwise unchanged 
+        data
+    """
+    if has_conversion(std_var, source):
+        src_units = CLIMATE_VARIABLES[std_var].source_units[source]
+        std_units = CLIMATE_VARIABLES[std_var].std_unit
+        return src_units.convert(data, std_units)
+    return data

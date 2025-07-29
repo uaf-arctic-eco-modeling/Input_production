@@ -18,7 +18,7 @@ from pyproj import CRS
 from . import errors
 from . import worldclim
 from temds import file_tools
-from temds import climate_variables
+from temds import climate_variables 
 from temds.logger import Logger
 from temds.constants import MONTH_START_DAYS 
 
@@ -147,23 +147,18 @@ class TEMDataset(object):
         maxy = miny + gt[5] * extent_ds.RasterYSize + (buffer_px * extent_ds.RasterYSize)
         
         extent = (minx, miny, maxx, maxy) #_warp_order
-        
-
         logger.debug(f'{func_name}: extent {extent}')
         if buffer_px > 0:
             logger.info(f'{func_name}: extents includes buffer of {buffer_px} pixels')
         x_res, y_res = gt[1], gt[5]
 
         logger.debug(f'{func_name}: resolution, {x_res},{y_res}')
-
-        out_x_size = extent_ds.RasterXSize
-        out_y_size = extent_ds.RasterYSize
-        
-        logger.debug(f'{func_name}: out size {out_x_size}, {out_y_size}')
-        
-        
+        logger.debug((
+            f'{func_name}: out size {extent_ds.RasterXSize}, '
+            f'{extent_ds.RasterYSize}'
+        ))
+    
         lat_dim = np.arange( miny, maxy, abs(y_res) ) + (abs(y_res)/2)
-
         # lat_dim is empty if this is true, so swap min and max and redo
         if maxy < miny: 
             miny, maxy = maxy, miny
@@ -172,11 +167,7 @@ class TEMDataset(object):
 
         ## do we need the dimension trick here?
         lon_dim = np.arange(minx, maxx, abs(x_res)) + (abs(x_res)/2)
-        
-
-        rows = len(lat_dim)
-        cols = len(lon_dim)
-
+        rows, cols = len(lat_dim), len(lon_dim)
         dims = ['time', 'lat', 'lon']
         n_time = len(ds_time_dim)
         shape = [n_time, rows, cols]
@@ -230,8 +221,6 @@ class TEMDataset(object):
         """"""
         ## used in messages.
         func_name = "TEMdataset.from_worldclim"
-
-
         
         if in_vars == 'all':
             in_vars = worldclim.__vars
@@ -255,7 +244,7 @@ class TEMDataset(object):
             in_dir = Path(f'{data_path}/{var_dir}')
             if not in_dir.exists():
                 archive = Path(f'{data_path}/{var_dir}.zip')
-                logger.debug(f'TEMDataset.from_worldclim: unzipping {archive}')
+                logger.debug(f'{func_name}: unzipping {archive}')
                 file_tools.extract(archive, in_dir)
             completed[var] = in_dir
 
@@ -316,6 +305,16 @@ class TEMDataset(object):
                 
                 new.dataset[var][idx] = pixels # 0based index
                 [gc.collect(i) for i in range(2)]
+
+        ## any Unit conversions
+        source = 'worldclim'
+        for stn, wcn in climate_variables.aliases_for(source, 'dict').items():
+            
+            if climate_variables.has_conversion(stn, source):
+                logger.info(f'{func_name}: converting units for {wcn} to {stn}')
+                new.dataset[wcn].values = climate_variables.to_std_units(
+                    new.dataset[wcn].values, stn, source
+                )
 
         new.dataset.rename(climate_variables.aliases_for('worldclim', 'dict_r'))
 
