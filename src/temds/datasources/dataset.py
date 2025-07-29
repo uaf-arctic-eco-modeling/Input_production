@@ -18,6 +18,8 @@ from pyproj import CRS
 
 from . import errors
 
+from temds.logger import Logger
+
 import matplotlib.pyplot as plt
 
 gdal.UseExceptions()
@@ -32,14 +34,42 @@ except:
     malloc_trim = lambda x: x ## do nothing 
 
 
-class TEMDataSet(object):
+
+
+
+class TEMDataset(object):
     """Class for managing .nc based data in TEMDS
+
+    Attributes
+    ----------
+    _dataset: xr.dataset or Path
+        should be accessed using the `dataset` property
+        when `in_memory` is false this must be a Path
+        otherwise it's a xr.dataset
+    verbose: path
+
+
+
+    Properties
+    ----------
+    dataset:
+        Provides access to internal `_dataset`, the getter
+        will always provided access to an in memory version
+        of the data. If `in_memory` is False the in memory 
+        dataset is read only.
     """
 
-    def __init__(self, dataset, in_memory=True, verbose=False):
+    def __init__(self, dataset, in_memory=True, logger=Logger()):
+        """
+        Parameters
+        ----------
+        dataset: xr.dataset
+            the dataset. 
+
+        """
         self._dataset = dataset
-        self.verbose = verbose
-        self.vars = [] # TODO
+        self.logger = logger
+        self.vars = [] # TODO 
 
         self.crs = None
         self.transform = None
@@ -68,7 +98,7 @@ class TEMDataSet(object):
         self._dataset = value
 
     @staticmethod
-    def from_raster_extent(raster, in_vars = [], ds_time_dim=[], buffer_px=30, verbose=False):
+    def from_raster_extent(raster, in_vars = [], ds_time_dim=[], buffer_px=30, logger=Logger()):
         """
         TODO: update
         Creates new xr.dataset for `self.dataset` using 
@@ -87,8 +117,7 @@ class TEMDataSet(object):
 
         ds_crs = CRS.from_wkt(extent_ds.GetProjection() )
         if ds_crs == CRS.from_epsg(4326):
-            if verbose: 
-                print('Dont Buffer wgs84(EPSG:4326)')
+            logger.warn('TEMdataset.from_raster_extent: When projection is wgs84(EPSG:4326) buffer_px is ignored')
             buffer_px = 0
 
         ## if wgs84 we need some kind of check on bounds
@@ -102,15 +131,17 @@ class TEMDataSet(object):
         extent = (minx, miny, maxx, maxy) #_warp_order
         
 
-        if verbose: print(f'extent {extent}')
-        if verbose: print(f'extents includes buffer of {buffer_px} pixels')
+        logger.info(f'TEMdataset.from_raster_extent: extent {extent}')
+        if buffer_px > 0:
+            logger.info(f'TEMdataset.from_raster_extent: extents includes buffer of {buffer_px} pixels')
         x_res, y_res = gt[1], gt[5]
-        if verbose: print(f'resolution, {x_res},{y_res}')
+
+        logger.info(f'TEMdataset.from_raster_extent: resolution, {x_res},{y_res}')
 
         out_x_size = extent_ds.RasterXSize
         out_y_size = extent_ds.RasterYSize
         
-        if verbose: print (f'out size {out_x_size}, {out_y_size}')
+        logger.info(f'TEMdataset.from_raster_extent: out size {out_x_size}, {out_y_size}')
         
         
         lat_dim = np.arange( miny, maxy, abs(y_res) ) + (abs(y_res)/2)
@@ -131,7 +162,7 @@ class TEMDataSet(object):
         dims = ['time', 'lat', 'lon']
         n_time = len(ds_time_dim)
         shape = [n_time, rows, cols]
-        print(shape)
+
         empty_data = np.zeros(n_time * rows * cols)\
                        .reshape(shape).astype('float32')
         data_vars = { 
@@ -162,18 +193,17 @@ class TEMDataSet(object):
             .rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)\
             .rio.write_coordinate_system(inplace=True)
 
-        return DataSet(dataset)
+        return TEMDataset(dataset, logger=logger)
 
     
     @staticmethod
-    def from_worldclim(data_path, url_pattern=None, in_vars='all', extent_raster=None, overwrite=False, verbose=False, resample_alg='bilinear'):
+    def from_worldclim(data_path, url_pattern=None, in_vars='all', extent_raster=None, overwrite=False, logger=Logger(), resample_alg='bilinear'):
         # 
         # return worldclim.load()? like this instead?
 
         from temds.remote_zip import RemoteZip
         from temds.constants import MONTH_START_DAYS 
         from temds import climate_variables
-        from .base import TEMDataSet
         WORLDCLIM_NAMING_CONVENTION = 'wc2.1_30s_{var}'
 
         if in_vars == 'all':
@@ -186,7 +216,7 @@ class TEMDataSet(object):
         if not url_pattern is None: # get from web
             if verbose: 
                 ## TODO Update msg
-                print('WorldClim.download', data_path)
+                logger.info(f'TEMdataset.from_worldclim: {data_path}')
             
             if in_vars is None and url_pattern.format(in_vars) != url_pattern:
                 raise TypeError('URL is a formatter and no var is provided')
@@ -204,7 +234,6 @@ class TEMDataSet(object):
         for var in in_vars:
             in_dir = Path(f'{data_path}/{var}')
             if not in_dir.exists():
-                print('archive')
                 var_dir = WORLDCLIM_NAMING_CONVENTION.format(var=var)
                 archive = f'{data_path}/{var_dir}.zip'
                 temp = RemoteZip('', verbose)
@@ -215,10 +244,11 @@ class TEMDataSet(object):
        
             
 
-        if verbose: 
-            print(
+        logger.info((
+                f'TEMdataset.from_worldclim: '
                 f'data not initialized. '
-                'Initializing with extent from {extent_raster}'
+                f'Initializing with extent from {extent_raster}'
+        )
             )
         if extent_raster is None:
             key = list(completed.keys())[0]
@@ -227,14 +257,16 @@ class TEMDataSet(object):
 
         months=range(1,13)
         doy = [MONTH_START_DAYS[mn-1] for mn in months]
-        TEMDataSet = YearlyDataSet.from_raster_extent(extent_raster, in_vars=in_vars, ds_time_dim=doy)
+        new = YearlyDataset.from_raster_extent(
+            extent_raster, in_vars=in_vars, ds_time_dim=doy, logger=logger
+        )
 
-        gt = TEMDataSet.dataset.rio.transform().to_gdal()
+        gt = new.dataset.rio.transform().to_gdal()
 
         minx = gt[0]
         miny = gt[3]
-        maxx = minx + abs(gt[1]) * TEMDataSet.dataset.lon.size
-        maxy = miny + abs(gt[5]) * TEMDataSet.dataset.lat.size
+        maxx = minx + abs(gt[1]) * new.dataset.lon.size
+        maxy = miny + abs(gt[5]) * new.dataset.lat.size
         extent = (minx, miny, maxx, maxy) #_warp_order
         
         for var in in_vars:
@@ -243,19 +275,19 @@ class TEMDataSet(object):
                 idx = month-1
                 file_format = 'wc2.1_30s_{var}_{mn:02d}.tif' # TODO> move
                 data_raster = Path(in_dir, file_format.format(var=var, mn=month))
-                if verbose: 
-                    print(f'loading {var} data from {data_raster} at index {idx}')
+
+                logger.info(f'TEMdataset.from_worldclim:loading {var} data from {data_raster} at index {idx}')
         
                 
                 
-                if verbose: print(f'.. Running gdal.Warp to extent {extent}')
+                logger.info(f'TEMdataset.from_worldclim: Running gdal.Warp to extent {extent}')
 
                 # load result to memory so we don't have temp files
                 result = gdal.Warp(
                     '', data_raster, 
                     xRes=abs(gt[1]), yRes=abs(gt[5]),
                     outputBounds=extent,
-                    dstSRS=TEMDataSet.dataset.rio.crs.to_wkt(),
+                    dstSRS=new.dataset.rio.crs.to_wkt(),
                     format='mem',
                     resampleAlg=resample_alg,
                     dstNodata=-3.4e+38,
@@ -269,10 +301,10 @@ class TEMDataSet(object):
                     
                 pixels[pixels <= -3e30] = np.nan # fix
                 
-                TEMDataSet.dataset[var][idx] = pixels # 0based index
+                new.dataset[var][idx] = pixels # 0based index
                 [gc.collect(i) for i in range(2)]
 
-        return TEMDataSet
+        return new
     
     
     def __repr__(self):
@@ -303,7 +335,7 @@ class TEMDataSet(object):
 
         """
         if self._dataset is None:
-            raise errors.TEMDataSetUninitializeError()
+            raise errors.TEMDatasetUninitializeError()
 
 
         lookup = lambda key, default: kwargs[key] if key in kwargs else default
@@ -326,7 +358,7 @@ class TEMDataSet(object):
 
         resolution = kwargs['resolution']
         if resolution is None:
-            raise errors.TEMDataSetMissingResolutionError(
+            raise errors.TEMDatasetMissingResolutionError(
                 'get_by_extent needs a resolution, either from kwargs or with class attribute `resolution` != None'
             )
 
@@ -621,7 +653,7 @@ class TEMDataSet(object):
                 Compression level for 'zlib'
         """
         if self.dataset is None:
-            raise errors.TEMDataSetUninitializeError()
+            raise errors.TEMDatasetUninitializeError()
 
         def lookup(kw, ke, de):
             return kw[ke] if ke in kw else de
@@ -670,17 +702,23 @@ class TEMDataSet(object):
 
 
 
-class YearlyDataSet(DataSet):
+class YearlyDataset(TEMDataset):
+    """This sub class of TEMDataset represents daily data
+    for a single year.  Extends TEMDataset by adding
+    `year` attribute.
+    """
+
     def __init__(self, year, dataset, **kwargs):
         self.year = year
-        self.timestep = self.year  #??
-        super().__init__(in_path, verbose, _vars,  **kwargs)
+        super().__init__(dataset, **kwargs)
 
     def __repr__(self):
         return(f"{type(self).__module__}.{type(self).__name__}: {self.year}")
 
     @staticmethod
-    def from_TEMDataSet(inds, year):
+    def from_TEMDataset(inds, year):
+        """converts an existing TEMDataset to YearlyDataset
+        """
 
         kwargs['verbose'] = inds.verbose
         kwargs['in_memory'] = inds.in_memory
@@ -693,7 +731,7 @@ class YearlyDataSet(DataSet):
         # self.resolution 
         # self.cached_load_kwargs
 
-        return YearlyDataSet(year, inds.dataset, **kwargs)
+        return YearlyDataset(year, inds.dataset, **kwargs)
 
 
     def __lt__(self, other):

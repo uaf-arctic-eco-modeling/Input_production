@@ -5,11 +5,11 @@ Errors
 custom exceptions for temds.datasources
 """
 
-class TEMDataSetUninitializeError(Exception):
+class TEMDatasetUninitializeError(Exception):
     """Raised if dataset is None and a base function is called"""
     pass
 
-class TEMDataSetMissingResolutionError(Exception):
+class TEMDatasetMissingResolutionError(Exception):
     """Raised if dataset has unset resolution and the resolution is required to
     proceed.
     """
