@@ -112,6 +112,10 @@ class TEMDataset(object):
         raster: path
             path to a raster file that can be opened as a gdal dataset
         """
+        logger.info((
+                f'TEMdataset.from_raster_extent: '
+                f'Initializing with extent from {raster}'
+        ))
         verbose = True
         extent_ds = gdal.Open(raster)
 
@@ -131,17 +135,17 @@ class TEMDataset(object):
         extent = (minx, miny, maxx, maxy) #_warp_order
         
 
-        logger.info(f'TEMdataset.from_raster_extent: extent {extent}')
+        logger.pedantic(f'TEMdataset.from_raster_extent: extent {extent}')
         if buffer_px > 0:
             logger.info(f'TEMdataset.from_raster_extent: extents includes buffer of {buffer_px} pixels')
         x_res, y_res = gt[1], gt[5]
 
-        logger.info(f'TEMdataset.from_raster_extent: resolution, {x_res},{y_res}')
+        logger.pedantic(f'TEMdataset.from_raster_extent: resolution, {x_res},{y_res}')
 
         out_x_size = extent_ds.RasterXSize
         out_y_size = extent_ds.RasterYSize
         
-        logger.info(f'TEMdataset.from_raster_extent: out size {out_x_size}, {out_y_size}')
+        logger.pedantic(f'TEMdataset.from_raster_extent: out size {out_x_size}, {out_y_size}')
         
         
         lat_dim = np.arange( miny, maxy, abs(y_res) ) + (abs(y_res)/2)
@@ -214,9 +218,9 @@ class TEMDataset(object):
 
         ## download first if url is provided
         if not url_pattern is None: # get from web
-            if verbose: 
-                ## TODO Update msg
-                logger.info(f'TEMdataset.from_worldclim: {data_path}')
+        
+            ## TODO Update msg
+            logger.info(f'TEMdataset.from_worldclim: {data_path}')
             
             if in_vars is None and url_pattern.format(in_vars) != url_pattern:
                 raise TypeError('URL is a formatter and no var is provided')
@@ -244,12 +248,10 @@ class TEMDataset(object):
        
             
 
-        logger.info((
+        logger.pedantic((
                 f'TEMdataset.from_worldclim: '
-                f'data not initialized. '
                 f'Initializing with extent from {extent_raster}'
-        )
-            )
+        ))
         if extent_raster is None:
             key = list(completed.keys())[0]
             extent_raster = list(completed[key].glob('*.tif'))[0]
@@ -276,11 +278,11 @@ class TEMDataset(object):
                 file_format = 'wc2.1_30s_{var}_{mn:02d}.tif' # TODO> move
                 data_raster = Path(in_dir, file_format.format(var=var, mn=month))
 
-                logger.info(f'TEMdataset.from_worldclim:loading {var} data from {data_raster} at index {idx}')
+                logger.info(f'TEMdataset.from_worldclim: loading {var} data from {data_raster} at index {idx}')
         
                 
                 
-                logger.info(f'TEMdataset.from_worldclim: Running gdal.Warp to extent {extent}')
+                logger.pedantic(f'TEMdataset.from_worldclim: Running gdal.Warp to extent {extent}')
 
                 # load result to memory so we don't have temp files
                 result = gdal.Warp(
