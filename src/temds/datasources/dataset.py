@@ -46,7 +46,9 @@ class TEMDataset(object):
         should be accessed using the `dataset` property
         when `in_memory` is false this must be a Path
         otherwise it's a xr.dataset
-    verbose: path
+    in_memory: Bool
+    logger: logger.Logger
+        Logger to use for printing or saving messages
 
 
 
@@ -64,7 +66,10 @@ class TEMDataset(object):
         Parameters
         ----------
         dataset: xr.dataset
-            the dataset. 
+            the dataset
+        in_memory: Bool
+        logger: logger.Logger, defaults to new object
+            Logger to use for printing or saving messages
 
         """
         self._dataset = dataset
@@ -89,8 +94,6 @@ class TEMDataset(object):
             return self.load(self._dataset, **self.cached_load_kwargs)
         else:
             raise TypeError('Bad Dataset Type')
-
-
 
     @dataset.setter
     def dataset(self, value):
@@ -199,7 +202,6 @@ class TEMDataset(object):
 
         return TEMDataset(dataset, logger=logger)
 
-    
     @staticmethod
     def from_worldclim(data_path, url_pattern=None, in_vars='all', extent_raster=None, overwrite=False, logger=Logger(), resample_alg='bilinear'):
         # 
@@ -308,7 +310,6 @@ class TEMDataset(object):
 
         return new
     
-    
     def __repr__(self):
         return(f"{type(self).__module__}.{type(self).__name__}")
 
@@ -364,7 +365,7 @@ class TEMDataset(object):
                 'get_by_extent needs a resolution, either from kwargs or with class attribute `resolution` != None'
             )
 
-        if self.verbose: print(kwargs)
+        self.logger.pedantic(f'TEMDataset.get_by_extent kwargs: {kwargs}')
 
         use = lookup('clip_with', 'gdal')
         if use == 'gdal':
@@ -447,12 +448,12 @@ class TEMDataset(object):
         # N time steps
         n_ts = working_dataset['time'].shape[0]
 
-        if self.verbose: 
-            print(f'source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
-            print(f'source GeoTransform: {s_gt}')
-            print(f'destination dimensions (for each Variable): x={c_x}, y={c_y}, time={n_ts}')
-            print(f'destination GeoTransform: {c_gt}')
-            print(f'Resampling Algorithm: {resample_alg}')
+    
+        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
+        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: source GeoTransform: {s_gt}')
+        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: destination dimensions (for each Variable): x={c_x}, y={c_y}, time={n_ts}')
+        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: destination GeoTransform: {c_gt}')
+        self.logger.pedantic(f'TEMDataset.get_by_extent_gdal: Resampling Algorithm: {resample_alg}')
 
 
         dest_crs = extent_crs.to_wkt()
@@ -722,7 +723,7 @@ class YearlyDataset(TEMDataset):
         """converts an existing TEMDataset to YearlyDataset
         """
 
-        kwargs['verbose'] = inds.verbose
+        kwargs['logger'] = inds.logger
         kwargs['in_memory'] = inds.in_memory
         
         # TODO all of this is not implemented yet in base class
