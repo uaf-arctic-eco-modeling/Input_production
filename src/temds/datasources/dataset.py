@@ -67,8 +67,7 @@ class TEMDataset(object):
 
         """
         self._dataset = None
-        self.vars = [] # TODO load from data
-        
+
         self.logger = logger
     
         self.crs = None
@@ -93,6 +92,18 @@ class TEMDataset(object):
             else:
                 raise IOError('input data is missing or not a .nc file')
         
+    @property
+    def vars(self):
+        """Property for quick access to variables in dataset
+        """
+        return list(self.dataset.data_vars)
+    
+    @property
+    def units(self):
+        """Property for quick access to units for variables in dataset
+        """
+        return {}
+   
     @property
     def dataset(self):
         """This Property allow the objects data to be represented as a
@@ -223,7 +234,7 @@ class TEMDataset(object):
         func_name = "TEMdataset.from_worldclim"
         
         if in_vars == 'all':
-            in_vars = worldclim.__vars
+            in_vars = worldclim.VARS
         if not type(in_vars) is list:
             in_vars = [in_vars]
         completed = {}
@@ -271,6 +282,11 @@ class TEMDataset(object):
             f'{func_name}: Running gdal.Warp to extent {extent} on all data'
         )
         for var in in_vars:
+            cv = climate_variables.lookup_alias(worldclim.NAME, var)
+            unit = cv.std_unit.name
+            v_name = cv.name
+            new.dataset.tmin.attrs.update(units=unit, name=v_name)
+
             in_dir = completed[var]
             for month in range(1,13):
                 idx = month-1
@@ -294,8 +310,6 @@ class TEMDataset(object):
                     resampleAlg=resample_alg,
                     dstNodata=-3.4e+38,
                     outputType=gdal.GDT_Float32,
-                    # srcBands = [1],
-                    # dstBands = [1]
                 )
                 pixels = result.ReadAsArray()
                 if gt[5] < 0: # filp flop if res_y is negative
@@ -315,6 +329,7 @@ class TEMDataset(object):
                 new.dataset[wcn].values = climate_variables.to_std_units(
                     new.dataset[wcn].values, stn, source
                 )
+
 
         new.dataset.rename(climate_variables.aliases_for('worldclim', 'dict_r'))
 
@@ -755,13 +770,24 @@ class TEMDataset(object):
         else:
             return in_dataset
     
-    # def update_variable_names(self, new_scheme):
-    #     """ do we need this?
-    #     """
-    #     if not self.in_memory:
-    #         raise TypeError('Dataset must be in memory for this function')
-    #     update_map = {self.naming[var] for var in new_scheme}
-    #     self.dataset.rename(update_map)
+    def verify(self):
+        """Verifies Internal data is in correct format for downscale process
+
+        Returns
+        -------
+        tuple: (bool, list)
+            bool is true when verification passes, otherwise false
+            list is a list of reasons for failure, when bool is false 
+        """
+        verified = True
+        reasons = []
+
+        valid_names = climate_variables.temds_names()
+        for var in self.vars:
+            if var not in valid_names:
+                verified = False
+                reasons.append(f'{var} is not a TEMDS supported variable')
+        return verified, reasons
 
 
 class YearlyDataset(TEMDataset):
@@ -804,7 +830,7 @@ class YearlyDataset(TEMDataset):
                 "Missing 'data_year' attribute"
             )
         
-        if not in_memory:
+        if not self.in_memory:
             return in_dataset
 
 
@@ -816,7 +842,7 @@ class YearlyDataset(TEMDataset):
     def from_TEMDataset(inds, year):
         """converts an existing TEMDataset to YearlyDataset
         """
-
+        kwargs = {}
         kwargs['logger'] = inds.logger
         kwargs['in_memory'] = inds.in_memory
         
