@@ -7,7 +7,6 @@ list operations for timeseries based data
 from collections import UserList
 from pathlib import Path
 from datetime import datetime
-import gc
 
 from joblib import Parallel, delayed
 
