@@ -2,9 +2,10 @@
 dataset
 -------
 
+Objects to manage data for TEMDS project
+
 """
 from pathlib import Path
-from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 import gc
 
@@ -14,6 +15,7 @@ import rioxarray  # activate
 from osgeo import gdal
 from affine import Affine
 from pyproj import CRS
+from cf_units import Unit
 
 from . import errors
 from . import worldclim
@@ -21,6 +23,8 @@ from temds import file_tools
 from temds import climate_variables 
 from temds.logger import Logger
 from temds.constants import MONTH_START_DAYS 
+from temds.util import Version
+
 
 ## We can better clear the memory cache on some OS's with this 
 ## trick. If libc.so.6 is not present the code dose nothing
@@ -54,7 +58,6 @@ class TEMDataset(object):
         of the data. If `in_memory` is False the in memory 
         dataset is read only.
     """
-
     def __init__(self, dataset, in_memory=True, logger=Logger(), **kwargs):
         """
         Parameters
@@ -102,7 +105,7 @@ class TEMDataset(object):
     def units(self):
         """Property for quick access to units for variables in dataset
         """
-        return {}
+        return {var: Unit(self.dataset[var].units) for var in self.vars}
    
     @property
     def dataset(self):
@@ -285,7 +288,9 @@ class TEMDataset(object):
             cv = climate_variables.lookup_alias(worldclim.NAME, var)
             unit = cv.std_unit.name
             v_name = cv.name
-            new.dataset.tmin.attrs.update(units=unit, name=v_name)
+
+            ## this is inplace as opposed to assign_attrs
+            new.dataset[var].attrs.update(units=unit, name=v_name)
 
             in_dir = completed[var]
             for month in range(1,13):
@@ -331,11 +336,14 @@ class TEMDataset(object):
                 )
 
 
-        new.dataset.rename(climate_variables.aliases_for('worldclim', 'dict_r'))
+        new.dataset = new.dataset.rename(
+            climate_variables.aliases_for('worldclim', 'dict_r')
+        )
 
         return new
     
     def __repr__(self):
+        """string representation"""
         return(f"{type(self).__module__}.{type(self).__name__}")
 
     def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
@@ -363,7 +371,9 @@ class TEMDataset(object):
 
         """
         if self._dataset is None:
-            raise errors.TEMDatasetUninitializeError()
+            raise errors.TEMDatasetUninitializedError(
+                "Cannot operate on Uninitialized TEMDataset"
+        )
 
 
         lookup = lambda key, default: kwargs[key] if key in kwargs else default
@@ -386,9 +396,10 @@ class TEMDataset(object):
 
         resolution = kwargs['resolution']
         if resolution is None:
-            raise errors.TEMDatasetMissingResolutionError(
-                'get_by_extent needs a resolution, either from kwargs or with class attribute `resolution` != None'
-            )
+            raise errors.TEMDatasetMissingResolutionError((
+                'get_by_extent needs a resolution, either from kwargs or with '
+                'class attribute `resolution` != None'
+            ))
 
         self.logger.debug(f'TEMDataset.get_by_extent kwargs: {kwargs}')
 
@@ -407,7 +418,6 @@ class TEMDataset(object):
         #     tile = tile.reindex(x=list(reversed(tile.x)))
         return tile
         
-
     def get_by_extent_gdal(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
         """Returns xr.dataset for use in downscaling
 
@@ -679,8 +689,13 @@ class TEMDataset(object):
             'complevel': int
                 Compression level for 'zlib'
         """
-        if self.dataset is None:
-            raise errors.TEMDatasetUninitializeError()
+        if self._dataset is None:
+            raise errors.TEMDatasetUninitializedError(
+                "Cannot save Uninitialized TEMDataset"
+            )
+        
+        if self.in_memory == False:
+            raise IOError("We don't support saving when `in_memory` == False")
 
         def lookup(kw, ke, de):
             return kw[ke] if ke in kw else de
@@ -704,6 +719,7 @@ class TEMDataset(object):
         for _var in self.vars:
             self.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
             
+        self.dataset.attrs.update(TEMDS_version = Version())
 
         if  not Path(out_file).exists() or overwrite:
             Path(out_file).parent.mkdir(parents=True, exist_ok=True)
@@ -744,12 +760,12 @@ class TEMDataset(object):
             ))
             aoi_idx = np.isnan(in_dataset[force_aoi_to].values)
             mask = aoi_idx.astype(float)
-            mask[mask == 1] = np.nan
+            mask[mask == 1] = aoi_nodata
             in_dataset = in_dataset + mask
 
         x_dim = 'x'
         y_dim = 'y'
-        if crs == 'EPSG:4326':
+        if crs == 'EPSG:4326': #is this true for other crs as well?
             x_dim ='lon'
             y_dim = 'lat'
         in_dataset = \
@@ -787,6 +803,13 @@ class TEMDataset(object):
             if var not in valid_names:
                 verified = False
                 reasons.append(f'{var} is not a TEMDS supported variable')
+
+        for var, units in self.units.items():
+            std_units = climate_variables.temds_units_for(var)
+            if units != std_units:
+                verified = False
+                reasons.append(f'{var} has units {units} needs {std_units}')
+
         return verified, reasons
 
 
