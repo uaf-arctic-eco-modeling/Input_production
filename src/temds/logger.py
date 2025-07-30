@@ -12,6 +12,14 @@ from pathlib import Path
 
 MsgType = Enum('MsgType', [('debug', 0 ), ('info', 1), ('warn', 2), ('error', 3)])
 
+ERROR = [MsgType.error]
+WARN  = ERROR + [MsgType.warn]
+INFO  = WARN  + [MsgType.info]
+DEBUG = INFO  + [MsgType.debug] 
+
+
+
+
 @dataclass
 class LogMsg:
     text: str
