@@ -72,10 +72,6 @@ class TEMDataset(object):
         self._dataset = None
 
         self.logger = logger
-    
-        self.crs = None
-        self.transform = None
-        self.resolution = None # default Project Resolution
         
         self.in_memory = in_memory
         self.cached_load_kwargs={}
@@ -95,6 +91,26 @@ class TEMDataset(object):
             else:
                 raise IOError('input data is missing or not a .nc file')
         
+    @property
+    def crs(self):
+        """Property for Quick access to crs"""
+        return CRS(self.dataset.rio.crs)
+    
+    @property
+    def transform(self):
+        """Property for Quick access to geo transform"""
+        return self.dataset.rio.transform()
+
+    @property
+    def resolution(self):
+        """Property for Quick access to resolution"""
+        return self.dataset.rio.resolution()
+    
+    @property
+    def extent(self):
+        """Property for Quick access to resolution"""
+        return self.dataset.rio.bounds()
+
     @property
     def vars(self):
         """Property for quick access to variables in dataset
@@ -145,12 +161,16 @@ class TEMDataset(object):
         extent_ds = gdal.Open(raster)
 
         ds_crs = CRS.from_wkt(extent_ds.GetProjection() )
-        if ds_crs == CRS.from_epsg(4326):
+        x_dim = 'x'
+        y_dim = 'y'
+        if ds_crs == CRS.from_epsg(4326): #is this true for other crs as well?
             logger.warn((
                 f'{func_name}: When projection is wgs84(EPSG:4326) buffer_px '
                 'is ignored'
             ))
             buffer_px = 0
+            x_dim ='lon'
+            y_dim = 'lat'
 
         ## TODO: if wgs84 we need some kind of check on bounds
             
@@ -172,17 +192,17 @@ class TEMDataset(object):
             f'{extent_ds.RasterYSize}'
         ))
     
-        lat_dim = np.arange( miny, maxy, abs(y_res) ) + (abs(y_res)/2)
+        y_array = np.arange( miny, maxy, abs(y_res) ) + (abs(y_res)/2)
         # lat_dim is empty if this is true, so swap min and max and redo
         if maxy < miny: 
             miny, maxy = maxy, miny
-            lat_dim = np.arange(miny,maxy, abs(y_res)) + (abs(y_res)/2)
+            y_array = np.arange(miny,maxy, abs(y_res)) + (abs(y_res)/2)
             miny, maxy = maxy, miny ## keep for gdal
 
         ## do we need the dimension trick here?
-        lon_dim = np.arange(minx, maxx, abs(x_res)) + (abs(x_res)/2)
-        rows, cols = len(lat_dim), len(lon_dim)
-        dims = ['time', 'lat', 'lon']
+        x_array = np.arange(minx, maxx, abs(x_res)) + (abs(x_res)/2)
+        rows, cols = len(y_array), len(x_array)
+        dims = ['time', y_dim, x_dim]
         n_time = len(ds_time_dim)
         shape = [n_time, rows, cols]
 
@@ -196,15 +216,17 @@ class TEMDataset(object):
         ## might not be necessary here, but included just in
         ## case
         coords={
-            'lat': lat_dim, 
-            'lon': lon_dim,
+            y_dim: y_array, 
+            x_dim: x_array,
             'time': deepcopy(ds_time_dim)
         }
+
+        logger.info(f'{func_name}: output crs - {extent_ds.GetProjection()}')        
 
         ## change to x,y from lat,lon
         dataset = xr.Dataset(data_vars=data_vars, coords=coords)
         dataset.rio.write_crs(extent_ds.GetProjection(),inplace=True)\
-            .rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)\
+            .rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True)\
             .rio.write_coordinate_system(inplace=True) 
 
         # from_gdal very important here.
@@ -215,7 +237,7 @@ class TEMDataset(object):
         ## first call above and it didn't make a difference. 
         dataset = dataset\
             .rio.write_crs(dataset.rio.crs.to_wkt(), inplace=True)\
-            .rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=True)\
+            .rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim , inplace=True)\
             .rio.write_coordinate_system(inplace=True)
 
         return TEMDataset(dataset, logger=logger)
@@ -276,10 +298,17 @@ class TEMDataset(object):
             logger=logger
         )
 
-        gt = new.dataset.rio.transform().to_gdal()
+        x_dim = 'x'
+        y_dim = 'y'
+        if new.crs == CRS.from_epsg(4326): #is this true for other crs as well?
+            x_dim ='lon'
+            y_dim = 'lat'
+
+
+        gt = new.dataset.transform.to_gdal()
         minx, miny = gt[0], gt[3]
-        maxx = minx + abs(gt[1]) * new.dataset.lon.size
-        maxy = miny + abs(gt[5]) * new.dataset.lat.size
+        maxx = minx + abs(gt[1]) * new.dataset[x_dim].size
+        maxy = miny + abs(gt[5]) * new.dataset[y_dim].size
         extent = (minx, miny, maxx, maxy) #_warp_order
         logger.info(
             f'{func_name}: Running gdal.Warp to extent {extent} on all data'
@@ -310,7 +339,7 @@ class TEMDataset(object):
                     '', data_raster, 
                     xRes=abs(gt[1]), yRes=abs(gt[5]),
                     outputBounds=extent,
-                    dstSRS=new.dataset.rio.crs.to_wkt(),
+                    dstSRS=new.crs.to_wkt(),
                     format='mem',
                     resampleAlg=resample_alg,
                     dstNodata=-3.4e+38,
@@ -744,13 +773,15 @@ class TEMDataset(object):
         # year_override = lookup(kwargs, 'year_override', None)
         force_aoi_to = lookup(kwargs, 'force_aoi_to', None)
         aoi_nodata = lookup(kwargs, 'aoi_nodata', np.nan)
-        crs = lookup(kwargs, 'crs', 'EPSG:4326')
+        # crs = lookup(kwargs, 'crs', 'EPSG:4326')
         chunks = lookup(kwargs, 'chunks', None)
 
         self.logger.debug(f'{func_name}: loading dataset {chunks=}')
         in_dataset = xr.open_dataset(
             in_path, engine="netcdf4", chunks=chunks
         )
+
+        crs = in_dataset.spatial_ref.attrs['spatial_ref']
 
         ## BUGGY with dask multiprocess
         if not force_aoi_to is None:
@@ -765,7 +796,7 @@ class TEMDataset(object):
 
         x_dim = 'x'
         y_dim = 'y'
-        if crs == 'EPSG:4326': #is this true for other crs as well?
+        if CRS(crs) == CRS('EPSG:4326'): #is this true for other crs as well?
             x_dim ='lon'
             y_dim = 'lat'
         in_dataset = \
@@ -808,7 +839,7 @@ class TEMDataset(object):
             std_units = climate_variables.temds_units_for(var)
             if units != std_units:
                 verified = False
-                reasons.append(f'{var} has units {units} needs {std_units}')
+                reasons.append(f'{var} has units {units} but needs {std_units}')
 
         return verified, reasons
 
