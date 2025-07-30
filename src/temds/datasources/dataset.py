@@ -18,7 +18,7 @@ from pyproj import CRS
 from cf_units import Unit
 
 from . import errors
-from . import worldclim
+from . import worldclim, crujra
 from temds import file_tools
 from temds import climate_variables 
 from temds.logger import Logger
@@ -366,7 +366,7 @@ class TEMDataset(object):
 
 
         new.dataset = new.dataset.rename(
-            climate_variables.aliases_for('worldclim', 'dict_r')
+            climate_variables.aliases_for(worldclim.NAME, 'dict_r')
         )
 
         return new
@@ -400,7 +400,7 @@ class TEMDataset(object):
 
         """
         if self._dataset is None:
-            raise errors.TEMDatasetUninitializedError(
+            raise errors.UninitializedError(
                 "Cannot operate on Uninitialized TEMDataset"
         )
 
@@ -719,7 +719,7 @@ class TEMDataset(object):
                 Compression level for 'zlib'
         """
         if self._dataset is None:
-            raise errors.TEMDatasetUninitializedError(
+            raise errors.UninitializedError(
                 "Cannot save Uninitialized TEMDataset"
             )
         
@@ -866,9 +866,59 @@ class YearlyDataset(TEMDataset):
                 if 'year_override_callback' in kwargs:
                     year = int(kwargs['year_override_callback'](dataset.name))
 
+    @staticmethod
+    def from_TEMDataset(inds, year):
+        """converts an existing TEMDataset to YearlyDataset
+        """
+        kwargs = {}
+        kwargs['logger'] = inds.logger
+        kwargs['in_memory'] = inds.in_memory
+        new = YearlyDataset(year, inds.dataset, **kwargs)
+        new.cached_load_kwargs = inds.cached_load_kwargs  
+        return new
+
+    @staticmethod
+    def from_preprocessed_crujra(nc_file, extent=None, logger=Logger()):
+        """loads a preprocessed crujra file 
+        """
+        func_name = 'YearlyDataset.from_preprocessed_crujra'
+        new = YearlyDataset(None, nc_file, logger=logger)
+        
+        # convert units;
+        ## NOTE old preprocessed precip just has incorrect units assinged
+        ## so we just change the name here
+        var = 'pre'
+        cv = climate_variables.lookup_alias(crujra.NAME, var)
+        unit = cv.std_unit.name
+        v_name = cv.name
+        new.dataset[var].attrs.update(units=unit, name=v_name)
+
+        source = crujra.NAME
+        for std_var, var in climate_variables.aliases_for(source, 'dict').items():
+            if climate_variables.has_conversion(std_var, source):
+                logger.info(f'{func_name}: converting units for {var} to {std_var}')
+                new.dataset[var].values = climate_variables.to_std_units(
+                    new.dataset[var].values, std_var, source
+                )
+                cv = climate_variables.lookup_alias(crujra.NAME, var)
+                unit = cv.std_unit.name
+                v_name = cv.name
+                new.dataset[var].attrs.update(units=unit, name=v_name)
+
+        new.dataset = new.dataset.rename(
+            climate_variables.aliases_for(crujra.NAME, 'dict_r')
+        )
+        verified, reasons = new.verify()
+        if not verified:
+            logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
+        return new
+
     def load(self, in_path, **kwargs):
         """Load with year code added
         """
+        lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
+        year_override = lookup(kwargs, 'year_override', None)
+
         in_dataset = super().load(in_path, **kwargs)
         if self.in_memory:
             in_dataset = self._dataset
@@ -879,7 +929,7 @@ class YearlyDataset(TEMDataset):
             elif type(year_override) is int:
                 self.year = year_override
         except KeyError:
-            raise AnnualDailyYearUnknownError(
+            raise errors.YearUnknownError(
                 f"Cannot load year from nc file {in_path}. "
                 "Missing 'data_year' attribute"
             )
@@ -887,36 +937,15 @@ class YearlyDataset(TEMDataset):
         if not self.in_memory:
             return in_dataset
 
-
-
     def __repr__(self):
         return(f"{type(self).__module__}.{type(self).__name__}: {self.year}")
-
-    @staticmethod
-    def from_TEMDataset(inds, year):
-        """converts an existing TEMDataset to YearlyDataset
-        """
-        kwargs = {}
-        kwargs['logger'] = inds.logger
-        kwargs['in_memory'] = inds.in_memory
-        
-        # TODO all of this is not implemented yet in base class
-        # self.vars = 
-        # self.crs
-        # self.transform 
-        # self.in_memory 
-        # self.resolution 
-        # self.cached_load_kwargs
-
-        return YearlyDataset(year, inds.dataset, **kwargs)
 
     def __lt__(self, other):
         """less than for sort
         """
         if self.year is None or other.year is None:
-            raise AnnualDailyYearUnknownError(
-                "One of the AnnualDaily objcets"
-                " in comparison is missing 'year' attribute"
+            raise errors.YearUnknownError(
+                "An item in comparison is missing 'year' attribute"
             )
         return self.year < other.year
 
@@ -967,5 +996,13 @@ class YearlyDataset(TEMDataset):
             monthly = monthly.rename(new_names)
 
         return monthly
+    
+    def verify(self):
+        """Overloads verify to check for year, See parent docs"""
+        verified, reasons = super().verify()
+        if self.year is None:
+            verified = False
+            reasons.apped('YearlyDataset.year is None')
+        return verified, reasons
 
 

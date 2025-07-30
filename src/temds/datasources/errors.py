@@ -5,7 +5,7 @@ Errors
 custom exceptions for temds.datasources
 """
 
-class TEMDatasetUninitializedError(Exception):
+class UninitializedError(Exception):
     """Raised if dataset is None and a base function is called"""
     pass
 
@@ -27,9 +27,9 @@ class TEMDatasetUninitializedError(Exception):
 #     """Raise when the year of the file does not match the year of the object"""
 #     pass
 
-# class AnnualDailyYearUnknownError(Exception):
-#     """Raise when self.year is unkonwn and cannot be loaded."""
-#     pass
+class YearUnknownError(Exception):
+    """Raise when self.year is unkonwn and cannot be loaded."""
+    pass
 
 # class AnnualTimeSeriesError(Exception):
 #     """Raise when for errors related to annual time series data."""
