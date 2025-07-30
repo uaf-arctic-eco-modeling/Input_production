@@ -33,6 +33,9 @@ class ClimateVariable:
 
 # ClimateVariable = namedtuple('ClimateVariable', ['name', 'abbr', 'aliases'])
 
+
+## std_units here may be expressed in alternate equivalent units elsewhere
+## i.e 'W/m^2' is the same as 'kilogram-second^-3'
 CLIMATE_VARIABLES = {
     ## FINAL downscaled variables
     'tair_avg': ClimateVariable('Average Air Temperature', 'tair_avg',  Unit('celsius')),
@@ -48,7 +51,6 @@ CLIMATE_VARIABLES = {
     'vgrd': ClimateVariable('Meridional component of wind speed', 'vgrd', Unit('m/s')),
     'spfh': ClimateVariable('Specific humidity', 'spfh', Unit('kg/kg')),
     'pres': ClimateVariable('Pressure', 'pres', Unit('Pa')),
-
 }
 
 def register(cv, source, alias):
@@ -88,14 +90,19 @@ def temds_names():
     """
     return [cv.abbr for n,cv in CLIMATE_VARIABLES.items()]
 
-def temds_units():
+def temds_units_for(var):
     """returns a list of the variable units used in the TEMDS program
 
+    Parameters
+    ----------
+    var: str
+        variable to get std_units for
+    
     Returns
     -------
     list[Unit]
     """
-    return [cv.std_unit for n,cv in CLIMATE_VARIABLES.items()]
+    return CLIMATE_VARIABLES[var].std_unit
 
 def list_for(source: str):
     """Returns sources registered ClimateVariables as a list
