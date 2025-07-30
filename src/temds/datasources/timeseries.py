@@ -15,10 +15,9 @@ import xarray as xr
 import rioxarray
 import numpy as np
 
-from .base import TEMDataSet
-from .errors import AnnualDailyContinuityError, InvalidCalendarError
-from .errors import AnnualDailyYearUnknownError, AnnualTimeSeriesError
-
+from .dataset import YearlyDataset
+from . import errors
+from temds.logger import Logger
 
 try:
     import ctypes
@@ -31,7 +30,6 @@ except:
 
 class YearlyTimeSeries(UserList):
     """
-
     Attributes
     ----------
     data: list
@@ -40,7 +38,7 @@ class YearlyTimeSeries(UserList):
 
     """
 
-    def __init__(self, data, verbose=False, **kwargs):
+    def __init__(self, data, logger=Logger(), **kwargs):
         """
         parameters
         ----------
@@ -50,10 +48,7 @@ class YearlyTimeSeries(UserList):
         kwargs:
             forwarded to AnnualDaily's kwargs 
         """
-        ADType = AnnualDaily
-        if 'ADType' in kwargs:
-            ADType = kwargs['ADType'] 
-
+        self.logger = logger
 
         is_list_ds = isinstance(data, list) and isinstance(data[0], xr.Dataset)
         is_list_of_paths = isinstance(data, list) and isinstance(data[0], Path) 
@@ -61,34 +56,33 @@ class YearlyTimeSeries(UserList):
         if is_dir or is_list_of_paths: 
 
             if is_dir:
-                if verbose: print(f'loading from directory: {data}')
+                self.logger.info(f'loading from directory: {data}')
                 files = list(data.glob('*.nc'))
             else: # is list of paths
-                if verbose: print('loading from provided files')
+                self.logger.info('loading from provided files')
                 files = data
             
             start = datetime.now()
 
             data = []
             for file in files:
-                if verbose: print(f'loading file{file}')
+                self.logger.info(f'loading file{file}')
                 # print(f'loading file{file}')
-                data.append(ADType(None, file, verbose, **kwargs))
+                data.append(YearlyDataset(None, file, logger=self.logger, **kwargs))
 
              
             total = (datetime.now()-start).total_seconds()
             n_files = len(list(files))
 
-            if verbose:
-                print(f'Elapsed time: {total} seconds. Time per load {total/n_files} seconds')
+            self.logger.info(f'Elapsed time: {total} seconds. Time per load {total/n_files} seconds')
 
         if is_list_ds:
-            data = [ADType(None, item, verbose, **kwargs) for item in data]
+            data = [YearlyDataset(None, item, logger=self.logger, **kwargs) for item in data]
 
         
         self.data = sorted(data)
         self.start_year = 0 ## start year not set
-        self.verbose = verbose
+        
         if hasattr(self.data[0], 'year'):
             self.start_year = self.data[0].year
         elif  'data_year' in self.data[0].attrs:
@@ -111,7 +105,7 @@ class YearlyTimeSeries(UserList):
 
         Raises
         ------
-        AnnualDailyContinuityError: 
+        errors.ContinuityError: 
             This error is raised on discontinuity if raise_exception is true 
 
         Returns
@@ -122,29 +116,30 @@ class YearlyTimeSeries(UserList):
         last_year = self.data[-1].year
         continuous = True
         if not advanced:
-            if self.verbose: print('Checking Continuity (basic)')
+            self.logger.info('Checking Continuity (basic)')
             n_items = len(self.data)
             expected = (last_year - self.start_year) + 1 
             if expected != n_items:
                 continuous = False
                 if raise_exception:
-                    raise AnnualDailyContinuityError(f'{type(self).__name__}: expected {expected} items, but has {n_items}')
+                    raise errors.ContinuityError(f'{type(self).__name__}: expected {expected} items, but has {n_items}')
                 
         else:
-            if self.verbose: print('Checking Continuity (advanced)')
+            self.logger.info('Checking Continuity (advanced)')
             for yr in range(self.start_year, last_year+1):
-                if self.verbose: print(f'-- Checking {yr}')
+                self.logger.info(f'-- Checking {yr}')
                 d_yr = self[yr].year
                 if d_yr != yr:
-                    if self.verbose: print(f'---- testing for year {yr} but found {d_yr} off by {d_yr - yr}')
+                    self.logger.info(f'---- testing for year {yr} but found {d_yr} off by {d_yr - yr}')
                     continuous = False
                     if raise_exception:
-                        raise AnnualDailyContinuityError(f'{type(self).__name__}: expected {yr} but found {d_yr} off by {d_yr - yr}')
+                        raise errors.ContinuityError(f'{type(self).__name__}: expected {yr} but found {d_yr} off by {d_yr - yr}')
                     # break
+        msg = 'Data is continuous'
+        if continuous:
+            msg = 'Data not is continuous'
+        self.logger.info(msg)
 
-
-        if self.verbose and continuous: print('Data is continuous')
-        if self.verbose and not continuous: print('Data is not continuous')
         return continuous
 
     def __repr__(self):
@@ -153,29 +148,29 @@ class YearlyTimeSeries(UserList):
 
     def __setitem__(self, index, item):
         """Disables setitem"""
-        raise AnnualTimeSeriesError('__setitem__ is not supported in AnnualTimeseries')
+        raise errors.YearlyTimeSeriesError('__setitem__ is not supported in AnnualTimeseries')
 
     def insert(self, index, item):
         """Disables insert"""
-        raise AnnualTimeSeriesError('insert is not supported in AnnualTimeseries')
+        raise errors.YearlyTimeSeriesError('insert is not supported in AnnualTimeseries')
     
     def append(self, item):
         """Disables append"""
-        raise AnnualTimeSeriesError('append is not supported in AnnualTimeseries')
+        raise errors.YearlyTimeSeriesError('append is not supported in AnnualTimeseries')
     
     def extend(self, other):
         """Disables extend"""
-        raise AnnualTimeSeriesError('extend is not supported in AnnualTimeseries')
+        raise errors.YearlyTimeSeriesError('extend is not supported in AnnualTimeseries')
 
     def __add__(self, other):
         """Disables add"""
-        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+        raise errors.YearlyTimeSeriesError('+ is not supported in AnnualTimeseries')
     def __radd__(self, other):
         """Disables add"""
-        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+        raise errors.YearlyTimeSeriesError('+ is not supported in AnnualTimeseries')
     def __iadd__(self, other):
         """Disables add"""
-        raise AnnualTimeSeriesError('+ is not supported in AnnualTimeseries')
+        raise errors.YearlyTimeSeriesError('+ is not supported in AnnualTimeseries')
 
     def __getitem__(self, index):
         """Overload __getitem__ to allow year based indexing
@@ -191,7 +186,7 @@ class YearlyTimeSeries(UserList):
 
     def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs ):
         """Get by extent. Can optionally promote to child classes if 
-        ADType or ATsType are in kwargs
+        YearlyDataset or ATsType are in kwargs
 
         Parameters
         ----------
@@ -205,20 +200,18 @@ class YearlyTimeSeries(UserList):
         kwargs:
             resolution: number
                 pixel resolution to get
-            ADType: 
+            YearlyDataset: 
                 class that inherits from AnnualDaily
             ATsType: 
                 class that inherits from AnnualTimeseries
         """
         tiles = []
 
-        resolution = kwargs['resolution'] if 'resolution' in kwargs else None
-        ADType =  kwargs['ADType'] if 'ADType' in kwargs else AnnualDaily
-        ATsType =  kwargs['ATsType'] if 'ATsType' in kwargs else AnnualTimeSeries
+        # resolution = kwargs['resolution'] if 'resolution' in kwargs else None
         parallel =  kwargs['parallel'] if 'parallel' in kwargs else False
-        n_jobs =  kwargs['n_jobs'] if 'n_jobs' in kwargs else None
+        # n_jobs =  kwargs['n_jobs'] if 'n_jobs' in kwargs else None
 
-        helper = lambda item: ADType(
+        helper = lambda item: YearlyDataset(
             item.year, 
             item.get_by_extent(
                 minx, miny, maxx, maxy, extent_crs,
@@ -234,7 +227,6 @@ class YearlyTimeSeries(UserList):
         else:
             print('not parallel')
             for item in self.data:
-                # if self.verbose: 
                 print(f'{item} clipping' )
                 # c_tile = helper(item)
                  
@@ -242,13 +234,13 @@ class YearlyTimeSeries(UserList):
                         minx, miny, maxx, maxy, extent_crs,
                         **kwargs
                     )
-                c_tile = ADType(
+                c_tile = YearlyDataset(
                     item.year,
                     temp,
                 )
                 tiles.append(c_tile)
 
-        return ATsType(tiles)
+        return YearlyTimeSeries(tiles, logger=self.logger)
 
     def save(self, where, name_pattern, **kwargs):
         """Saves each item in data
@@ -268,14 +260,13 @@ class YearlyTimeSeries(UserList):
         op = Path(where)
         op.mkdir(exist_ok=True, parents=True)
             
-
         if parallel:
             Parallel()(
                 delayed(item.save)(op.joinpath(name_pattern.format(year=item.year)), **kwargs) for item in self.data
             )
         else:
             for item in self.data:
-                if self.verbose: print(f'{item} saving' )
+                self.logger.info(f'{item} saving' )
                 # helper(item)
                 out_file = op.joinpath(name_pattern.format(year=item.year))
                 item.save(out_file, **kwargs)
@@ -313,3 +304,14 @@ class YearlyTimeSeries(UserList):
             monthly.append(self[year].synthesize_to_monthly(target_vars, new_names))
 
         return xr.concat(monthly, dim='time')
+    
+    def verify(self):
+        """Runs verify on each timestep"""
+        verified, reasons = True, []
+        for year in self.range():
+            # print(year)
+            v, r = self[year].verify()
+            verified = v and verified
+            reasons += r
+        return verified, reasons
+             

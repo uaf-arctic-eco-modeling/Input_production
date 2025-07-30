@@ -68,6 +68,9 @@ CRUJRA_RESAMPLE_METHODS  = {
 
 
 def calculate_vapo(pres, spfh):
+    """
+    
+    """
     return (0.001 * pres * spfh) / (0.622 + 0.378 * spfh)
 
 # class AnnualTimeSeries(annual.AnnualTimeSeries):

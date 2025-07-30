@@ -15,9 +15,9 @@ class UninitializedError(Exception):
 #     """
 #     pass
 
-# class AnnualDailyContinuityError(Exception):
-#     """Raise when if the there is a missing year in..."""
-#     pass
+class ContinuityError(Exception):
+    """Raise when if the there is a missing year in YearlyTimeseries"""
+    pass
 
 # class InvalidCalendarError(Exception):
 #     """Raise when the calendar attribute of the time dimension of the dataset is not 365_day or noleap"""
@@ -31,6 +31,6 @@ class YearUnknownError(Exception):
     """Raise when self.year is unkonwn and cannot be loaded."""
     pass
 
-# class AnnualTimeSeriesError(Exception):
-#     """Raise when for errors related to annual time series data."""
-#     pass
+class YearlyTimeSeriesError(Exception):
+    """Raise when for errors related to Timeseries """
+    pass
