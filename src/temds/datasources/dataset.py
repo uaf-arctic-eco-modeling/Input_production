@@ -896,7 +896,7 @@ class YearlyDataset(TEMDataset):
         source = crujra.NAME
         for std_var, var in climate_variables.aliases_for(source, 'dict').items():
             if climate_variables.has_conversion(std_var, source):
-                logger.info(f'{func_name}: converting units for {var} to {std_var}')
+                logger.info(f'{func_name}: Converting units for {var} to {std_var}')
                 new.dataset[var].values = climate_variables.to_std_units(
                     new.dataset[var].values, std_var, source
                 )
@@ -905,9 +905,20 @@ class YearlyDataset(TEMDataset):
                 v_name = cv.name
                 new.dataset[var].attrs.update(units=unit, name=v_name)
 
+        ## calculate VAPO
+        logger.info(f'{func_name}: Calculating vapo kPa')
+        pres = new.dataset['pres']
+        spfh = new.dataset['spfh']
+        new.dataset['vapo'] = crujra.calculate_vapo(pres, spfh)
+
+        unit = climate_variables.CLIMATE_VARIABLES['vapo'].std_unit.name
+        v_name = climate_variables.CLIMATE_VARIABLES['vapo'].name
+        new.dataset['vapo'].attrs.update(units=unit, name=v_name)
+
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(crujra.NAME, 'dict_r')
         )
+
         verified, reasons = new.verify()
         if not verified:
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')

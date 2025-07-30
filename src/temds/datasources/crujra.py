@@ -23,6 +23,10 @@ climate_variables.register('vgrd', NAME, 'vgrd')
 climate_variables.register('spfh', NAME, 'spfh')
 climate_variables.register('pres', NAME, 'pres')
 
+## this var is not present in raw data and has to be
+## calculated from spfh and pres
+climate_variables.register('vapo', NAME, 'vapo')
+
 climate_variables.register_source_unit('tair_avg', NAME, Unit('celsius'))
 climate_variables.register_source_unit('tair_min', NAME, Unit('celsius'))
 climate_variables.register_source_unit('tair_max', NAME, Unit('celsius'))
@@ -62,6 +66,9 @@ CRUJRA_RESAMPLE_METHODS  = {
     'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna), this should fix summing integer issues
 }
 
+
+def calculate_vapo(pres, spfh):
+    return (0.001 * pres * spfh) / (0.622 + 0.378 * spfh)
 
 # class AnnualTimeSeries(annual.AnnualTimeSeries):
 #     def __init__(self, data, verbose=True, **kwargs):
