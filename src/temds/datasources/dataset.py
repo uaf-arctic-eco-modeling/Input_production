@@ -445,7 +445,7 @@ class TEMDataset(object):
         #     tile = tile.reindex(y=list(reversed(tile.y)))
         # if flip_x:
         #     tile = tile.reindex(x=list(reversed(tile.x)))
-        return tile
+        return TEMDataset(tile)
         
     def get_by_extent_gdal(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
         """Returns xr.dataset for use in downscaling
