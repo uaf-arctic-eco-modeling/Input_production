@@ -5,7 +5,10 @@ file tools
 Tools for downloading, and opening various file types
 """
 import zipfile
+import gzip
+import shutil
 from pathlib import Path
+
 
 import requests
 
@@ -47,6 +50,29 @@ def download(url: str, location: Path, overwrite: bool=False):
             f"Local file exists {local_file}"
         )
     return local_file
+
+def extract_gzip(archive: Path, where: Path=None):
+    """Extracts content of .gz file
+
+    Parameters
+    ----------
+    archive: Path
+        .zip archive
+    where: Path, optional
+        location to extract data at. If not provided data is extracted in same 
+        directory as archive
+
+    Returns
+    -------
+    Path 
+        to extracted data
+    """
+    if where is None:
+        where = Path(archive.parent, archive.stem)
+    with gzip.open(archive, 'rb') as fd_arc:
+        with where.open('wb') as fd_where:
+            shutil.copyfileobj(fd_arc, fd_where)
+    return where
 
 
 def unzip(archive: Path, where: Path=None):
@@ -104,7 +130,10 @@ def extract(archive, where=None, archive_type='auto'):
 
     if archive_type == '.zip':
         where = unzip(archive, where)
+    if archive_type == '.gz':
+        where = extract_gzip(archive, where)
     else:
         raise NotImplementedError('Extract not implemented for {archive_type}')
 
     return where
+

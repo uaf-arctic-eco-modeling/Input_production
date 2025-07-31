@@ -878,14 +878,97 @@ class YearlyDataset(TEMDataset):
         return new
 
     @staticmethod
-    def from_preprocessed_crujra(nc_file, extent=None, logger=Logger()):
-        """loads a preprocessed crujra file 
+    def from_crujra(year, data_path, 
+                    is_preprocessed = False,
+                    extent=None, 
+                    logger=Logger(),
+                    crujra_version = '2.5',
+                    sorted_by_var = True, 
+                    ):
+        """Loads raw (direct from source) CRU JRA files, resamples to a daily
+        timestep, and clips to an extent if provided. The raw data is expected to 
+        be have been downloaded from CRU in the .gz compressed format.
+        The files are expected to have following format for names:
+            "{var}/crujra.v2.5.5d.{var}.{yr}.365d.noc.nc.gz"
+        where {var} is the variable name and {yr} is the year of data.
+        The raw data is expected to be in a directory structure where each
+        variable is in a subdirectory named after the variable name. Each CRU 
+        file is expected to have a time dimension with a calendar attribute of
+        '365_day' or 'noleap' and be at a 6 hour resolution.
+
+        Parameters
+        ----------
+        data_path: path
+            a directory containing raw cru jra files to be loaded by matching
+            file_format. 
+        aoi_extent: tuple, optional
+            clipping extent(minx, miny, maxx, maxy) geo-coordinates in 
+            degrees(WGS84) # is this really the order we want?
+        file_format: str, defaults None
+            string that contains {var} and {yr} formatters to match. When 
+            None is passed, '{var}/crujra.v2.5.5d.{var}.{yr}.365d.noc.nc.gz' 
+            pattern is used; this format matches CUR JRA file format conventions
+            where each variable is nested in a {var} subdirectory at the root 
+            `data_path`
         """
-        func_name = 'YearlyDataset.from_preprocessed_crujra'
-        new = YearlyDataset(None, nc_file, logger=logger)
+        func_name = "YearlyDataset.from_crujra"
+        
+        # is_preprocessed flag can be used to modify pre standard 
+        # data that is alreay daily, with all vars
+        if is_preprocessed:
+            logger.info(f'{func_name}: loading preprocessed {data_path}')
+            new = YearlyDataset(None, data_path, logger=logger)
+        else:
+            logger.info(f"{func_name}: Loading from raw data at '{data_path}'")
+            ### TODO: assumes Data is local, we may wan't to add some download 
+            # logic
+            
+            cleanup = False
+            datasets = {}
+            for var in crujra.SOURCE_VARS:
+                var_file = f'{crujra.name_for(var, year, crujra_version)}.nc'
+                var_path = Path(data_path, var_file)
+                if sorted_by_var:
+                    var_path = Path(data_path, var, var_file)
+
+                if not var_path.exists():
+                    gz_path = Path(var_path.parent, f'{var_path.name}.gz')
+                    file_tools.extract(gz_path)
+                    cleanup = True
+
+                            
+                logger.info(f"{func_name}: loading raw data for '{var}' from '{var_path}'")
+                temp = xr.open_dataset(var_path, engine="netcdf4")
+                
+
+                if extent is not None:
+                    logger.info(f'{func_name}: clipping {var} to aoi')
+                    mask_x =  ( temp.lon >= extent.minx ) \
+                            & ( temp.lon <= extent.maxx  )
+                    mask_y =  ( temp.lat >= extent.miny ) \
+                            & ( temp.lat <= extent.maxy )
+                    temp = temp.where(mask_x & mask_y, drop=True)
+
+                method = crujra.RESAMPLE_LOOKUP[var]
+                logger.info(f'{func_name}: resampling 6hr {var} to daily by {method}')
+                datasets[var] = crujra.RESAMPLE_METHODS[method](temp)
+                datasets[var].attrs.update(cell_methods=f'time:{method}')
+        
+            new = YearlyDataset(year, datasets[crujra.SOURCE_VARS[0]], logger=logger)
+            new.dataset = new.dataset.assign({var: datasets[var][var] for var in datasets})
+            
+            if cleanup:
+                for var in crujra.SOURCE_VARS:
+                    var_file = f'{crujra.name_for(var, year, crujra_version)}.nc'
+                    var_path = Path(data_path, var_file)
+                    if sorted_by_var:
+                        var_path = Path(data_path, var, var_file)
+                    var_path.unlink()
+        
+
         
         # convert units;
-        ## NOTE old preprocessed precip just has incorrect units assinged
+        ## NOTE  precip just has incorrect units assinged
         ## so we just change the name here
         var = 'pre'
         cv = climate_variables.lookup_alias(crujra.NAME, var)
@@ -910,19 +993,72 @@ class YearlyDataset(TEMDataset):
         pres = new.dataset['pres']
         spfh = new.dataset['spfh']
         new.dataset['vapo'] = crujra.calculate_vapo(pres, spfh)
-
         unit = climate_variables.CLIMATE_VARIABLES['vapo'].std_unit.name
         v_name = climate_variables.CLIMATE_VARIABLES['vapo'].name
         new.dataset['vapo'].attrs.update(units=unit, name=v_name)
 
+        # ## calculate wind + wind dir
+        ugrd = new.dataset['ugrd']
+        vgrd = new.dataset['vgrd']
+
+        logger.info(f'{func_name}: Calculating wind from components')
+        new.dataset['wind'] = crujra.calculate_wind(ugrd, vgrd)
+        unit = climate_variables.CLIMATE_VARIABLES['wind'].std_unit.name
+        v_name = climate_variables.CLIMATE_VARIABLES['wind'].name
+        new.dataset['wind'].attrs.update(units=unit, name=v_name)
+        
+        logger.info(f'{func_name}: Calculating winddir from components')
+        new.dataset['winddir'] = crujra.calculate_winddir(ugrd, vgrd)
+        unit = climate_variables.CLIMATE_VARIABLES['winddir'].std_unit.name
+        v_name = climate_variables.CLIMATE_VARIABLES['winddir'].name
+        new.dataset['winddir'].attrs.update(units=unit, name=v_name)
+        
+
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(crujra.NAME, 'dict_r')
         )
-
         verified, reasons = new.verify()
         if not verified:
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
         return new
+
+
+        #     temp = xr.open_dataset(_path, engine="netcdf4")
+        #     if not isinstance(temp.time.values[0], cftime.DatetimeNoLeap) and \
+        #         not hasattr(temp.time, 'calendar'):
+        #         raise errors.InvalidCalendarError(
+        #             f"Unknown calendar for file '{_path}'. No time variable "
+        #             "has no calendar attribute, and the time values are not in "
+        #             "a recognized format."
+        #         )
+
+
+
+
+        #     method = crujra.RESAMPLE_LOOKUP[var]
+        #     
+            
+        #     if local_dataset is None:
+        #         local_dataset = temp
+        #     else:
+        #         local_dataset = local_dataset.assign({var:temp[var]})
+
+        #     if cleanup:
+        #         os.remove(_path)  
+
+        # ## this is to set the attribute at the right level in the dataset
+        # for var in self.vars:
+        #     temp = local_dataset[var]
+        #     method = crujra.RESAMPLE_LOOKUP[var]
+        #     temp = temp.assign_attrs( {'cell_methods':f'time:{method}'} )
+        #     local_dataset = local_dataset.assign({var:temp})
+            
+        # local_dataset 
+        # if self.verbose: 
+        #     print('..All raw data successfully loaded clipped and resampled.')
+        #     print('dataset initialized')
+        
+
 
     def load(self, in_path, **kwargs):
         """Load with year code added

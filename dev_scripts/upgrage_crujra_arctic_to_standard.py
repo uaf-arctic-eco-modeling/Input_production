@@ -15,7 +15,9 @@ except IndexError:
 
 for file in sorted(Path(in_path ).glob('*.nc')):
     my_logger.info(f'Processing File: {file}')
-    corrected = dataset.YearlyDataset.from_preprocessed_crujra(file, logger=my_logger)
+    corrected = dataset.YearlyDataset.from_crujra(
+        None, file, logger=my_logger, is_preprocessed=True
+    )
     out_path = Path(file).parent.parent.joinpath('cru-jra-standard', file.name)
     my_logger.info(f'Saving File: {out_path}')
     corrected.save(out_path)
