@@ -13,7 +13,8 @@ try:
 except IndexError:
     print("call script like: python upgrade_crujra_arctic_to_standard.py path/to/crujra-arctic")
 
-for file in sorted(Path(in_path ).glob('*.nc')):
+
+def fix(file):
     my_logger.info(f'Processing File: {file}')
     corrected = dataset.YearlyDataset.from_crujra(
         None, file, logger=my_logger, is_preprocessed=True
@@ -21,3 +22,9 @@ for file in sorted(Path(in_path ).glob('*.nc')):
     out_path = Path(file).parent.parent.joinpath('cru-jra-standard', file.name)
     my_logger.info(f'Saving File: {out_path}')
     corrected.save(out_path)
+
+import joblib
+with joblib.parallel_config(backend="loky", n_jobs=24, verbose=20):
+    joblib.Parallel()(
+        joblib.delayed(fix)(item) for item in sorted(Path(in_path ).glob('*.nc'))
+    )

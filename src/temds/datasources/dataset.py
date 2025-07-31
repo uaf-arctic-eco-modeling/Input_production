@@ -24,7 +24,7 @@ from temds import climate_variables
 from temds.logger import Logger
 from temds.constants import MONTH_START_DAYS 
 from temds.util import Version
-
+from temds import gdal_tools
 
 ## We can better clear the memory cache on some OS's with this 
 ## trick. If libc.so.6 is not present the code dose nothing
@@ -536,7 +536,7 @@ class TEMDataset(object):
         source.FlushCache()
         ## opption 2
         vars_dict = {var: self.dataset[var].values for var in self.vars }
-        data_arrays = clip_opt_2 (dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
+        data_arrays = gdal_tools.clip_opt_2 (dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         del(vars_dict)
 
         # Option 1
@@ -547,7 +547,7 @@ class TEMDataset(object):
         #     source.WriteArray(cur.values[:,:,:])
         #     source.FlushCache() ## ensures data is in gdal dataset
 
-        #     dest = clip_gdal_opt(dest, source, resample_alg, run_primer, nd_as_array)
+        #     dest = gdal_tools.clip_gdal_opt(dest, source, resample_alg, run_primer, nd_as_array)
             
         #     data_arrays[var] = dest.ReadAsArray()
 
@@ -665,9 +665,9 @@ class TEMDataset(object):
         tile = local_dataset.where(mask_x&mask_y, drop=True)
 
         
-        if tile.rio.crs.to_epsg() != 4326:
-            tile = tile.rename({'lat':'y', 'lon':'x'})
-
+        # if tile.rio.crs.to_epsg() != 4326:
+        #     tile = tile.rename({'lat':'y', 'lon':'x'})
+        ## TODO update to handle lat lon dim names
         tile = tile.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
                     .rio.write_crs(extent_crs, inplace=True)\
                     .rio.write_coordinate_system(inplace=True) 
@@ -734,6 +734,7 @@ class TEMDataset(object):
         compress = lookup(kwargs, 'use_zlib', True)
         complevel = lookup(kwargs, 'complevel', 9)
         overwrite = lookup(kwargs, 'overwrite', False)
+        extra_attrs = lookup(kwargs, 'extra_attrs', {})
 
         # self.set_climate_encoding(**kwargs)
         if 'climate_encoding' in kwargs:            
@@ -749,6 +750,7 @@ class TEMDataset(object):
             self.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
             
         self.dataset.attrs.update(TEMDS_version = Version())
+        self.dataset.attrs.update(extra_attrs)
 
         if  not Path(out_file).exists() or overwrite:
             Path(out_file).parent.mkdir(parents=True, exist_ok=True)
@@ -850,21 +852,23 @@ class YearlyDataset(TEMDataset):
     `year` attribute.
     """
 
-    def __init__(self, year, dataset, **kwargs):
+    def __init__(self, year, dataset, in_memory=True, logger=Logger(), **kwargs):
         self.year = year
-        super().__init__(dataset, **kwargs)
+        super().__init__(dataset, in_memory, logger, **kwargs)
 
-        ## extra checks for year
-        if isinstance(dataset, xr.Dataset):
-            ## if the dataset as a 'data_year' attr always
-            ## use that year
-            if 'data_year' in self.dataset.attrs: 
-                self.year = dataset.attrs['data_year']
-        else: 
-            dataset = Path(dataset)
-            if dataset.exists() and dataset.suffix == '.nc':
-                if 'year_override_callback' in kwargs:
-                    year = int(kwargs['year_override_callback'](dataset.name))
+        if self.year is None and 'year_override_callback' in kwargs:
+            self.year = int(kwargs['year_override_callback'](dataset.name))
+        else:
+            self.logger.suspend = True
+            try: 
+                self.year = self.dataset.attrs['data_year']
+            except KeyError:
+                pass 
+            self.logger.suspend = False
+        
+        if self.year is None:
+            raise errors.YearUnknownError("year could not be set in init")
+                
 
     @staticmethod
     def from_TEMDataset(inds, year):
@@ -1022,42 +1026,15 @@ class YearlyDataset(TEMDataset):
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
         return new
 
+    def save(self, out_file, **kwargs): 
+        """
+        """
+        if 'extra_attrs' in kwargs:
+            kwargs['extra_attrs']['data_year'] = self.year
+        else:
+            kwargs['extra_attrs'] = {'data_year': self.year}
 
-        #     temp = xr.open_dataset(_path, engine="netcdf4")
-        #     if not isinstance(temp.time.values[0], cftime.DatetimeNoLeap) and \
-        #         not hasattr(temp.time, 'calendar'):
-        #         raise errors.InvalidCalendarError(
-        #             f"Unknown calendar for file '{_path}'. No time variable "
-        #             "has no calendar attribute, and the time values are not in "
-        #             "a recognized format."
-        #         )
-
-
-
-
-        #     method = crujra.RESAMPLE_LOOKUP[var]
-        #     
-            
-        #     if local_dataset is None:
-        #         local_dataset = temp
-        #     else:
-        #         local_dataset = local_dataset.assign({var:temp[var]})
-
-        #     if cleanup:
-        #         os.remove(_path)  
-
-        # ## this is to set the attribute at the right level in the dataset
-        # for var in self.vars:
-        #     temp = local_dataset[var]
-        #     method = crujra.RESAMPLE_LOOKUP[var]
-        #     temp = temp.assign_attrs( {'cell_methods':f'time:{method}'} )
-        #     local_dataset = local_dataset.assign({var:temp})
-            
-        # local_dataset 
-        # if self.verbose: 
-        #     print('..All raw data successfully loaded clipped and resampled.')
-        #     print('dataset initialized')
-        
+        super().save(out_file, **kwargs)
 
 
     def load(self, in_path, **kwargs):

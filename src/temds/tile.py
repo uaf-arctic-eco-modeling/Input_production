@@ -23,7 +23,9 @@ from . import corrections
 from . import downscalers
 from . import util
 
-from .datasources import annual, downscaled, crujra
+
+from .logger import Logger
+from .datasources import dataset, timeseries
 
 from joblib import Parallel, delayed
 
@@ -59,7 +61,7 @@ class Tile(object):
         area in `crs` units of pixel buffer
 
     """
-    def __init__(self, index, extent, resolution, crs, buffer_px = 20):
+    def __init__(self, index, extent, resolution, crs, buffer_px = 20, logger=Logger()):
         """
 
         Parameters
@@ -98,7 +100,7 @@ class Tile(object):
         self.buffer_pixels = buffer_px
         self.crs = crs
 
-        self.verbose=False
+        self.logger = logger
         # A valid tile will be constructed when self.data has enough
         # information start implementing the stuff that is in downscaling.sh
         # however we end up re-naming the load/import functions here...
@@ -159,30 +161,28 @@ class Tile(object):
         """toggles verbose, and syncs with any items in data with `verbose`
         attribute
         """
-        self.verbose = not self.verbose
-        for item in self.data:
-            if hasattr(self.data[item], 'verbose'):
-                self.data[item].verbose = self.verbose
+        self.log.suspend = self.log.suspend 
+     
 
 
     def load_from_directory(self, directory):
         """
         Create in memory from a directory of file(s)
         """
-        
-        with Path(directory).joinpath('manifest.yml').open('r') as fd:
-            manifest = yaml.load(fd, yaml.Loader)
+        pass
+        # with Path(directory).joinpath('manifest.yml').open('r') as fd:
+        #     manifest = yaml.load(fd, yaml.Loader)
 
-        for item, _file in manifest['data'].items():
-            in_path = Path(directory).joinpath(_file)
-            if in_path.is_dir():
-                self.data[item] = crujra.AnnualTimeSeries(
-                    in_path, 
-                    crs=self.crs, 
-                    verbose=self.verbose
-                )
-            else:
-                self.data[item] = xr.open_dataset(in_path, engine="netcdf4")
+        # for item, _file in manifest['data'].items():
+        #     in_path = Path(directory).joinpath(_file)
+        #     if in_path.is_dir():
+        #         self.data[item] = crujra.AnnualTimeSeries(
+        #             in_path, 
+        #             crs=self.crs, 
+        #             verbose=self.verbose
+        #         )
+        #     else:
+        #         self.data[item] = xr.open_dataset(in_path, engine="netcdf4")
 
     def import_normalized(self, name, datasource, buffered=True, **kwargs):
         """Loads an item to `data` as name from datasource. Each datasource 
@@ -211,8 +211,9 @@ class Tile(object):
             miny,maxy = miny-self.buffer_area,maxy+self.buffer_area
 
         kwargs['resolution'] = self.resolution
-        if self.verbose: 
-            print(f'importing {name} from {datasource} for the extent: {extent}')
+        self.logger.info(
+            f'importing {name} from {datasource} for the extent: {extent}'
+        )
         self.data[name] = datasource.get_by_extent(
             minx, miny, maxx, maxy, self.crs, **kwargs
         ) 

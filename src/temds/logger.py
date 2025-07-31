@@ -34,6 +34,7 @@ class Logger(UserList):
     def __init__(self, data: list = [], verbose_levels = []):
         self.data = data
         self.verbose_levels = verbose_levels
+        self.suspend=False
 
 
     def write(self, path: Path, mode: str = 'w', clear: bool = True):
@@ -49,8 +50,9 @@ class Logger(UserList):
         if not isinstance(item, LogMsg):
             raise MalformedLogMsgError('Only LogMsg Items may be appended')
         else:
-            if item.msg_type in self.verbose_levels:
-                print(f'{item.msg_type.name.upper()} [{item.time}]: {item.text}')
+            if not self.suspend:
+                if item.msg_type in self.verbose_levels:
+                    print(f'{item.msg_type.name.upper()} [{item.time}]: {item.text}')
             super().append(item)
 
     def log(self, text, msg_type=MsgType.info):
@@ -67,4 +69,3 @@ class Logger(UserList):
     
     def error(self, text):
         self.log(text, MsgType.error)
-
