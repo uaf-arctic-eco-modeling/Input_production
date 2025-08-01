@@ -15,22 +15,19 @@ original bash script code is in each docstring
 import xarray as xr
 import numpy as np
 
-from .constants import ZERO_C_IN_K, SECONDS_PER_DAY, get_month_slice
+from .constants import  get_month_slice
 
-def generic_delta_mul(not_downscaled, correction_factors, keys):
+def generic_delta_mul(not_downscaled, correction_factors):
     """Generic delta downscaler should work if 
     units for data being downscaled and correction factors
     are the same (multiplication)
     """
-    tods = keys['to_downscale']
-    cfk = keys['correction_factor']
-
     downscaled_array = []
     # apply correction factors per month
     for mn_ix in range(12): # 0 based
         mn_slice = get_month_slice(mn_ix)
 
-        monthly = not_downscaled[tods][mn_slice] * correction_factors[cfk][mn_ix]
+        monthly = not_downscaled[mn_slice] * correction_factors[mn_ix]
         downscaled_array.append( monthly ) 
 
     downscaled = xr.concat(downscaled_array, dim='time')
@@ -40,20 +37,18 @@ def generic_delta_mul(not_downscaled, correction_factors, keys):
     return downscaled
 
 
-def generic_delta_add(not_downscaled, correction_factors, keys):
+def generic_delta_add(not_downscaled, correction_factors):
     """Generic delta downscaler should work if 
     units for data being downscaled and correction factors
     are the same (multiplication)
     """
-    tods = keys['to_downscale']
-    cfk = keys['correction_factor']
 
     downscaled_array = []
     # apply correction factors per month
     for mn_ix in range(12): # 0 based
         mn_slice = get_month_slice(mn_ix)
 
-        monthly = not_downscaled[tods][mn_slice] + correction_factors[cfk][mn_ix]
+        monthly = not_downscaled[mn_slice] + correction_factors[mn_ix]
         downscaled_array.append( monthly ) 
 
     downscaled = xr.concat(downscaled_array, dim='time')
@@ -62,7 +57,7 @@ def generic_delta_add(not_downscaled, correction_factors, keys):
 
     return downscaled
 
-def wind_direction(not_downscaled, correction_factors, keys):
+def wind_direction(not_downscaled, correction_factors):
     """downscaling code for wind speed
 
     the code has moved so its just a pass through
@@ -72,8 +67,7 @@ def wind_direction(not_downscaled, correction_factors, keys):
     xr.Dataset:
         downscaled data
     """  
-    winddir = keys['winddir']
-    return not_downscaled[winddir]
+    return not_downscaled
 
     
 LOOKUP = {
@@ -83,5 +77,13 @@ LOOKUP = {
     'radiation': generic_delta_mul,
     'wind-speed': generic_delta_mul,
     'wind-direction': wind_direction,
+    'tair_min': generic_delta_add,
+    'tair_max': generic_delta_add,
+    'tair_avg': generic_delta_add,
+    'prec': generic_delta_mul,  
+    'nirr': generic_delta_mul,
+    'vapo': generic_delta_mul,
+    'wind': generic_delta_mul,
+    'winddir': wind_direction,
 } 
 

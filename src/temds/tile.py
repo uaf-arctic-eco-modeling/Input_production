@@ -22,6 +22,7 @@ import pyproj # For handling CRS in a variety of formats
 from . import corrections 
 from . import downscalers
 from . import util
+from . import climate_variables
 
 
 from .logger import Logger
@@ -381,7 +382,8 @@ class Tile(object):
         temp = []
 
 
-        for var, info in variables.items():
+        # for var, info in variables.items():
+        for var in variables:
             ## these should all be the same if units are standardized
             temp.append(reference[var]/baseline[var])
 
@@ -437,10 +439,19 @@ class Tile(object):
         correction = self.data[correction_id].dataset
         source = self.data[source_id][year].dataset
         temp = []
-        for var, info in variables.items():
-            func = downscalers.LOOKUP[info['function']]
-            current = func(source, correction, info)
-            current.name = info['name']
+
+        for var in variables:
+            self.logger.info(f'.. Downscaling {var}')
+            func = downscalers.LOOKUP[var]
+            src = source[var]
+            try:
+                cf = correction[var]
+            except KeyError:
+                cf = 0 # not used
+            current = func(src, cf)
+            
+            
+            current.name = climate_variables.CLIMATE_VARIABLES[var].name
             temp.append(current)
         
         downscaled = xr.merge(temp)
@@ -467,7 +478,7 @@ class Tile(object):
         else:
             results = []
             for year in self.data[source_id].range():
-                if self.verbose: print(f'Downscaling {year}')
+                self.logger.info(f'Downscaling {year}')
                 data = self.downscale_year(year, source_id, correction_id, variables)
                 results.append(data)
         
