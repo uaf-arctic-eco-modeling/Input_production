@@ -26,6 +26,11 @@ except:
     malloc_trim = lambda x: x ## do nothing 
 
 
+from temds import climate_variables
+from temds import constants
+import gc
+from copy import deepcopy
+
 
 class YearlyTimeSeries(UserList):
     """
@@ -210,13 +215,17 @@ class YearlyTimeSeries(UserList):
         parallel =  kwargs['parallel'] if 'parallel' in kwargs else False
         # n_jobs =  kwargs['n_jobs'] if 'n_jobs' in kwargs else None
 
-        helper = lambda item: YearlyDataset(
-            item.year, 
-            item.get_by_extent(
-                minx, miny, maxx, maxy, extent_crs,
-                **kwargs
-            )
-        )
+        # helper = lambda item: YearlyDataset(
+        #     item.year, 
+        #     # item.get_by_extent(
+        #     #     minx, miny, maxx, maxy, extent_crs,
+        #     #     **kwargs
+        #     # )
+        # )
+        helper = lambda item: item.get_by_extent(
+                        minx, miny, maxx, maxy, extent_crs,
+                        **kwargs
+                    )
 
         if parallel:
             print('parallel')
@@ -233,11 +242,11 @@ class YearlyTimeSeries(UserList):
                         minx, miny, maxx, maxy, extent_crs,
                         **kwargs
                     )
-                c_tile = YearlyDataset(
-                    item.year,
-                    temp,
-                )
-                tiles.append(c_tile)
+                # c_tile = YearlyDataset(
+                #     item.year,
+                #     temp,
+                # )
+                tiles.append(temp)
 
         return YearlyTimeSeries(tiles, logger=self.logger)
 
@@ -314,3 +323,82 @@ class YearlyTimeSeries(UserList):
             reasons += r
         return verified, reasons
              
+    def create_climate_baseline(self, start_year, end_year, parallel=False):
+        """Create baseline climate variables for dataset; uses
+        the methods defined in CRUJRA_BASELINE_LOOKUP Based on original 
+        downscaling.sh line 77-80. Here calculations are split up by var
+        and the result is combined into a single dataset at the end.
+
+        Algorithm: (pixel wise)
+            (A) For each variable, daily data for each year in [start_year, 
+        end_year] is averaged. 
+            (B) For each month, the mean (or sum) of the daily average(from A)
+        is calculated, giving the monthly baseline.
+            (C) Monthly results are combined as time steps in yearly 
+        dataset(xr.concat)
+            (D) Each variables yearly dataset is combined into a single 
+        dataset(xr.merge). This dataset is geo-referenced with crs from 
+        first year of self.data.
+
+        Parameters
+        ----------
+        start_year: int
+            Inclusive start year for baseline
+        end_year: int
+            Inclusive end year for baseline
+
+        Returns
+        -------
+        xr.dataset
+            Geo-referenced dataset with monthly baseline aggregate for each 
+            climate variable. Dimensions are x,y, time. Time dimensions has 
+            12 times steps
+        """
+
+        
+        var_list = []
+        doy = [constants.MONTH_START_DAYS[mn] for mn in range(12)]
+
+        var_dict = {}
+        for var, method  in climate_variables.BASELINE_LOOKUP.items():
+            self.logger.info(f'creating baseline for {var} with  {method}')
+            ts = [self[yr].dataset[var].values for yr in range(start_year, end_year)]
+            daily_avg = np.array(ts).mean(axis=0)
+            temp = []
+            for mn in range(12):
+                mn_slice = slice(
+                        constants.MONTH_START_DAYS[mn]-1, ## - 1 for 0 based
+                        constants.DAYS_PER_MONTH[mn]
+                    )
+                
+                mn_data = daily_avg[mn_slice]
+                self.logger.debug(f'Monthly Shape: {mn_data.shape}') 
+                mn_ag = None
+                if 'mean' == method:
+                    mn_ag = mn_data.mean(axis=0)
+                elif 'sum' == method:
+                    mn_ag = np.nansum(mn_data, axis=0)
+                else:
+                    raise ValueError(f" Unknown method '{method}' for variable '{var}'")
+                temp.append(mn_ag)
+            var_cf = np.array(temp)
+            var_dict[var] = var_cf
+        
+        coords = {
+            'time': doy, 
+            'x': deepcopy(self[start_year].dataset.coords['x']), 
+            'y': deepcopy(self[start_year].dataset.coords['y'])
+        }
+
+        clim_ref = xr.Dataset(
+            {var: xr.DataArray(
+                var_dict[var], dims=['time','y','x'], coords=coords
+            ) for var in var_dict}
+        )
+        
+        clim_ref.rio.write_crs(
+            self[start_year].dataset.rio.crs.to_wkt(), 
+            inplace=True
+        )
+        gc.collect()
+        return clim_ref
