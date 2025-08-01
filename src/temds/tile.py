@@ -451,7 +451,7 @@ class Tile(object):
             current = func(src, cf)
             
             
-            current.name = climate_variables.CLIMATE_VARIABLES[var].name
+            current.name = var
             temp.append(current)
         
         downscaled = xr.merge(temp)
