@@ -859,12 +859,10 @@ class YearlyDataset(TEMDataset):
         if self.year is None and 'year_override_callback' in kwargs:
             self.year = int(kwargs['year_override_callback'](dataset.name))
         else:
-            self.logger.suspend = True
             try: 
                 self.year = self.dataset.attrs['data_year']
             except KeyError:
                 pass 
-            self.logger.suspend = False
         
         if self.year is None:
             raise errors.YearUnknownError("year could not be set in init")

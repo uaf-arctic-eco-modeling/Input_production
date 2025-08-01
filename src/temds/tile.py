@@ -157,12 +157,6 @@ class Tile(object):
         data = ', '.join(self.data.keys())
         msg = f'Tile: {idx} with data for: {data}'
         return msg
-
-    def toggle_verbose(self):
-        """toggles verbose, and syncs with any items in data with `verbose`
-        attribute
-        """
-        self.log.suspend = self.log.suspend 
      
     def set_logger(self, logger):
         self.logger = logger
@@ -338,7 +332,7 @@ class Tile(object):
 
     def calculate_correction_factors(
             self, baseline_id, reference_id, variables, 
-            factor_id='correction_factors'
+            factor_id='correction-factors'
         ):
         """
         Calculate correction factors based on baseline and reference datasets.

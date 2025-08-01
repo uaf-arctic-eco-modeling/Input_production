@@ -34,8 +34,18 @@ class Logger(UserList):
     def __init__(self, data: list = [], verbose_levels = []):
         self.data = data
         self.verbose_levels = verbose_levels
-        self.suspend=False
+        self._suspended_levels = []
 
+    def suspend(self):
+        self._suspended_levels = self.verbose_levels
+        self.verbose_levels = []
+
+    def resume(self):
+        self.verbose_levels = self._suspended_levels
+        self._suspended_levels = [] 
+
+    def clear(self):
+        self.data = []
 
     def write(self, path: Path, mode: str = 'w', clear: bool = True):
 
@@ -43,16 +53,14 @@ class Logger(UserList):
             for item in self:
                 fd.write(f'{item.msg_type.name.upper()} [{item.time}]: {item.text}\n')
 
-        if clear:
-            self.data = []
+        if clear: self.clear()
 
     def append(self, item):
         if not isinstance(item, LogMsg):
             raise MalformedLogMsgError('Only LogMsg Items may be appended')
         else:
-            if not self.suspend:
-                if item.msg_type in self.verbose_levels:
-                    print(f'{item.msg_type.name.upper()} [{item.time}]: {item.text}')
+            if item.msg_type in self.verbose_levels:
+                print(f'{item.msg_type.name.upper()} [{item.time}]: {item.text}')
             super().append(item)
 
     def log(self, text, msg_type=MsgType.info):

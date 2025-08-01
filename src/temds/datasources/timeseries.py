@@ -363,7 +363,10 @@ class YearlyTimeSeries(UserList):
         for var, method  in climate_variables.BASELINE_LOOKUP.items():
             self.logger.info(f'creating baseline for {var} with  {method}')
             ts = [self[yr].dataset[var].values for yr in range(start_year, end_year)]
-            daily_avg = np.array(ts).mean(axis=0)
+            ts = np.array(ts)
+            self.logger.debug(f'ts.shape: {ts.shape}')
+            daily_avg = ts.mean(axis=0)
+            self.logger.debug(f'daily_avg.shape: {daily_avg.shape}')
             temp = []
             for mn in range(12):
                 mn_slice = slice(
