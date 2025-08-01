@@ -48,9 +48,9 @@ climate_variables.register('vapo', NAME, 'vapo')
 climate_variables.register('wind', NAME, 'wind')
 climate_variables.register('winddir', NAME, 'winddir')
 
-climate_variables.register_source_unit('tair_avg', NAME, Unit('celsius'))
-climate_variables.register_source_unit('tair_min', NAME, Unit('celsius'))
-climate_variables.register_source_unit('tair_max', NAME, Unit('celsius'))
+climate_variables.register_source_unit('tair_avg', NAME, Unit('kelvin'))
+climate_variables.register_source_unit('tair_min', NAME, Unit('kelvin'))
+climate_variables.register_source_unit('tair_max', NAME, Unit('kelvin'))
 climate_variables.register_source_unit('nirr', NAME, Unit(f'{ 1/SECONDS_PER_DAY} kilogram-second^-3'))
 
 VARS = climate_variables.aliases_for(NAME)
