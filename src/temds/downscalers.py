@@ -21,6 +21,18 @@ def generic_delta_mul(not_downscaled, correction_factors):
     """Generic delta downscaler should work if 
     units for data being downscaled and correction factors
     are the same (multiplication)
+
+    Parameters
+    ----------
+    not_downscaled: xr.DataArray
+         data to be downscaled
+    correction_factors: xr.DataArray
+        High resolution correction factors
+    
+    Returns
+    -------
+    xr.DataArray
+        downscaled data
     """
     downscaled_array = []
     # apply correction factors per month
@@ -41,8 +53,19 @@ def generic_delta_add(not_downscaled, correction_factors):
     """Generic delta downscaler should work if 
     units for data being downscaled and correction factors
     are the same (multiplication)
-    """
 
+    Parameters
+    ----------
+    not_downscaled: xr.DataArray
+         data to be downscaled
+    correction_factors: xr.DataArray
+        High resolution correction factors
+    
+    Returns
+    -------
+    xr.DataArray
+        downscaled data
+    """
     downscaled_array = []
     # apply correction factors per month
     for mn_ix in range(12): # 0 based
@@ -62,9 +85,16 @@ def wind_direction(not_downscaled, correction_factors):
 
     the code has moved so its just a pass through
 
+    Parameters
+    ----------
+    not_downscaled: xr.DataArray
+         data to be downscaled
+    correction_factors: xr.DataArray
+        High resolution correction factors, not used for wind_direction
+    
     Returns
     -------
-    xr.Dataset:
+    xr.DataArray
         downscaled data
     """  
     return not_downscaled
