@@ -60,14 +60,8 @@ BASELINE_LOOKUP = {
     'tair_avg': 'mean',
     'prec': 'sum',  
     'nirr': 'mean',
-    'ugrd': 'mean',
-    'vgrd': 'mean',
-    'spfh': 'mean',
-    'pres': 'mean',
     'vapo': 'mean',
     'wind': 'mean',
-    # 'winddir'
-    
 }
 
 RESAMPLE_METHODS  = {
@@ -75,6 +69,7 @@ RESAMPLE_METHODS  = {
     'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna), this should fix summing integer issues
 }
 
+DOWNSCALE_SAFE = ['tair_avg', 'tair_max', 'tair_min', 'prec', 'nirr', 'wind', 'vapo']
 
 def register(cv, source, alias):
     """Registers an alias for a climate variable in CLIMATE_VARIABLES
