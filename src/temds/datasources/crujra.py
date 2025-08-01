@@ -69,23 +69,6 @@ RESAMPLE_LOOKUP = {
     
 }
 
-BASELINE_LOOKUP = {
-    'tmin': 'mean',
-    'tmax': 'mean',
-    'tmp': 'mean',
-    'pre': 'sum',  
-    'dswrf': 'mean',
-    'ugrd': 'mean',
-    'vgrd': 'mean',
-    'spfh': 'mean',
-    'pres': 'mean',
-    
-}
-
-RESAMPLE_METHODS  = {
-    'mean': lambda x: x.resample(time='1D').mean(),
-    'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna), this should fix summing integer issues
-}
 
 
 def calculate_vapo(pres, spfh):

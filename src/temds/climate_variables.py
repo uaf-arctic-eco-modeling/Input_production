@@ -53,6 +53,29 @@ CLIMATE_VARIABLES = {
     'pres': ClimateVariable('Pressure', 'pres', Unit('Pa')),
 }
 
+
+BASELINE_LOOKUP = {
+    'tair_min': 'mean',
+    'tair_max': 'mean',
+    'tair_avg': 'mean',
+    'prec': 'sum',  
+    'nirr': 'mean',
+    'ugrd': 'mean',
+    'vgrd': 'mean',
+    'spfh': 'mean',
+    'pres': 'mean',
+    'vapo': 'mean',
+    'wind': 'mean',
+    # 'winddir'
+    
+}
+
+RESAMPLE_METHODS  = {
+    'mean': lambda x: x.resample(time='1D').mean(),
+    'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna), this should fix summing integer issues
+}
+
+
 def register(cv, source, alias):
     """Registers an alias for a climate variable in CLIMATE_VARIABLES
 
