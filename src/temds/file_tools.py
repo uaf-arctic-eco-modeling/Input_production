@@ -130,7 +130,7 @@ def extract(archive, where=None, archive_type='auto'):
 
     if archive_type == '.zip':
         where = unzip(archive, where)
-    if archive_type == '.gz':
+    elif archive_type == '.gz':
         where = extract_gzip(archive, where)
     else:
         raise NotImplementedError('Extract not implemented for {archive_type}')
