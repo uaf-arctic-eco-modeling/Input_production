@@ -377,7 +377,7 @@ class YearlyTimeSeries(UserList):
                 if 'mean' == method:
                     mn_ag = mn_data.mean(axis=0)
                 elif 'sum' == method:
-                    mn_ag = np.nansum(mn_data, axis=0)
+                    mn_ag = np.sum(mn_data, axis=0)
                 else:
                     raise ValueError(f" Unknown method '{method}' for variable '{var}'")
                 temp.append(mn_ag)
