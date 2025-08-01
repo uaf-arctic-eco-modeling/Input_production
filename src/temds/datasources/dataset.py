@@ -536,7 +536,7 @@ class TEMDataset(object):
         source.FlushCache()
         ## opption 2
         vars_dict = {var: self.dataset[var].values for var in self.vars }
-        data_arrays = gdal_tools.clip_opt_2 (dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
+        data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         del(vars_dict)
 
         # Option 1
@@ -592,6 +592,10 @@ class TEMDataset(object):
                 data, dims=['time','y','x'], coords=coords 
             ) for var, data in data_arrays.items()
         })
+
+        for var in self.vars:
+            tile[var].attrs.update(self.dataset[var].attrs)
+
         tile.rio.write_crs(
             dest_crs, 
             inplace=True
