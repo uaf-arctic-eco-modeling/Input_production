@@ -477,7 +477,7 @@ class Tile(object):
         
         self.data[downscaled_id] = timeseries.YearlyTimeSeries(results)
 
-    def to_TEM(self):
+    def to_TEM(self, downscaled_id):
         '''
         Convert downscaled data to a format suitable for TEM (Terrestrial
         Ecosystem Model).
@@ -512,18 +512,18 @@ class Tile(object):
             precipitation
         '''
         
-        if 'downscaled_cru' not in self.data:
+        if downscaled_id not in self.data:
             raise ValueError("The tile object must have a 'downscaled_cru' key in its data dictionary.")
 
         target_vars = {
-            'tavg': 'mean', 
+            'tair_avg': 'mean', 
             'vapo': 'mean', 
             'nirr': 'mean',
             'prec': 'sum'
         }
 
         new_names = {
-            'tavg':'tair', 
+            'tair_avg':'tair', 
             'vapo':'vapor_press', 
             'nirr':'nirr', 
             'prec':'precip'
@@ -531,12 +531,12 @@ class Tile(object):
 
         # TODO: write general method in the Tile for returning data without
         # the buffer...
-        buffered_ds = dataset.TEMDataset(self.data['downscaled_cru'].synthesize_to_monthly(target_vars, new_names))
+        buffered_ds = dataset.TEMDataset(self.data[downscaled_id].synthesize_to_monthly(target_vars, new_names))
         minx, miny, maxx, maxy = self.extent[
             ['minx', 'miny', 'maxx', 'maxy']
         ].iloc[0]
-        unbuffered_ds = buffered_ds.clip_to_extent(minx, miny, maxx, maxy, self.crs, clip_with='xarray')
-
+        unbuffered_ds =  buffered_ds.get_by_extent(minx, miny, maxx, maxy, self.crs, clip_with='xarray')
+       
 
         # buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
         # buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
@@ -551,7 +551,7 @@ class Tile(object):
         # This is kind of the fast/dirty way to do this...might be better to 
         # use the .save(...) method to standardize the output a bit more...
 
-        print("Putting metadata in attrs....{}".format(util.Version()))
-        unbuffered_ds.dataset.attrs['temds_git_version'] = f"{util.Version()}"
+        # print("Putting metadata in attrs....{}".format(util.Version()))
+        # unbuffered_ds.dataset.attrs['temds_git_version'] = f"{util.Version()}"
 
         return unbuffered_ds
