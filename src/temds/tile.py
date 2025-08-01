@@ -163,26 +163,29 @@ class Tile(object):
         """
         self.log.suspend = self.log.suspend 
      
+    def set_logger(self, logger):
+        self.logger = logger
+        for item in self.data:
+            self.data[item].logger = logger
+
     def load_from_directory(self, directory):
         """
         Create in memory from a directory of file(s)
         """
-        pass
-        # with Path(directory).joinpath('manifest.yml').open('r') as fd:
-        #     manifest = yaml.load(fd, yaml.Loader)
+        with Path(directory).joinpath('manifest.yml').open('r') as fd:
+            manifest = yaml.load(fd, yaml.Loader)
 
-        # for item, _file in manifest['data'].items():
-        #     in_path = Path(directory).joinpath(_file)
-        #     if in_path.is_dir():
-        #         self.data[item] = crujra.AnnualTimeSeries(
-        #             in_path, 
-        #             crs=self.crs, 
-        #             verbose=self.verbose
-        #         )
-        #     else:
-        #         self.data[item] = xr.open_dataset(in_path, engine="netcdf4")
+        for item, _file in manifest['data'].items():
+            in_path = Path(directory).joinpath(_file)
+            if in_path.is_dir():
+                self.data[item] = timeseries.YearlyTimeSeries(
+                    in_path, 
+                    logger = self.logger
+                )
+            else:
+                self.data[item] = dataset.TEMDataset(in_path)
 
-    def import_normalized(self, name, datasource, buffered=True, **kwargs):
+    def import_and_normalize(self, name, datasource, buffered=True, **kwargs):
         """Loads an item to `data` as name from datasource. Each datasource 
         (e.g. AnnualDaily, WorldClim) needs to implement a get_by_extent() 
         method that can return an xarray dataset or AnnualTimeseries to a 
@@ -373,16 +376,19 @@ class Tile(object):
         None
             The correction factors are stored in `self.data[factor_id]`.
         """
-        reference = self.data[reference_id]
-        baseline = self.data[baseline_id]
+        reference = self.data[reference_id].dataset
+        baseline = self.data[baseline_id].dataset
         temp = []
 
 
         for var, info in variables.items():
-            func = corrections.LOOKUP[info['function']]
-            current = func(baseline, reference, info)
-            current.name = info['name']
-            temp.append(current)
+            ## these should all be the same if units are standardized
+            temp.append(reference[var]/baseline[var])
+
+            # func = corrections.LOOKUP[info['function']]
+            # current = func(baseline, reference, info)
+            # current.name = info['name']
+            # temp.append(current)
            
 
         correction_factors = xr.merge(temp)
@@ -428,7 +434,7 @@ class Tile(object):
             a single downscaled year
 
         """
-        correction = self.data[correction_id]
+        correction = self.data[correction_id].dataset
         source = self.data[source_id][year].dataset
         temp = []
         for var, info in variables.items():
@@ -521,21 +527,27 @@ class Tile(object):
 
         # TODO: write general method in the Tile for returning data without
         # the buffer...
-        buffered_ds = self.data['downscaled_cru'].synthesize_to_monthly(target_vars, new_names)
-        buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
-        buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
-        buffered_ds.rio.write_crs(self.crs, inplace=True)
-        buffered_ds.rio.write_coordinate_system(inplace=True)
+        buffered_ds = dataset.TEMDataset(self.data['downscaled_cru'].synthesize_to_monthly(target_vars, new_names))
+        minx, miny, maxx, maxy = self.extent[
+            ['minx', 'miny', 'maxx', 'maxy']
+        ].iloc[0]
+        unbuffered_ds = buffered_ds.clip_to_extent(minx, miny, maxx, maxy, self.crs, clip_with='xarray')
 
-        mask_x = (buffered_ds.x >= self.extent['minx'].squeeze()) & (buffered_ds.x <= self.extent['maxx'].squeeze())
-        mask_y = (buffered_ds.y >= self.extent['miny'].squeeze()) & (buffered_ds.y <= self.extent['maxy'].squeeze())
 
-        unbuffered_ds = buffered_ds.where(mask_x & mask_y, drop=True)
+        # buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
+        # buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
+        # buffered_ds.rio.write_crs(self.crs, inplace=True)
+        # buffered_ds.rio.write_coordinate_system(inplace=True)
+
+        # mask_x = (buffered_ds.x >= self.extent['minx'].squeeze()) & (buffered_ds.x <= self.extent['maxx'].squeeze())
+        # mask_y = (buffered_ds.y >= self.extent['miny'].squeeze()) & (buffered_ds.y <= self.extent['maxy'].squeeze())
+
+        # unbuffered_ds = buffered_ds.where(mask_x & mask_y, drop=True)
 
         # This is kind of the fast/dirty way to do this...might be better to 
         # use the .save(...) method to standardize the output a bit more...
 
         print("Putting metadata in attrs....{}".format(util.Version()))
-        unbuffered_ds.attrs['temds_git_version'] = f"{util.Version()}"
+        unbuffered_ds.dataset.attrs['temds_git_version'] = f"{util.Version()}"
 
         return unbuffered_ds
