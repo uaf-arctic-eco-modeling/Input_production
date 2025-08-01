@@ -280,9 +280,9 @@ class Tile(object):
 
             
         for name, ds in self.data.items():
-            self.logger.info(f'Saving: {name}')
             if name not in to_save:
                 continue
+            self.logger.info(f'Saving: {name}')
             if isinstance(ds, timeseries.YearlyTimeSeries):   
                 
                 op = Path(where).joinpath(f'H{H:02d}_V{V:02d}', name) 
