@@ -19,6 +19,7 @@ dependencies:
   - libgdal-netcdf=3.10.0
   - pytest=8.3.4 
   - typer=0.15.2 
+  - cf-units>=3.3.0
   - versioningit # for inserting version metadata into artifacts...
   - pip # for --editable install...maybe there is a way to do with with conda?
 

@@ -22,8 +22,11 @@ import pyproj # For handling CRS in a variety of formats
 from . import corrections 
 from . import downscalers
 from . import util
+from . import climate_variables
 
-from .datasources import annual, downscaled, crujra
+
+from .logger import Logger
+from .datasources import dataset, timeseries
 
 from joblib import Parallel, delayed
 
@@ -59,7 +62,7 @@ class Tile(object):
         area in `crs` units of pixel buffer
 
     """
-    def __init__(self, index, extent, resolution, crs, buffer_px = 20):
+    def __init__(self, index, extent, resolution, crs, buffer_px = 20, logger=Logger()):
         """
 
         Parameters
@@ -98,7 +101,7 @@ class Tile(object):
         self.buffer_pixels = buffer_px
         self.crs = crs
 
-        self.verbose=False
+        self.logger = logger
         # A valid tile will be constructed when self.data has enough
         # information start implementing the stuff that is in downscaling.sh
         # however we end up re-naming the load/import functions here...
@@ -154,37 +157,30 @@ class Tile(object):
         data = ', '.join(self.data.keys())
         msg = f'Tile: {idx} with data for: {data}'
         return msg
-
-    def toggle_verbose(self):
-        """toggles verbose, and syncs with any items in data with `verbose`
-        attribute
-        """
-        self.verbose = not self.verbose
+     
+    def set_logger(self, logger):
+        self.logger = logger
         for item in self.data:
-            if hasattr(self.data[item], 'verbose'):
-                self.data[item].verbose = self.verbose
-
+            self.data[item].logger = logger
 
     def load_from_directory(self, directory):
         """
         Create in memory from a directory of file(s)
         """
-        
         with Path(directory).joinpath('manifest.yml').open('r') as fd:
             manifest = yaml.load(fd, yaml.Loader)
 
         for item, _file in manifest['data'].items():
             in_path = Path(directory).joinpath(_file)
             if in_path.is_dir():
-                self.data[item] = crujra.AnnualTimeSeries(
+                self.data[item] = timeseries.YearlyTimeSeries(
                     in_path, 
-                    crs=self.crs, 
-                    verbose=self.verbose
+                    logger = self.logger
                 )
             else:
-                self.data[item] = xr.open_dataset(in_path, engine="netcdf4")
+                self.data[item] = dataset.TEMDataset(in_path)
 
-    def import_normalized(self, name, datasource, buffered=True, **kwargs):
+    def import_and_normalize(self, name, datasource, buffered=True, **kwargs):
         """Loads an item to `data` as name from datasource. Each datasource 
         (e.g. AnnualDaily, WorldClim) needs to implement a get_by_extent() 
         method that can return an xarray dataset or AnnualTimeseries to a 
@@ -211,8 +207,9 @@ class Tile(object):
             miny,maxy = miny-self.buffer_area,maxy+self.buffer_area
 
         kwargs['resolution'] = self.resolution
-        if self.verbose: 
-            print(f'importing {name} from {datasource} for the extent: {extent}')
+        self.logger.info(
+            f'importing {name} from {datasource} for the extent: {extent}'
+        )
         self.data[name] = datasource.get_by_extent(
             minx, miny, maxx, maxy, self.crs, **kwargs
         ) 
@@ -247,10 +244,9 @@ class Tile(object):
 
         # Maybe better force to either WKT or pyproj.crs.crs.CRS object above?
         # Prevents having to do type checking later...
-        minx, miny, maxx, maxy = self.extent[
-            ['minx', 'miny', 'maxx', 'maxy']
-        ].iloc[0]
-        extent = dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
+
+        extent = self.extent.iloc[0].to_dict()
+
         manifest = {
             'index': self.index,
             'extent': extent,
@@ -262,21 +258,21 @@ class Tile(object):
 
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
 
-        fill_value = lookup(kwargs, 'fill_value', 1.0e+20 )
-        missing_value = lookup(kwargs, 'missing_value', 1.0e+20 )
-        compress = lookup(kwargs, 'use_zlib', True)
-        complevel = lookup(kwargs, 'complevel', 9)
-        overwrite = lookup(kwargs, 'overwrite', False)
+        # fill_value = lookup(kwargs, 'fill_value', 1.0e+20 )
+        # missing_value = lookup(kwargs, 'missing_value', 1.0e+20 )
+        # compress = lookup(kwargs, 'use_zlib', True)
+        # complevel = lookup(kwargs, 'complevel', 9)
+        # overwrite = lookup(kwargs, 'overwrite', False)
         to_save = lookup(kwargs, 'items', self.data.keys())
         update_manifest = lookup(kwargs, 'update_manifest', False)
 
         clear_existing = lookup(kwargs, 'clear_existing', False)
 
-        climate_enc = {
-                '_FillValue':fill_value, 
-                'missing_value':missing_value, 
-                'zlib': compress, 'complevel': complevel # USE COMPRESSION?
-            }
+        # climate_enc = {
+        #         '_FillValue':fill_value, 
+        #         'missing_value':missing_value, 
+        #         'zlib': compress, 'complevel': complevel # USE COMPRESSION?
+        #     }
         H, V = self.index
         root = Path(where).joinpath(f'H{H:02d}_V{V:02d}')
         if clear_existing and root.exists():
@@ -284,69 +280,22 @@ class Tile(object):
 
             
         for name, ds in self.data.items():
-            
             if name not in to_save:
                 continue
-            if self.verbose: print(f'Saving: {name}')
-            
-            if isinstance(ds, annual.AnnualTimeSeries):
+            self.logger.info(f'Saving: {name}')
+            if isinstance(ds, timeseries.YearlyTimeSeries):   
+                
                 op = Path(where).joinpath(f'H{H:02d}_V{V:02d}', name) 
                 op.mkdir(exist_ok=True, parents=True)
-                for item in ds.data:
-                    for _var in item.dataset.data_vars:
-                        item.dataset[_var].rio.update_encoding(climate_enc, inplace=True)
-                    out_file = Path(op).joinpath(f'{name}-{item.year}.nc') 
-                    if  not out_file.exists() or overwrite:
-                        if overwrite and out_file.exists():
-                            out_file.unlink()
-                        item.dataset.attrs['data_year'] = item.year    
-                        item.dataset.attrs['temds_git_version'] = f"{util.Version()}"
-                        item.dataset.to_netcdf(
-                            out_file, 
-                            # encoding=encoding, 
-                            # mode='w',
-                            engine="netcdf4",
-                            # unlimited_dims={'time':True}
-                        )
-                    else:
-                        raise FileExistsError('The file {out_file} exists and `overwrite` is False')
-
-                # ds.save( ## why does this not work?? 
-                #     op, 'crujra-{year}.nc', 
-                #     missing_value, fill_value, overwrite
-                # )
+                ds.save(op, name+'-{year}.nc', **kwargs)
                 manifest['data'][name] = str(name)
-                continue
-
-
-
-            out_file = Path(where).joinpath(f'H{H:02d}_V{V:02d}', f'{name}.nc') 
-            out_file.parent.mkdir(exist_ok=True, parents=True)
-            
-            
-            for _var in ds.data_vars:
-                if _var == 'spatial_ref':
-                    if self.verbose: print(f'Skipping {_var}; it causes encoding issues.')
-                    continue
-                ds[_var].rio.update_encoding(climate_enc, inplace=True)
-                # try: del ds[_var].attrs['_FillValue']
-                # except: pass
-                
-            if  not out_file.exists() or overwrite:
-                if overwrite and out_file.exists():
-                    out_file.unlink()
-                    
-                ds.to_netcdf(
-                        out_file, 
-                        # encoding=encoding, 
-                        # mode='w',
-                        engine="netcdf4",
-                        # unlimited_dims={'time':True}
-                    )
+            elif isinstance(ds, dataset.TEMDataset): 
+                out_file = Path(where).joinpath(f'H{H:02d}_V{V:02d}', f'{name}.nc') 
+                out_file.parent.mkdir(exist_ok=True, parents=True)
+                ds.save(out_file, **kwargs)
                 manifest['data'][name] = str( f'{name}.nc')
-                
             else:
-                raise FileExistsError('The file {out_file} exists and `overwrite` is False')
+                raise TypeError('Saving {name}, type not supported')
        
         manifest_file = Path(where).joinpath(f'H{H:02d}_V{V:02d}', 'manifest.yml')
         if manifest_file.exists() and update_manifest:
@@ -375,14 +324,15 @@ class Tile(object):
             An AnnualTimeseries item in `data` with 
             `create_climate_baseline(start_year, end_year)` method
         """
-
-        self.data[target] = self.data[source].create_climate_baseline(
-            start_year, end_year, **kwargs
+        self.data[target] = dataset.TEMDataset(
+                self.data[source].create_climate_baseline(
+                start_year, end_year, **kwargs
+            )
         )
 
     def calculate_correction_factors(
             self, baseline_id, reference_id, variables, 
-            factor_id='correction_factors'
+            factor_id='correction-factors'
         ):
         """
         Calculate correction factors based on baseline and reference datasets.
@@ -421,20 +371,23 @@ class Tile(object):
         None
             The correction factors are stored in `self.data[factor_id]`.
         """
-        reference = self.data[reference_id]
-        baseline = self.data[baseline_id]
+        reference = self.data[reference_id].dataset
+        baseline = self.data[baseline_id].dataset
         temp = []
 
 
-        for var, info in variables.items():
-            func = corrections.LOOKUP[info['function']]
-            current = func(baseline, reference, info)
-            current.name = info['name']
+        # for var, info in variables.items():
+        for var in variables:
+            func = corrections.LOOKUP[var]
+            self.logger.info(f'.. Calculating correction factor for {var} with {func}')
+
+            current = func(baseline[var], reference[var])
+            current.name = var
             temp.append(current)
            
 
         correction_factors = xr.merge(temp)
-        self.data[factor_id] = correction_factors
+        self.data[factor_id] = dataset.TEMDataset(correction_factors)
 
     def downscale_year(self, year, source_id, correction_id, variables):
         """Downscale a singe year of `data[source_id]` using corrections
@@ -476,13 +429,22 @@ class Tile(object):
             a single downscaled year
 
         """
-        correction = self.data[correction_id]
+        correction = self.data[correction_id].dataset
         source = self.data[source_id][year].dataset
         temp = []
-        for var, info in variables.items():
-            func = downscalers.LOOKUP[info['function']]
-            current = func(source, correction, info)
-            current.name = info['name']
+
+        for var in variables:
+            func = downscalers.LOOKUP[var]
+            self.logger.info(f'.. Downscaling {var} with {func}')
+            src = source[var]
+            try:
+                cf = correction[var]
+            except KeyError:
+                cf = 0 # not used
+            current = func(src, cf)
+            
+            
+            current.name = var
             temp.append(current)
         
         downscaled = xr.merge(temp)
@@ -494,7 +456,7 @@ class Tile(object):
         downscaled.rio.write_coordinate_system(inplace=True) 
         downscaled.rio.write_transform(source.rio.transform(), inplace=True)
 
-        return downscaled
+        return dataset.YearlyDataset(year, downscaled)
 
 
     def downscale_timeseries(self, downscaled_id, source_id, correction_id, variables, parallel=False):
@@ -509,15 +471,13 @@ class Tile(object):
         else:
             results = []
             for year in self.data[source_id].range():
-                if self.verbose: print(f'Downscaling {year}')
+                self.logger.info(f'Downscaling {year}')
                 data = self.downscale_year(year, source_id, correction_id, variables)
-                results.append(
-                    downscaled.AnnualDaily(year, data, crs=self.crs)
-                )
+                results.append(data)
         
-        self.data[downscaled_id] = downscaled.AnnualTimeSeries(results)
+        self.data[downscaled_id] = timeseries.YearlyTimeSeries(results)
 
-    def to_TEM(self):
+    def to_TEM(self, downscaled_id):
         '''
         Convert downscaled data to a format suitable for TEM (Terrestrial
         Ecosystem Model).
@@ -552,18 +512,18 @@ class Tile(object):
             precipitation
         '''
         
-        if 'downscaled_cru' not in self.data:
+        if downscaled_id not in self.data:
             raise ValueError("The tile object must have a 'downscaled_cru' key in its data dictionary.")
 
         target_vars = {
-            'tavg': 'mean', 
+            'tair_avg': 'mean', 
             'vapo': 'mean', 
             'nirr': 'mean',
             'prec': 'sum'
         }
 
         new_names = {
-            'tavg':'tair', 
+            'tair_avg':'tair', 
             'vapo':'vapor_press', 
             'nirr':'nirr', 
             'prec':'precip'
@@ -571,21 +531,27 @@ class Tile(object):
 
         # TODO: write general method in the Tile for returning data without
         # the buffer...
-        buffered_ds = self.data['downscaled_cru'].synthesize_to_monthly(target_vars, new_names)
-        buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
-        buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
-        buffered_ds.rio.write_crs(self.crs, inplace=True)
-        buffered_ds.rio.write_coordinate_system(inplace=True)
+        buffered_ds = dataset.TEMDataset(self.data[downscaled_id].synthesize_to_monthly(target_vars, new_names))
+        minx, miny, maxx, maxy = self.extent[
+            ['minx', 'miny', 'maxx', 'maxy']
+        ].iloc[0]
+        unbuffered_ds =  buffered_ds.get_by_extent(minx, miny, maxx, maxy, self.crs, clip_with='xarray')
+       
 
-        mask_x = (buffered_ds.x >= self.extent['minx'].squeeze()) & (buffered_ds.x <= self.extent['maxx'].squeeze())
-        mask_y = (buffered_ds.y >= self.extent['miny'].squeeze()) & (buffered_ds.y <= self.extent['maxy'].squeeze())
+        # buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
+        # buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
+        # buffered_ds.rio.write_crs(self.crs, inplace=True)
+        # buffered_ds.rio.write_coordinate_system(inplace=True)
 
-        unbuffered_ds = buffered_ds.where(mask_x & mask_y, drop=True)
+        # mask_x = (buffered_ds.x >= self.extent['minx'].squeeze()) & (buffered_ds.x <= self.extent['maxx'].squeeze())
+        # mask_y = (buffered_ds.y >= self.extent['miny'].squeeze()) & (buffered_ds.y <= self.extent['maxy'].squeeze())
+
+        # unbuffered_ds = buffered_ds.where(mask_x & mask_y, drop=True)
 
         # This is kind of the fast/dirty way to do this...might be better to 
         # use the .save(...) method to standardize the output a bit more...
 
-        print("Putting metadata in attrs....{}".format(util.Version()))
-        unbuffered_ds.attrs['temds_git_version'] = f"{util.Version()}"
+        # print("Putting metadata in attrs....{}".format(util.Version()))
+        # unbuffered_ds.dataset.attrs['temds_git_version'] = f"{util.Version()}"
 
         return unbuffered_ds

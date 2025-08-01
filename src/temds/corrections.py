@@ -12,181 +12,56 @@ original bash script code is in each docstring
     # Shaman, J., and M. Kohn. 2009. “Absolute Humidity Modulates Influenza Survival, 
     # Transmission, and Seasonality.” PNAS 106 (9): 3243–8)
 """
-import xarray as xr # unused import, but needed for type hints
 
-from .constants import ZERO_C_IN_K, SECONDS_PER_DAY
-
-
-def temperature(baseline, reference, keys):
-    """correction factor calculation code for tmin, tmax, tavg
-
-    original code: (tair, other follow similarly)
-        tair_corr_oC[$time,$lat,$lon] = float(wc_tavg - (cj_tmp - 273.15)); 
+def generic_delta_add(baseline, reference):
+    """Generic correction factor calculation for additive
+    delta downscaling  
 
     Parameters
     ----------
-    baseline: xr.Dataset
-        baseline climate data [monthly]
-    reference: xr.Dataset
-        reference climate data [monthly]
-    keys: dict
-        lookup table for variables in `baseline` and `reference`
-
-        must contain items for:
-        'reference': reference variable name
-        'baseline': baseline variable name
-
+    baseline: xr.DataArray
+        Baseline climate calculated from data to be downscaled
+    reference: xr.DataArray
+        High resolution climate reference
+    
     Returns
     -------
-    xr.dataset
-        correction_factor
-    """   
-    rk = keys['reference']
-    bk = keys['baseline']
+    xr.DataArray
+        correction factors
+    """
+    return reference - baseline 
 
-    correction_factor = reference[rk] - (baseline[bk] - ZERO_C_IN_K)
+def generic_delta_mul(baseline, reference):
+    """Generic correction factor calculation for multiplicative
+    delta downscaling  
 
-    return correction_factor
-
-def precipitation (baseline, reference, keys):
-    """correction factor calculation code for precipitation
-
-    original code:
-        prec_corr_mm[$time,$lat,$lon] = float(wc_prec / cj_pre);
-
-    Parameters
+        Parameters
     ----------
-    baseline: xr.Dataset
-        baseline climate data [monthly]
-    reference: xr.Dataset
-        reference climate data [monthly]
-     keys: dict 
-        lookup table for variables in `baseline` and `reference`
-
-        must contain items for:
-        'reference': reference variable name
-        'baseline': baseline variable name
-
+    baseline: xr.DataArray
+        Baseline climate calculated from data to be downscaled
+    reference: xr.DataArray
+        High resolution climate reference
+    
     Returns
     -------
-    xr.dataset
-        correction_factor
-    """  
-    rk = keys['reference']
-    bk = keys['baseline']
-    return reference[rk]/baseline[bk]
+    xr.DataArray
+        correction factors
+    """
+    return reference / baseline 
 
-def vapor_pressure (baseline, reference, keys):
-    """correction factor calculation code for vapor pressure
-
-    original code:
-        float((wc_vapr * 1000) / ((cj_pres * cj_spfh) / (0.622 + 0.378 * cj_spfh)));
-
-    Parameters
-    ----------
-    baseline: xr.Dataset
-        baseline climate data [monthly]
-    reference: xr.Dataset
-        reference climate data [monthly]
-     keys: dict 
-        lookup table for variables in `baseline` and `reference`
-
-        must contain items for:
-        'reference': reference variable name
-        'baseline-pres': baseline pres variable name
-        'baseline-spfh': baseline spfh variable name
-
-    Returns
-    -------
-    xr.dataset
-        correction_factor
-    """  
-    r_vapor = keys['reference']
-    b_pres = keys['baseline-pres']
-    b_spfh = keys['baseline-spfh']
-
-    ref = (reference[r_vapor] * 1000)     
-
-    base = (
-        (baseline[b_pres] * baseline[b_spfh]) / \
-        (0.622 + 0.378 * baseline[b_spfh])
-    )
-    return ref/base
-
-
-def radiation (baseline, reference, keys):
-    """correction factor calculation code for radiation
-
-    original code:
-        float(((wc_srad * 1000) / (24 * 60 * 60)) / (cj_dswrf / (24 * 60 * 60))); 
-   
-    Parameters
-    ----------
-    baseline: xr.Dataset
-        baseline climate data [monthly]
-    reference: xr.Dataset
-        reference climate data [monthly]
-     keys: dict 
-        lookup table for variables in `baseline` and `reference`
-
-        must contain items for:
-        'srad': reference variable name
-        'dswrf': baseline variable name
-
-    Returns
-    -------
-    xr.dataset
-        correction_factor
-    """   
-    rk = keys['reference']
-    bk = keys['baseline']
-
-    ref = (reference[rk] * 1000) /SECONDS_PER_DAY
-    base = (baseline[bk]) /SECONDS_PER_DAY
-
-    return ref/base
-
-
-def wind_speed (baseline, reference, keys):
-    """correction factor calculation code for wind speed
-
-    original code:
-        float(wc_wind / sqrt(cj_ugrd^2 + cj_vgrd^2))
-
-    Parameters
-    ----------
-    baseline: xr.Dataset
-        baseline climate data [monthly]
-    reference: xr.Dataset
-        reference climate data [monthly]
-     keys: dict 
-        lookup table for variables in `baseline` and `reference`
-
-        must contain items for:
-        'reference': reference variable name
-        'baseline-ugrd': baseline ugrd variable name
-        'baseline-vgrd': baseline vgrd variable name
-
-    Returns
-    -------
-    xr.dataset
-        correction_factor
-    """  
-    r_wind = keys['reference']
-    b_ugrd = keys['baseline-ugrd']
-    b_vgrd = keys['baseline-vgrd']
-
-    ref = reference[r_wind]   
-
-    base = (baseline[b_ugrd]**2 + baseline[b_vgrd])**.5
-    return ref/base
 
 
 LOOKUP = {
-    'temperature': temperature,
-    'precipitation': precipitation,
-    'vapor-pressure': vapor_pressure,
-    'radiation': radiation,
-    'wind-speed': wind_speed,
-}
-
+    'temperature': generic_delta_add,
+    'precipitation': generic_delta_mul,
+    'vapor-pressure': generic_delta_mul,
+    'radiation': generic_delta_mul,
+    'wind-speed': generic_delta_mul,
+    'tair_min': generic_delta_add,
+    'tair_max': generic_delta_add,
+    'tair_avg': generic_delta_add,
+    'prec': generic_delta_mul,  
+    'nirr': generic_delta_mul,
+    'vapo': generic_delta_mul,
+    'wind': generic_delta_mul,
+} 
