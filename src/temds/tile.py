@@ -378,13 +378,12 @@ class Tile(object):
 
         # for var, info in variables.items():
         for var in variables:
-            ## these should all be the same if units are standardized
-            temp.append(reference[var]/baseline[var])
+            func = corrections.LOOKUP[var]
+            self.logger.info(f'.. Calculating correction factor for {var} with {func}')
 
-            # func = corrections.LOOKUP[info['function']]
-            # current = func(baseline, reference, info)
-            # current.name = info['name']
-            # temp.append(current)
+            current = func(baseline[var], reference[var])
+            current.name = var
+            temp.append(current)
            
 
         correction_factors = xr.merge(temp)
@@ -435,8 +434,8 @@ class Tile(object):
         temp = []
 
         for var in variables:
-            self.logger.info(f'.. Downscaling {var}')
             func = downscalers.LOOKUP[var]
+            self.logger.info(f'.. Downscaling {var} with {func}')
             src = source[var]
             try:
                 cf = correction[var]
