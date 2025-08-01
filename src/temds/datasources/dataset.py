@@ -305,7 +305,7 @@ class TEMDataset(object):
             y_dim = 'lat'
 
 
-        gt = new.dataset.transform.to_gdal()
+        gt = new.transform.to_gdal()
         minx, miny = gt[0], gt[3]
         maxx = minx + abs(gt[1]) * new.dataset[x_dim].size
         maxy = miny + abs(gt[5]) * new.dataset[y_dim].size
@@ -955,7 +955,7 @@ class YearlyDataset(TEMDataset):
 
                 method = crujra.RESAMPLE_LOOKUP[var]
                 logger.info(f'{func_name}: resampling 6hr {var} to daily by {method}')
-                datasets[var] = crujra.RESAMPLE_METHODS[method](temp)
+                datasets[var] = climate_variables.RESAMPLE_METHODS[method](temp)
                 datasets[var].attrs.update(cell_methods=f'time:{method}')
         
             new = YearlyDataset(year, datasets[crujra.SOURCE_VARS[0]], logger=logger)
@@ -1130,3 +1130,8 @@ class YearlyDataset(TEMDataset):
         return verified, reasons
 
 
+    def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
+        return YearlyDataset.from_TEMDataset(
+            super().get_by_extent(minx, miny, maxx, maxy, extent_crs, **kwargs),
+            self.year
+        ) 
