@@ -47,34 +47,56 @@ class TEMDataset(object):
         when `in_memory` is false this must be a Path
         otherwise it's a xr.dataset
     in_memory: Bool
+        if True `_dataset` is an open xr.Dataset
+        otherwise `_dataset is a Path to a .nc file
     logger: logger.Logger
         Logger to use for printing or saving messages
+    _cached_load_kwargs: dict
+        cached kwargs for loading `dataset` when `in_memory` is False
 
     Properties
     ----------
-    dataset:
+    dataset: xr.Dataset
         Provides access to internal `_dataset`, the getter
         will always provided access to an in memory version
         of the data. If `in_memory` is False the in memory 
         dataset is read only.
+    crs: pyproj.CRS
+        readonly access to `dataset` crs
+    transform: affine.Affine
+        readonly access to `dataset` geotransform
+    resolution: Tuple
+         readonly access to `dataset` resolution
+    extent: Tuple
+        readonly access to `dataset` extent
+    vars: list
+        readonly access to `dataset` data_vars
+    units: dict
+        access to a dictionary of variable names and units for 
+        each variable in `vars`
+    
     """
     def __init__(self, dataset, in_memory=True, logger=Logger(), **kwargs):
         """
         Parameters
         ----------
         dataset: xr.dataset or Path
-            the dataset
+            The dataset to load. When loaded the object should be able to 
+            pass the `verify` function
         in_memory: Bool
+            If True `dataset` is open as `xr.Dataset`.
+            Otherwise it is stored as a Path.
         logger: logger.Logger, defaults to new object
             Logger to use for printing or saving messages
-
+            The default Logger will not print any messages, but a 
+            text file may be created from it by calling `logger.save`
+        **kwargs:
+            Key word arguments passed to `load` 
         """
         self._dataset = None
-
         self.logger = logger
-        
         self.in_memory = in_memory
-        self.cached_load_kwargs={}
+        self._cached_load_kwargs={}
 
         if isinstance(dataset, xr.Dataset):
             self.dataset=dataset
@@ -86,7 +108,7 @@ class TEMDataset(object):
                     self.load(dataset, **kwargs)
                 else:
                     self.dataset = dataset
-                    self.cached_load_kwargs = kwargs
+                    self._cached_load_kwargs = kwargs
 
             else:
                 raise IOError('input data is missing or not a .nc file')
@@ -132,7 +154,7 @@ class TEMDataset(object):
         if isinstance(self._dataset, xr.Dataset):
             return self._dataset
         elif isinstance(self._dataset, Path):
-            return self.load(self._dataset, **self.cached_load_kwargs)
+            return self.load(self._dataset, **self._cached_load_kwargs)
         else:
             raise TypeError('Bad Dataset Type')
 
@@ -141,20 +163,38 @@ class TEMDataset(object):
         """Setting of dataset property."""
         self._dataset = value
 
+    def __repr__(self):
+        """string representation"""
+        return(f"{type(self).__module__}.{type(self).__name__}")
+
     @staticmethod
-    def from_raster_extent(raster, in_vars = [], ds_time_dim=[], buffer_px=30, logger=Logger()):
+    def from_raster_extent(
+            raster, in_vars = [], ds_time_dim=[], buffer_px=30, logger=Logger()
+        ):
         """
-        TODO: update
-        Creates new xr.dataset for `self.dataset` using 
-        the extent, transform, and projection of `raster`. Also includes a
-        buffer, which ends up being helpful in downstream operations.
-        `self.dataset` resolution and extent are calculated from `rasters`
-        transform.
+        Creates new xr.Dataset for `dataset` using the extent, transform, and 
+        projection of `raster`. An optional buffer can be added to the extent
+        when the crs is not ESPG:4326.
 
         Parameters
         ----------
-        raster: path
-            path to a raster file that can be opened as a gdal dataset
+        raster: Path
+            Path to a raster file that can be opened as a gdal dataset
+        in_vars: list, defaults []
+            List of variables to create `Dataset.data_vars` for
+        ds_time_dim: list, defaults []
+            The time dimension for the `Dataset`
+        buffer_px: int, default 30
+            Buffer in pixels to add to extent. When `raster` crs is EPSG:4326
+            This argument is ignored
+        logger: logger.Logger, defaults to new object
+            Logger to use for printing or saving messages
+            The default Logger will not print any messages, but a 
+            text file may be created from it by calling `logger.save`
+
+        Returns
+        -------
+        TEMDataset
         """
         func_name = 'TEMdataset.from_raster_extent'
         logger.info(f'{func_name}: Initializing with extent from {raster}')
@@ -254,7 +294,46 @@ class TEMDataset(object):
             logger=Logger(),
             resample_alg='bilinear'
         ):
-        """"""
+        """Creates a TEMDataset that will pass `verify` from source Worldclim
+        data. Can be used to download data or create from local data. Uses
+        GDAL.Warp to convert data  to extent, crs, and resolution 
+        from `extent_raster`
+
+        Parameters
+        ----------
+        data_path: path
+            Path to source data location on local machine. If download is True
+            the data is downloaded to this location first. 
+        download: Bool, default False
+            If True, data is downloaded using urls generated with 
+            `worldclim.url_for` 
+        version: str, defaults '2.1' 
+            Worldclim data release.
+        resolution: str, defaults '30s'
+            Worldclim spatial resolution. Must be in `worldclim.RESOLUTIONS`
+        in_vars: list or str defaults 'all'
+            Variables to create `TEMDataset` from.
+            If a str, should be a single var name, or `all` which will
+            use all variables `worldclim.vars` 
+            If a list, a list of variables in `worldclim.vars` 
+        extent_raster: Path, defaults None  
+            A raster to take the extent, crs, and resolution from.
+            If None, one of the source files is used
+        overwrite: bool, defaults False 
+            If true, overwrite existing data.
+        logger: logger.Logger, defaults to new object
+            Logger to use for printing or saving messages
+            The default Logger will not print any messages, but a 
+            text file may be created from it by calling `logger.save`
+        resample_alg: str, defaults 'bilinear'
+            Resampling algorithm for converting source data to 
+            extent, crs, and resolution from `extent_raster`
+
+        Returns
+        -------
+        TEMDataset
+            A TEM dataset that will pass `verify`
+        """
         ## used in messages.
         func_name = "TEMdataset.from_worldclim"
         
@@ -370,33 +449,43 @@ class TEMDataset(object):
         )
 
         return new
-    
-    def __repr__(self):
-        """string representation"""
-        return(f"{type(self).__module__}.{type(self).__name__}")
 
     def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
         """Returns xr.dataset for use in downscaling
 
         Parameters
         ----------
-        minx: Float
-            Minimum x coord, in `self.dataset` projection
-        maxx: Float
-            Maximum x coord, in `self.dataset` projection
-        miny: Float
-            Minimum y coord, in `self.dataset` projection
-        maxy: Float
-            Maximum y coord, in `self.dataset` projection
-        resolution: float, Optional
-            Resolution of dataset to return, If None, The resolution is
-            not changed from `self.dataset`
+        minx: float
+            Minimum x coord
+        maxx: float
+            Maximum x coord
+        miny: float
+            Minimum y coord
+        maxy: float
+            Maximum y coord
+        extent_crs: crs.CRS
+            crs of extent values
+        **kwargs:
+            'clip_with: str, defaults Gdal,
+                flag to choose which clipping function to use
+                'xarray' or 'gdal'
+            'resolution': defaults, `resolution`
+                resolution to use instead of `resolution`
+            'resample_alg': defaults bilinear
+                the resampling algorithm used by gdal
+            'warp_no_data_as_array': bool, defaults False
+                If true, the no data values are set 
+                as an array, length of the number of bands, in gdal.Warp
+            'gdal_type', int defaults gdal.GDT_Float32 
+                gdal datatype
+            'prime_warp': bool, defaults True
+                When True primes gdal warp
+        
 
         Returns
         -------
-        xarrray.Dataset
-            subset of data from extent (`minx`,`miny`)(`maxx`,`maxy`) and 
-            at `resolution`
+        TEMDataset
+            subset of data from extent (`minx`,`miny`)(`maxx`,`maxy`)
 
         """
         if self._dataset is None:
@@ -408,12 +497,6 @@ class TEMDataset(object):
         lookup = lambda key, default: kwargs[key] if key in kwargs else default
         update_kw = lambda key, default: kwargs.update({key: lookup(key, default)})
 
-        # This is a relic of some previous bugs...it seems that now, if you load
-        # a dataset, it loads the correct direction and writes out in the 
-        # correction orientation. So flip_y and flip_x are no longer needed.
-        # flip_y = lookup('flip_y', False)
-        # flip_x = lookup('flip_x', False)
-
         ## gdal kwargs
         update_kw('resample_alg', 'bilinear')
         update_kw('warp_no_data_as_array', False)
@@ -421,7 +504,7 @@ class TEMDataset(object):
         update_kw('prime_warp', True)
         
         ## general kwarg
-        update_kw('resolution', self.resolution)
+        update_kw('resolution', self.resolution[0])
 
         resolution = kwargs['resolution']
         if resolution is None:
@@ -441,10 +524,7 @@ class TEMDataset(object):
             raise TypeError("get_by_extent: 'clip_with' must be 'gdal', or 'xarray'")
         gc.collect()
         malloc_trim(0)
-        # if flip_y: 
-        #     tile = tile.reindex(y=list(reversed(tile.y)))
-        # if flip_x:
-        #     tile = tile.reindex(x=list(reversed(tile.x)))
+
         return TEMDataset(tile)
         
     def get_by_extent_gdal(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
@@ -452,17 +532,7 @@ class TEMDataset(object):
 
         Parameters
         ----------
-        minx: Float
-            Minimum x coord, in `self.dataset` projection
-        maxx: Float
-            Maximum x coord, in `self.dataset` projection
-        miny: Float
-            Minimum y coord, in `self.dataset` projection
-        maxy: Float
-            Maximum y coord, in `self.dataset` projection
-        resolution: float, Optional
-            Resolution of dataset to return, If None, The resolution is
-            not changed from `self.dataset`
+        see `clip_by_extent`
 
         Returns
         -------
@@ -535,7 +605,7 @@ class TEMDataset(object):
         
         source.FlushCache()
         ## opption 2
-        vars_dict = {var: self.dataset[var].values for var in self.vars }
+        vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         del(vars_dict)
 
@@ -594,7 +664,7 @@ class TEMDataset(object):
         })
 
         for var in self.vars:
-            tile[var].attrs.update(self.dataset[var].attrs)
+            tile[var].attrs.update(working_dataset[var].attrs)
 
         tile.rio.write_crs(
             dest_crs, 
@@ -612,17 +682,7 @@ class TEMDataset(object):
 
         Parameters
         ----------
-        minx: Float
-            Minimum x coord, in `self.dataset` projection
-        maxx: Float
-            Maximum x coord, in `self.dataset` projection
-        miny: Float
-            Minimum y coord, in `self.dataset` projection
-        maxy: Float
-            Maximum y coord, in `self.dataset` projection
-        resolution: float, Optional
-            Resolution of dataset to return, If None, The resolution is
-            not changed from `self.dataset`
+        see `clip_by_extent`
 
         Returns
         -------
@@ -706,7 +766,6 @@ class TEMDataset(object):
         out_file: path
             file to save
         **kwargs: dict
-        May contain:
             'climate_encoding': dict
                 custom climate encoding for saved .nc files,
                 if not provided encoding is generated from other
@@ -721,6 +780,14 @@ class TEMDataset(object):
                 When True compression is used in encoding
             'complevel': int
                 Compression level for 'zlib'
+            'extra_attrs': dict
+                any extra attributes to add to `dataset` before saving
+                as .nc file
+
+        Raises
+        -------
+        errors.UninitializedError:
+            if self._dataset is None
         """
         if self._dataset is None:
             raise errors.UninitializedError(
@@ -770,7 +837,25 @@ class TEMDataset(object):
             )
 
     def load(self, in_path, **kwargs):
-        """Loads existing .nc dataset formatted for temds.
+        """Loads existing .nc dataset formatted for temds. Dataloaded 
+        with this function should be able to pass `verify` 
+
+        Parameters
+        ----------
+        in_path: Path
+            path to netcdf file
+        **kwargs: dict
+            'force_aoi_to': str
+                Variable name to force all other variables to have the 
+                same no_data pixels
+            'aoi_nodata': float, defaults np.nan
+                no data value to used with 'force_aoi_to'
+            chunks: int
+                passed to xr.open_dataset cunks argumet
+        
+        Returns
+        -------
+        When `in_memory` is false retuns an open `xr.Dataset`
         """
         func_name ='TEMDdataset.load'
         self.logger.info(f'{func_name}: reading {in_path}')
@@ -854,9 +939,27 @@ class YearlyDataset(TEMDataset):
     """This sub class of TEMDataset represents daily data
     for a single year.  Extends TEMDataset by adding
     `year` attribute.
+
+    Attributes
+    ----------
+    year: int
+        Year the data represnets
     """
 
     def __init__(self, year, dataset, in_memory=True, logger=Logger(), **kwargs):
+        """
+        Parameters
+        ----------
+        year: int or None
+            Year the data represnets
+            if None `year` is infered
+        See `TEMDataset` for remaining parameters
+
+        Raises
+        -------    
+        errors.YearUnknownError
+            if `year` cannot be infered
+        """
         self.year = year
         super().__init__(dataset, in_memory, logger, **kwargs)
 
@@ -875,13 +978,38 @@ class YearlyDataset(TEMDataset):
     @staticmethod
     def from_TEMDataset(inds, year):
         """converts an existing TEMDataset to YearlyDataset
+
+        Parameters
+        ----------
+        inds: TEMDataset
+            A TEMDataset
+        year: int
+            Year for the data
+
+        Returns
+        -------
+        YearlyDataset
         """
         kwargs = {}
         kwargs['logger'] = inds.logger
         kwargs['in_memory'] = inds.in_memory
         new = YearlyDataset(year, inds.dataset, **kwargs)
-        new.cached_load_kwargs = inds.cached_load_kwargs  
+        new._cached_load_kwargs = inds._cached_load_kwargs  
         return new
+    
+    def __repr__(self):
+        """string represnetation
+        """
+        return(f"{type(self).__module__}.{type(self).__name__}: {self.year}")
+
+    def __lt__(self, other):
+        """less than for sort
+        """
+        if self.year is None or other.year is None:
+            raise errors.YearUnknownError(
+                "An item in comparison is missing 'year' attribute"
+            )
+        return self.year < other.year
 
     @staticmethod
     def from_crujra(year, data_path, 
@@ -891,31 +1019,36 @@ class YearlyDataset(TEMDataset):
                     crujra_version = '2.5',
                     sorted_by_var = True, 
                     ):
-        """Loads raw (direct from source) CRU JRA files, resamples to a daily
-        timestep, and clips to an extent if provided. The raw data is expected to 
-        be have been downloaded from CRU in the .gz compressed format.
-        The files are expected to have following format for names:
-            "{var}/crujra.v2.5.5d.{var}.{yr}.365d.noc.nc.gz"
-        where {var} is the variable name and {yr} is the year of data.
-        The raw data is expected to be in a directory structure where each
-        variable is in a subdirectory named after the variable name. Each CRU 
-        file is expected to have a time dimension with a calendar attribute of
-        '365_day' or 'noleap' and be at a 6 hour resolution.
+        """Loads source CRUJRA files to YearlyDataset. Data sould be local
+        in `data_path` but can be unziped or in .gz form. 
+
+        An option to load data processed in TEMDS<=0.1.0 is also present
 
         Parameters
         ----------
         data_path: path
             a directory containing raw cru jra files to be loaded by matching
-            file_format. 
-        aoi_extent: tuple, optional
-            clipping extent(minx, miny, maxx, maxy) geo-coordinates in 
-            degrees(WGS84) # is this really the order we want?
-        file_format: str, defaults None
-            string that contains {var} and {yr} formatters to match. When 
-            None is passed, '{var}/crujra.v2.5.5d.{var}.{yr}.365d.noc.nc.gz' 
-            pattern is used; this format matches CUR JRA file format conventions
-            where each variable is nested in a {var} subdirectory at the root 
-            `data_path`
+            file_format, or a netcdf file if `is_preprocesed` is True
+        is_preprocessed: bool, defaults False
+            If True, `data_path` is a netcdf file created by the previous 
+            versions of TEMDS. TEMDS<=0.1.0
+        extent: DataFrame, Optional
+            Dataframe with minx, miny, maxx, maxy fields. Extent to
+            clip data to.
+        logger: logger.Logger, defaults to new object
+            Logger to use for printing or saving messages
+            The default Logger will not print any messages, but a 
+            text file may be created from it by calling `logger.save`
+        crujra_version: str, defaults '2.5'
+        sorted_by_var: Bool, defauts True
+            When True files in `data_path` are sorted in to subdirectories 
+            by variable
+            Otherwise, files are in same directory
+
+        Returns
+        -------
+        YearlyDataset
+            Can pass `verify`
         """
         func_name = "YearlyDataset.from_crujra"
         
@@ -1029,7 +1162,12 @@ class YearlyDataset(TEMDataset):
         return new
 
     def save(self, out_file, **kwargs): 
-        """
+        """Extends save to save `year` as 'data_year' in netcdf
+        attrs.
+
+        Parameters
+        ----------
+        Same as `TEMDataset.save`
         """
         if 'extra_attrs' in kwargs:
             kwargs['extra_attrs']['data_year'] = self.year
@@ -1040,7 +1178,18 @@ class YearlyDataset(TEMDataset):
 
 
     def load(self, in_path, **kwargs):
-        """Load with year code added
+        """Extends load to support `year`, which should be presnet in
+        netcdf file as 'data_year' attr
+
+        Parameters
+        ----------
+        Same as `TEMDataset.load` with additonal kwarg 'year_overried'
+        'year_overried': function, defualts None
+            function to find year in file name, TODO: Depricate
+
+        Returns
+        -------
+        When `in_memory` is false retuns an open `xr.Dataset`
         """
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
         year_override = lookup(kwargs, 'year_override', None)
@@ -1048,6 +1197,7 @@ class YearlyDataset(TEMDataset):
         in_dataset = super().load(in_path, **kwargs)
         if self.in_memory:
             in_dataset = self._dataset
+        
 
         try: 
             if self.year is None and year_override is None:
@@ -1063,18 +1213,7 @@ class YearlyDataset(TEMDataset):
         if not self.in_memory:
             return in_dataset
 
-    def __repr__(self):
-        return(f"{type(self).__module__}.{type(self).__name__}: {self.year}")
-
-    def __lt__(self, other):
-        """less than for sort
-        """
-        if self.year is None or other.year is None:
-            raise errors.YearUnknownError(
-                "An item in comparison is missing 'year' attribute"
-            )
-        return self.year < other.year
-
+    
     def synthesize_to_monthly(self, target_vars, new_names=None):
         """Converts target_vars to monthly data (12 time steps). In other words,
         resample daily data to monthly data using the method specified in
@@ -1114,9 +1253,9 @@ class YearlyDataset(TEMDataset):
             if method == 'mean':
                 monthly[var] = self.dataset[var].resample(time='MS').mean()
             elif method == 'sum':
-                monthly[var] = self.dataset[var].resample(time='MS').sum()
+                monthly[var] = self.dataset[var].resample(time='MS').sum(skipna = False)
             else:
-                raise TypeError (f'method {method} not supported in AnnualDaily.synthesize_to_monthly')
+                raise TypeError (f'method {method} not supported in synthesize_to_monthly')
 
         if new_names is not None:
             monthly = monthly.rename(new_names)
@@ -1133,6 +1272,7 @@ class YearlyDataset(TEMDataset):
 
 
     def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
+        """Overloads get_by_extent for year, See parent docs"""
         return YearlyDataset.from_TEMDataset(
             super().get_by_extent(minx, miny, maxx, maxy, extent_crs, **kwargs),
             self.year
