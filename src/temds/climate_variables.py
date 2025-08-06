@@ -226,3 +226,8 @@ def lookup_alias(source, alias):
     cvn = aliases_for(source, 'dict_r')[alias]
     return CLIMATE_VARIABLES[cvn]
     
+def calculate_vapo(pres, spfh):
+    """Calculate Vapor pressure from sea level pressure and
+    specific humidity
+    """
+    return (0.001 * pres * spfh) / (0.622 + 0.378 * spfh)

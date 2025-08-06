@@ -16,15 +16,18 @@ from osgeo import gdal
 from affine import Affine
 from pyproj import CRS
 from cf_units import Unit
+from dapper.met import cmip_utils
 
 from . import errors
-from . import worldclim, crujra
+from . import worldclim, crujra, cmip6
 from temds import file_tools
 from temds import climate_variables 
 from temds.logger import Logger
 from temds.constants import MONTH_START_DAYS 
 from temds.util import Version
 from temds import gdal_tools
+
+
 
 ## We can better clear the memory cache on some OS's with this 
 ## trick. If libc.so.6 is not present the code dose nothing
@@ -443,13 +446,14 @@ class TEMDataset(object):
                     new.dataset[wcn].values, stn, source
                 )
 
+        
 
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(worldclim.NAME, 'dict_r')
         )
 
         return new
-
+    
     def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
         """Returns xr.dataset for use in downscaling
 
@@ -1010,6 +1014,109 @@ class YearlyDataset(TEMDataset):
                 "An item in comparison is missing 'year' attribute"
             )
         return self.year < other.year
+    
+    def from_cmip6(year, data_path, 
+            download=False,
+            variables = 'all',
+            models=[],
+            experiments=[],
+            ensambles=[],
+            extent=None,
+            logger=Logger(),
+        ):
+        func_name = "YearlyDataset.from_cmip6"
+        table=['day']
+
+        if variables=='all':
+            variables = cmip6.SOURCE_VARS
+
+        params = {
+            'models': models,
+            'variables': variables,
+            'experiment': experiments,
+            'table': table,
+            'ensemble': ensambles,
+
+        }
+        logger.debug(f'dapper Params: {params}')
+        
+
+        available = cmip_utils.find_available_data(params)
+        logger.info(f'YearlyDataset.from_cmip6: found {available.shape[0]} datasets')
+
+
+        lat_bounds=None
+        lon_bounds=None
+        if not extent is None:
+            lon_bounds = (extent.minx, extent.maxx)
+            lat_bounds = (extent.miny, extent.maxy)
+        print(lon_bounds)
+
+        if download:
+            cmip_utils.download_pangeo(
+                available, data_path, lat_bounds=lat_bounds, lon_bounds=lon_bounds
+            )
+
+        variables = []
+        for var_file in Path(data_path).glob('*.nc'):
+            logger.debug(var_file)
+            var = var_file.name.split('_')[0]
+            data =  xr.open_dataset(var_file)
+            ## this is probably not 100% as it does not change lon_bnds
+            data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
+            data = data.sortby(data.lon)
+            del(data.coords['lat_bnds'])
+            del(data.coords['lon_bnds'])
+            del(data.coords['time_bnds'])
+            variables.append(data)
+        data = xr.merge(variables)
+        data = data.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
+
+
+        new = YearlyDataset(year, data, logger=logger)
+        # pr = new.dataset['pr']
+        # new.dataset['pr'] = cmip6.convert_pr(pr)
+        # unit = climate_variables.CLIMATE_VARIABLES['prec'].std_unit.name
+        # v_name = climate_variables.CLIMATE_VARIABLES['prec'].name
+        # new.dataset['pr'].attrs.update(units=unit, name=v_name)
+
+        source = cmip6.NAME
+        for std_var, var in climate_variables.aliases_for(source, 'dict').items():
+            if climate_variables.has_conversion(std_var, source):
+                logger.info(f'{func_name}: Converting units for {var} to {std_var}')
+                new.dataset[var].values = climate_variables.to_std_units(
+                    new.dataset[var].values, std_var, source
+                )
+                cv = climate_variables.lookup_alias(source, var)
+                unit = str(cv.std_unit)
+                print(unit)
+                v_name = cv.name
+                new.dataset[var].attrs.update(units=unit, name=v_name)
+
+
+        logger.info(f'{func_name}: Calculating vapo kPa')
+        pres = new.dataset['psl']
+        spfh = new.dataset['huss']
+        new.dataset['vapo'] = climate_variables.calculate_vapo(pres, spfh)
+        unit = climate_variables.CLIMATE_VARIABLES['vapo'].std_unit.name
+        v_name = climate_variables.CLIMATE_VARIABLES['vapo'].name
+        new.dataset['vapo'].attrs.update(units=unit, name=v_name)
+
+        # cmiphist['pres'] = cmiphist['psl'] * np.exp((-9.80665 * 0.0289644 * cmiphist['elevation']) / (8.3144598 * (cmiphist['tas'] + 273.15)))
+        # cmiphist['vapo_kpa'] = (0.001 * cmiphist['pres'] * cmiphist['huss']) / (0.622 + (1-0.622) * cmiphist['huss'])
+
+        new.dataset = new.dataset.rename(
+            climate_variables.aliases_for(cmip6.NAME, 'dict_r')
+        )
+        verified, reasons = new.verify()
+        if not verified:
+            logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
+        return new
+
+        
+
+
+
 
     @staticmethod
     def from_crujra(year, data_path, 
@@ -1111,7 +1218,8 @@ class YearlyDataset(TEMDataset):
         ## so we just change the name here
         var = 'pre'
         cv = climate_variables.lookup_alias(crujra.NAME, var)
-        unit = cv.std_unit.name
+        unit = str(cv.std_unit)
+        print(unit)
         v_name = cv.name
         new.dataset[var].attrs.update(units=unit, name=v_name)
 
@@ -1131,7 +1239,7 @@ class YearlyDataset(TEMDataset):
         logger.info(f'{func_name}: Calculating vapo kPa')
         pres = new.dataset['pres']
         spfh = new.dataset['spfh']
-        new.dataset['vapo'] = crujra.calculate_vapo(pres, spfh)
+        new.dataset['vapo'] = climate_variables.calculate_vapo(pres, spfh)
         unit = climate_variables.CLIMATE_VARIABLES['vapo'].std_unit.name
         v_name = climate_variables.CLIMATE_VARIABLES['vapo'].name
         new.dataset['vapo'].attrs.update(units=unit, name=v_name)
@@ -1151,11 +1259,15 @@ class YearlyDataset(TEMDataset):
         unit = climate_variables.CLIMATE_VARIABLES['winddir'].std_unit.name
         v_name = climate_variables.CLIMATE_VARIABLES['winddir'].name
         new.dataset['winddir'].attrs.update(units=unit, name=v_name)
+
+        
         
 
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(crujra.NAME, 'dict_r')
         )
+ 
+
         verified, reasons = new.verify()
         if not verified:
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')

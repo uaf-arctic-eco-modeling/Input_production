@@ -71,11 +71,11 @@ RESAMPLE_LOOKUP = {
 
 
 
-def calculate_vapo(pres, spfh):
-    """
+# def calculate_vapo(pres, spfh):
+#     """
     
-    """
-    return (0.001 * pres * spfh) / (0.622 + 0.378 * spfh)
+#     """
+#     return (0.001 * pres * spfh) / (0.622 + 0.378 * spfh)
 
 def calculate_wind(ugrd, vgrd):
     """"""
