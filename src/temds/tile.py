@@ -40,6 +40,9 @@ class Tile(object):
     are typically derived from observed data and are used to adjust the data
     once it has been interpolated.
 
+    The extent reported by the tile will be the **TILE** extents. The individual
+    datasources will generally be buffered, so if you query their extents, then
+    you will get extents that go to the outside of the buffer.
 
     Attributes
     ----------
@@ -51,6 +54,8 @@ class Tile(object):
         logging #TODO implement INT code
     extent: pandas.DataFrame
         DataFrame with columns 'minx', 'miny', 'maxx', 'maxy', and a single row
+        This represents the spatial extent of the tile in the CRS of the tile,
+        NOT including the buffer.
     resolution: float
         resolution of pixels for tile
     crs: ??
@@ -513,7 +518,7 @@ class Tile(object):
         '''
         
         if downscaled_id not in self.data:
-            raise ValueError("The tile object must have a 'downscaled_cru' key in its data dictionary.")
+            raise ValueError(f"Can't find {downscaled_id}! Available keys are: {self.data.keys()}")
 
         target_vars = {
             'tair_avg': 'mean', 
