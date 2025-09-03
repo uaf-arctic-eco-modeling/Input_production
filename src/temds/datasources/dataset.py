@@ -18,7 +18,7 @@ from pyproj import CRS
 from cf_units import Unit
 
 from . import errors
-from . import worldclim, crujra
+from . import worldclim, crujra, topo
 from temds import file_tools
 from temds import climate_variables 
 from temds.logger import Logger
@@ -282,6 +282,33 @@ class TEMDataset(object):
 
         return TEMDataset(dataset, logger=logger)
 
+    @staticmethod
+    def from_topo(data_path, download=False, extent_raster=None,
+                  overwrite=False, logger=Logger(), resample_alg='bilinear'):
+
+        func_name = "TEMdataset.from_topo"
+
+        logger.info(f'{func_name}: Processing Topography data in {data_path}')
+
+        ## download first if needed
+        if download: # get from web
+            logger.info(f'{func_name}: Downloading data.')
+            file_tools.download(topo.url, data_path, overwrite)
+
+
+        if not data_path.exists():
+            archive = Path(f'{data_path}', topo.raw_file)
+
+        if not Path(data_path, topo.raw_file).exists():
+            logger.debug(f'{func_name}: unzipping {archive}')
+            archive = Path(f'{data_path}', f'{topo.raw_file}.zip')
+            file_tools.extract(archive, Path(data_path, topo.raw_file))
+
+        Path.mkdir(Path(topo.processed).parent, parents=True, exist_ok=True)
+
+        # get the full topography dataset in memory
+        srcDS = Path(data_path, topo.raw_file, topo.unzipped_raw)
+        ds = gdal.Translate('', srcDS=srcDS, format='mem')
     @staticmethod
     def from_worldclim(
             data_path, 
