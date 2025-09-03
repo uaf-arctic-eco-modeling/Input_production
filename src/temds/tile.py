@@ -521,14 +521,14 @@ class Tile(object):
             raise ValueError(f"Can't find {downscaled_id}! Available keys are: {self.data.keys()}")
 
         target_vars = {
-            'tair_avg': 'mean', 
+            'tavg': 'mean', 
             'vapo': 'mean', 
             'nirr': 'mean',
             'prec': 'sum'
         }
 
         new_names = {
-            'tair_avg':'tair', 
+            'tavg':'tair', 
             'vapo':'vapor_press', 
             'nirr':'nirr', 
             'prec':'precip'
