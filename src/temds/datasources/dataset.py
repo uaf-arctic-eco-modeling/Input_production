@@ -242,12 +242,22 @@ class TEMDataset(object):
         ## do we need the dimension trick here?
         x_array = np.arange(minx, maxx, abs(x_res)) + (abs(x_res)/2)
         rows, cols = len(y_array), len(x_array)
-        dims = ['time', y_dim, x_dim]
-        n_time = len(ds_time_dim)
-        shape = [n_time, rows, cols]
 
-        empty_data = np.zeros(n_time * rows * cols)\
-                       .reshape(shape).astype('float32')
+        # handle case where there are no time dimensions.
+        n_time = len(ds_time_dim)
+        if n_time > 0:
+            dims = ['time', y_dim, x_dim]
+            shape = [n_time, rows, cols]
+            empty_data = np.zeros(n_time * rows * cols)\
+                        .reshape(shape).astype('float32')
+        else:
+            dims = [y_dim, x_dim]
+            shape = [rows, cols]
+            empty_data = np.zeros(rows * cols)\
+                        .reshape(shape).astype('float32')
+
+        # TODO: drop the zero length time coord that gets created
+
         data_vars = { 
             var : (dims, deepcopy(empty_data) ) for var in in_vars
         }
@@ -284,31 +294,105 @@ class TEMDataset(object):
 
     @staticmethod
     def from_topo(data_path, download=False, extent_raster=None,
-                  overwrite=False, logger=Logger(), resample_alg='bilinear'):
+                  overwrite=False, logger=Logger(), buffer=0, 
+                  resample_alg='average'):
 
         func_name = "TEMdataset.from_topo"
 
-        logger.info(f'{func_name}: Processing Topography data in {data_path}')
+        logger.info(f'{func_name}: Processing topography data in {data_path}')
 
         ## download first if needed
-        if download: # get from web
+        if download:
             logger.info(f'{func_name}: Downloading data.')
             file_tools.download(topo.url, data_path, overwrite)
 
+        if not Path(data_path, topo.zipped_raw).exists():
+            raise topo.FileError("Something went wrong with the download.")
 
-        if not data_path.exists():
-            archive = Path(f'{data_path}', topo.raw_file)
+        if not Path(data_path, topo.unzipped_raw).exists():
+            logger.info(f'{func_name}: Extracting data.')
+            file_tools.extract(Path(data_path, topo.unzipped_raw),
+                               Path(data_path, topo.zipped_raw))
 
-        if not Path(data_path, topo.raw_file).exists():
-            logger.debug(f'{func_name}: unzipping {archive}')
-            archive = Path(f'{data_path}', f'{topo.raw_file}.zip')
-            file_tools.extract(archive, Path(data_path, topo.raw_file))
+        if not extent_raster:
+            raise ValueError(f'{func_name}: extent_raster is required!')
 
-        Path.mkdir(Path(topo.processed).parent, parents=True, exist_ok=True)
+        logger.info(f'{func_name}: Using extent from {extent_raster}')
+        er = gdal.Open(extent_raster)
 
-        # get the full topography dataset in memory
-        srcDS = Path(data_path, topo.raw_file, topo.unzipped_raw)
-        ds = gdal.Translate('', srcDS=srcDS, format='mem')
+        # Get the extent from the extent raster
+        er_gt = er.GetGeoTransform()
+        er_minx = er_gt[0]
+        er_miny = er_gt[3] + (er_gt[5] * er.RasterYSize)
+        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
+        er_maxy = er_gt[3]
+
+        # get the full topography dataset in memory. This is an Arc/Info 
+        # Binary Grid format, which is a collection of a whole bunch of files,
+        # so its easier to read it with GDAL rather than the xarray tools.
+        # This is obtuse because the unzipped directory has another level, 
+        # with the same name, i.e.  mn75_grd/mn75_grd, we have to add that
+        # before gdal can figure out what/how to open the file.
+        logger.info(f'{func_name}: Loading topography data.')
+        srcDS = Path(data_path, topo.unzipped_raw, topo.unzipped_raw)
+        ds = gdal.Translate("", srcDS=srcDS, format="MEM")
+        ds.FlushCache()
+
+        logger.info(f'{func_name}: Reprojecting and cropping topography data.')
+        ds2 = gdal.Warp("", ds, 
+                        options=gdal.WarpOptions(format="MEM", 
+                                                 srcSRS=ds.GetSpatialRef(), 
+                                                 dstSRS=er.GetSpatialRef(), 
+                                                 xRes=er.GetGeoTransform()[1], 
+                                                 yRes=er.GetGeoTransform()[5], 
+                                                 resampleAlg='average', 
+                                                 outputBounds=[er_minx, er_miny, er_maxx, er_maxy]))
+        ds2.FlushCache()
+
+
+        logger.info(f'{func_name}: Computing aspect, slope, and TPI.')
+        aspect_ds2 = gdal.DEMProcessing("", ds2, 
+                                        processing='aspect', 
+                                        options=gdal.DEMProcessingOptions(
+                                            format='MEM', 
+                                            computeEdges=True, 
+                                            #xscale=ds2.GetGeoTransform()[1], # Resolution of x
+                                            #yscale=ds2.GetGeoTransform()[5]
+                                            ))
+        aspect_ds2.FlushCache()
+
+        slope_ds2 = gdal.DEMProcessing("", ds2, 
+                                        processing='slope', 
+                                        options=gdal.DEMProcessingOptions(
+                                            format='MEM', 
+                                            computeEdges=True, 
+                                            slopeFormat='degree'
+                                            )) 
+        slope_ds2.FlushCache()
+
+        TPI_ds2 = gdal.DEMProcessing("", ds2, 
+                                        processing='TPI', 
+                                        options=gdal.DEMProcessingOptions(
+                                            format='MEM', 
+                                            computeEdges=True,
+                                            )) 
+        TPI_ds2.FlushCache()
+
+        logger.info(f'{func_name}: Creating empty xarray dataset')
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
+                                              in_vars='elevation aspect slope TPI'.split(), 
+                                              ds_time_dim=[], buffer_px=0)
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['elevation'] = (['y','x'], ds2.ReadAsArray())
+        newDS.dataset['aspect'] = (['y','x'], aspect_ds2.ReadAsArray())
+        newDS.dataset['slope'] = (['y','x'], slope_ds2.ReadAsArray())
+        newDS.dataset['TPI'] = (['y','x'], TPI_ds2.ReadAsArray())
+
+        return newDS
+    
+
+
     @staticmethod
     def from_worldclim(
             data_path, 
