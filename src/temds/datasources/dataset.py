@@ -1062,23 +1062,21 @@ class YearlyDataset(TEMDataset):
             logger.debug(var_file)
             var = var_file.name.split('_')[0]
             data =  xr.open_dataset(var_file)
-            ## this is probably not 100% as it does not change lon_bnds
+
+            ## Drop original encoding as we will redo this 
+            ## to match our other data
+            data = data.drop_encoding()
+
+            ## this does change lon_bnds as well, but why?
             data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
             data = data.sortby(data.lon)
-            del(data.coords['lat_bnds'])
-            del(data.coords['lon_bnds'])
-            del(data.coords['time_bnds'])
+
             variables.append(data)
         data = xr.merge(variables)
         data = data.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
 
 
         new = YearlyDataset(year, data, logger=logger)
-        # pr = new.dataset['pr']
-        # new.dataset['pr'] = cmip6.convert_pr(pr)
-        # unit = climate_variables.CLIMATE_VARIABLES['prec'].std_unit.name
-        # v_name = climate_variables.CLIMATE_VARIABLES['prec'].name
-        # new.dataset['pr'].attrs.update(units=unit, name=v_name)
 
         source = cmip6.NAME
         for std_var, var in climate_variables.aliases_for(source, 'dict').items():
@@ -1095,6 +1093,9 @@ class YearlyDataset(TEMDataset):
 
 
         logger.info(f'{func_name}: Calculating vapo kPa')
+        ## we need elevation to convert psl to pres
+        ## TODO
+        #i.e. cmiphist['pres'] = cmiphist['psl'] * np.exp((-9.80665 * 0.0289644 * cmiphist['elevation']) / (8.3144598 * (cmiphist['tas'] + 273.15)))
         pres = new.dataset['psl']
         spfh = new.dataset['huss']
         new.dataset['vapo'] = climate_variables.calculate_vapo(pres, spfh)
@@ -1102,8 +1103,6 @@ class YearlyDataset(TEMDataset):
         v_name = climate_variables.CLIMATE_VARIABLES['vapo'].name
         new.dataset['vapo'].attrs.update(units=unit, name=v_name)
 
-        # cmiphist['pres'] = cmiphist['psl'] * np.exp((-9.80665 * 0.0289644 * cmiphist['elevation']) / (8.3144598 * (cmiphist['tas'] + 273.15)))
-        # cmiphist['vapo_kpa'] = (0.001 * cmiphist['pres'] * cmiphist['huss']) / (0.622 + (1-0.622) * cmiphist['huss'])
 
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(cmip6.NAME, 'dict_r')
@@ -1111,6 +1110,17 @@ class YearlyDataset(TEMDataset):
         verified, reasons = new.verify()
         if not verified:
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
+
+        # data is in wgs84; is it always though?
+        new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
+            .rio.set_spatial_dims(x_dim='lat', y_dim='lon', inplace=True)\
+            .rio.write_coordinate_system(inplace=True)
+        new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
+            .rio.set_spatial_dims(x_dim='lat', y_dim='lon', inplace=True)\
+            .rio.write_coordinate_system(inplace=True)
+    
+        
+
         return new
 
         
