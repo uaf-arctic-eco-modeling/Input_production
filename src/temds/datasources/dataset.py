@@ -345,7 +345,8 @@ class TEMDataset(object):
                                                  dstSRS=er.GetSpatialRef(), 
                                                  xRes=er.GetGeoTransform()[1], 
                                                  yRes=er.GetGeoTransform()[5], 
-                                                 resampleAlg='average', 
+                                                 resampleAlg='average',
+                                                 outputType=gdal.GDT_Float32,
                                                  outputBounds=[er_minx, er_miny, er_maxx, er_maxy]))
         ds2.FlushCache()
 
@@ -357,7 +358,7 @@ class TEMDataset(object):
                                         options=gdal.DEMProcessingOptions(
                                             format='MEM', 
                                             computeEdges=True, 
-                                            scale=ds2.GetGeoTransform()[1], # Resolution of x
+                                            scale=ds2.GetGeoTransform()[1], 
                                             ))
         aspect_ds2.FlushCache()
 
@@ -366,7 +367,7 @@ class TEMDataset(object):
                                         options=gdal.DEMProcessingOptions(
                                             format='MEM', 
                                             computeEdges=True, 
-                                            slopeFormat='degree'
+                                            slopeFormat='degree',
                                             )) 
         slope_ds2.FlushCache()
 
@@ -388,6 +389,11 @@ class TEMDataset(object):
         newDS.dataset['aspect'] = (['y','x'], aspect_ds2.ReadAsArray())
         newDS.dataset['slope'] = (['y','x'], slope_ds2.ReadAsArray())
         newDS.dataset['TPI'] = (['y','x'], TPI_ds2.ReadAsArray())
+
+        newDS.dataset['elevation'].attrs.update(units='m', name='Elevation')
+        newDS.dataset['aspect'].attrs.update(units='degrees', name='Aspect')
+        newDS.dataset['slope'].attrs.update(units='degrees', name='Slope')
+        newDS.dataset['TPI'].attrs.update(units='', name='Topographic Position Index')
 
         return newDS
     
@@ -491,7 +497,7 @@ class TEMDataset(object):
         x_dim = 'x'
         y_dim = 'y'
         if new.crs == CRS.from_epsg(4326): #is this true for other crs as well?
-            x_dim ='lon'
+            x_dim = 'lon'
             y_dim = 'lat'
 
 
