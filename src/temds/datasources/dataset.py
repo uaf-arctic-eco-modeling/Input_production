@@ -351,13 +351,13 @@ class TEMDataset(object):
 
 
         logger.info(f'{func_name}: Computing aspect, slope, and TPI.')
+        assert np.abs(ds2.GetGeoTransform()[1]) == np.abs(ds2.GetGeoTransform()[5]), "Non-square pixels detected"
         aspect_ds2 = gdal.DEMProcessing("", ds2, 
                                         processing='aspect', 
                                         options=gdal.DEMProcessingOptions(
                                             format='MEM', 
                                             computeEdges=True, 
-                                            #xscale=ds2.GetGeoTransform()[1], # Resolution of x
-                                            #yscale=ds2.GetGeoTransform()[5]
+                                            scale=ds2.GetGeoTransform()[1], # Resolution of x
                                             ))
         aspect_ds2.FlushCache()
 
