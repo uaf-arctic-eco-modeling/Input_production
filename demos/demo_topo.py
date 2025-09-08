@@ -47,7 +47,7 @@ log.info('TEMDataset.verify returns tuple (True, []) when data is TEMDS ready')
 log.info(f'Results of TEMDataset.verify: {topo.verify()}')
 
 fig, axes= plt.subplots (1,1, dpi=100)
-im = axes.imshow(topo.dataset['elevation'].data[0], origin='lower')
+im = axes.imshow(topo.dataset['elevation'].data, origin='lower')
 fig.colorbar(im, ax=axes)
 axes.set_title('Topography Elevation')
 

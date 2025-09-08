@@ -262,14 +262,14 @@ class TEMDataset(object):
             var : (dims, deepcopy(empty_data) ) for var in in_vars
         }
 
-        ## the deep copy is to prevent shared memory issues
-        ## might not be necessary here, but included just in
-        ## case
         coords={
             y_dim: y_array, 
             x_dim: x_array,
-            'time': deepcopy(ds_time_dim)
         }
+        if n_time > 0:
+            coords['time'] = deepcopy(ds_time_dim)  
+            ## the deep copy is to prevent shared memory issues
+            ## might not be necessary here, but included just in case
 
         logger.info(f'{func_name}: output crs - {extent_ds.GetProjection()}')        
 
@@ -694,10 +694,20 @@ class TEMDataset(object):
         ## which may not be needed on all datasets, so be wary in in future
         s_gt = working_dataset.rio.transform()
         s_gt = s_gt.c, abs(s_gt.a), s_gt.b, s_gt.f, s_gt.d, abs(s_gt.e)
-        
-        
+
+        # gdal wants things in order, x, y, band count
+        source_dim_sizes = [s_x, s_y]
+        dest_dim_sizes = [c_x, c_y]
+
         # N time steps
-        n_ts = working_dataset['time'].shape[0]
+        if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
+            n_ts = working_dataset['time'].shape[0]
+            source_dim_sizes.append(n_ts)
+            dest_dim_sizes.append(n_ts)
+        else:
+            n_ts = 1 # not a time step; in GDAL's view always at least 1 Band.
+            dest_dim_sizes.append(1)
+            source_dim_sizes.append(1)
 
     
         self.logger.debug(f'TEMDataset.get_by_extent_gdal: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
@@ -710,17 +720,19 @@ class TEMDataset(object):
         dest_crs = extent_crs.to_wkt()
 
         # setup dest and soruce
-        dest = driver.Create("", c_x, c_y, n_ts, gdal_type)
+        dest = driver.Create("", *dest_dim_sizes, gdal_type)
         dest.SetProjection(dest_crs)
         dest.SetGeoTransform(c_gt)
         dest.FlushCache()
 
         source_crs = working_dataset.rio.crs.to_wkt()
-        source = driver.Create("", s_x, s_y, n_ts, gdal_type)
+        source = driver.Create("", *source_dim_sizes, gdal_type)
         source.SetProjection(source_crs)
         source.SetGeoTransform(s_gt)
-        
-        source.FlushCache()
+        source.FlushCache() # this should work just once, but when working in 
+                            # the interpreter, you often have to call it 
+                            # multiple times.
+
         ## opption 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
@@ -769,14 +781,19 @@ class TEMDataset(object):
         y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
 
         coords={
-            'time': deepcopy(working_dataset.time.values), 
             'x': x_coords,
             'y': y_coords
         }
+        dims = ['y', 'x']
+
+        # Handle the time dimension if present. 
+        if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
+            coords['time'] = deepcopy(working_dataset.time.values)
+            dims.insert(0, 'time')
 
         tile = xr.Dataset({
             var: xr.DataArray(
-                data, dims=['time','y','x'], coords=coords 
+                data, dims=dims, coords=coords
             ) for var, data in data_arrays.items()
         })
 
