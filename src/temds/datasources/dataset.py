@@ -349,6 +349,10 @@ class TEMDataset(object):
                                                  outputType=gdal.GDT_Float32,
                                                  outputBounds=[er_minx, er_miny, er_maxx, er_maxy]))
         ds2.FlushCache()
+        # logger.debug("Saving temp file out...")
+        # tmp = gdal.Translate("/tmp/topo_0_B.tif", ds2, format="GTiff")
+        # tmp.FlushCache()
+        # del(tmp)
 
 
         logger.info(f'{func_name}: Computing aspect, slope, and TPI.')
