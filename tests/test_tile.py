@@ -30,35 +30,34 @@ def test_tile_init(basic_tile):
 
 def test_tile_import_worldclim(basic_tile, worldclim_object):
 
-  basic_tile.import_normalized('worldclim', worldclim_object)
+  basic_tile.import_and_normalize('worldclim', worldclim_object)
 
-  assert isinstance(basic_tile.data['worldclim'], xarray.Dataset)
+  assert isinstance(basic_tile.data['worldclim'], datasources.dataset.TEMDataset)
+  assert isinstance(basic_tile.data['worldclim'].dataset, xarray.Dataset)
 
   # Make sure that the worldclim data is bigger than the tile extents  
   tile_xsize = (basic_tile.extent['maxx'] - basic_tile.extent['minx']) / basic_tile.resolution
   tile_ysize = (basic_tile.extent['maxy'] - basic_tile.extent['miny']) / basic_tile.resolution
-  assert basic_tile.data['worldclim'].x.size == pytest.approx(tile_xsize + 2*basic_tile.buffer_pixels)
-  assert basic_tile.data['worldclim'].y.size == pytest.approx(tile_ysize + 2*basic_tile.buffer_pixels)
+  assert basic_tile.data['worldclim'].dataset.x.size == pytest.approx(tile_xsize + 2*basic_tile.buffer_pixels)
+  assert basic_tile.data['worldclim'].dataset.y.size == pytest.approx(tile_ysize + 2*basic_tile.buffer_pixels)
 
 
 
 def test_tile_import_crujra(basic_tile, cru_arctic_timeseries_micro):
 
-  basic_tile.import_normalized('crujra', cru_arctic_timeseries_micro)
+  basic_tile.import_and_normalize('crujra', cru_arctic_timeseries_micro)
+  assert isinstance(basic_tile.data['crujra'], datasources.timeseries.YearlyTimeSeries)
 
-  assert isinstance(basic_tile.data['crujra'], crujra.AnnualTimeSeries)
 
-
+# kinda sloooooow
 def test_tile_loaded_datasets(loaded_tile):
-  assert isinstance(loaded_tile.data['worldclim'], xarray.Dataset)
-  assert isinstance(loaded_tile.data['crujra'], crujra.AnnualTimeSeries)
-  
+  assert isinstance(loaded_tile.data['worldclim'].dataset, xarray.Dataset)
+  assert isinstance(loaded_tile.data['crujra'], datasources.timeseries.YearlyTimeSeries)
   # CRS of all parties involved?
   # Check bounds of cru and world clim?
 
 def test_tile_downscaled(downscaled_tile):
 
-  assert isinstance(downscaled_tile.data['downscaled_cru'], datasources.crujra.AnnualTimeSeries)
-  assert isinstance(downscaled_tile.data['downscaled_cru'], datasources.crujra.AnnualDaily)
+  assert isinstance(downscaled_tile.data['downscaled_cru'], datasources.timeseries.YearlyTimeSeries) # subclass
 
 

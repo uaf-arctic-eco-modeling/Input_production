@@ -8,45 +8,54 @@ import sys
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-try:
-    data_path = Path(sys.argv[1])
-    extent_raster = Path(sys.argv[2])
+import argparse
+import textwrap
 
-    try:
-        download = sys.argv[3].lower() == 'download'
-    except:
-        download = False
-except:
-    print("""
-    Run this demo with: 
-          
-    if data is local
-        python demo_worldclim.py <data_path> <extent_raster> 
-    
-    or to download data first:
-        python demo_worldclim.py <data_path> <extent_raster> download
-""")
+def existing_path(string):
+    path = Path(string)
+    if not path.exists():
+        parser.error(f"Path does not exist: {path}")
+    return path
+
+parser = argparse.ArgumentParser(
+formatter_class=argparse.RawDescriptionHelpFormatter,
+description=textwrap.dedent('''
+    Demo for working with worldclim data.
+''')
+)
+parser.add_argument('data_path', nargs=1, type=existing_path, metavar=('DATA PATH'),
+    help=textwrap.dedent('''Path to the source data'''))
+
+parser.add_argument('extent_raster', nargs=1, type=existing_path, metavar=('EXTENT RASTER'),
+    help=textwrap.dedent('''Path to a raster whose extents are used to subset/query the worldclim data.'''))
+
+parser.add_argument('--download', action='store_true', 
+    help=textwrap.dedent('''Flag for whether to download data if not found locally'''))
+
+args = parser.parse_args()
+
 
 log = Logger([], DEBUG)
-log.info(f'Data is at {data_path}')
-log.info(f'Extent is from {extent_raster}')
-if download:
+log.info(f'Data is at {args.data_path}')
+log.info(f'Extent is from {args.extent_raster}')
+if args.download:
     log.info('Downloading data')
 
 
 wc_arctic = TEMDataset.from_worldclim(
-            data_path, 
-            download=download, 
+            args.data_path[0], 
+            download=args.download, 
             version='2.1', 
             resolution='30s', 
             in_vars='all', 
-            extent_raster=extent_raster,
+            extent_raster=args.extent_raster[0],
             overwrite=True, 
             logger=log,
             resample_alg='bilinear'
         )
 
-log.info(f'dataset.verify returns tuple (True, []) when data is TEMDS ready')
+
+log.info('dataset.verify returns tuple (True, []) when data is TEMDS ready')
 log.info(f'Results of dataset.verify: {wc_arctic.verify()}')
 
 fig, axes= plt.subplots (1,1, dpi=100)

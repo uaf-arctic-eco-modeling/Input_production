@@ -864,7 +864,7 @@ class TEMDataset(object):
         # year_override = lookup(kwargs, 'year_override', None)
         force_aoi_to = lookup(kwargs, 'force_aoi_to', None)
         aoi_nodata = lookup(kwargs, 'aoi_nodata', np.nan)
-        # crs = lookup(kwargs, 'crs', 'EPSG:4326')
+        kwargs_crs = lookup(kwargs, 'crs', None) 
         chunks = lookup(kwargs, 'chunks', None)
 
         self.logger.debug(f'{func_name}: loading dataset {chunks=}')
@@ -872,7 +872,18 @@ class TEMDataset(object):
             in_path, engine="netcdf4", chunks=chunks
         )
 
-        crs = in_dataset.spatial_ref.attrs['spatial_ref']
+
+
+        if 'spatial_ref' in in_dataset:
+            if 'crs_wkt' in in_dataset['spatial_ref'].attrs:
+                self.logger.warn(f"Dataset is carrying CRS info: {in_dataset['spatial_ref'].attrs['crs_wkt']}. Ignoring crs passed in kwargs: ({kwargs_crs=})")
+                crs = in_dataset['spatial_ref'].attrs['crs_wkt']
+            else:
+                self.logger.warn(f"Dataset has spatial_ref attribute, but does not have crs_wkt. Using crs passed in kwargs: ({kwargs_crs=})")
+                crs = kwargs_crs
+        else:
+            self.logger.warn(f"Dataset is missing CRS info. Using crs passed in kwargs: ({kwargs_crs=})")
+            crs = kwargs_crs
 
         ## BUGGY with dask multiprocess
         if not force_aoi_to is None:
@@ -887,9 +898,18 @@ class TEMDataset(object):
 
         x_dim = 'x'
         y_dim = 'y'
-        if CRS(crs) == CRS('EPSG:4326'): #is this true for other crs as well?
-            x_dim ='lon'
-            y_dim = 'lat'
+
+        if 'lon' in in_dataset and 'lat' in in_dataset:
+            if CRS(crs) == CRS('EPSG:4326'): #is this true for other crs as well?
+                x_dim = 'lon'
+                y_dim = 'lat'
+
+            if CRS(crs) == CRS('EPSG:6931'): #is this true for other crs as well?
+                x_dim = 'lon'
+                y_dim = 'lat'
+        else:
+            self.logger.info("Dataset is missing lon/lat dimensions. Using default x, y spatial dimensions.")
+
         in_dataset = \
             in_dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
