@@ -323,9 +323,9 @@ class TEMDataset(object):
         # Get the extent from the extent raster
         er_gt = er.GetGeoTransform()
         er_minx = er_gt[0]
-        er_miny = er_gt[3] + (er_gt[5] * er.RasterYSize)
+        er_miny = er_gt[3]
         er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
-        er_maxy = er_gt[3]
+        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
 
         # get the full topography dataset in memory. This is an Arc/Info 
         # Binary Grid format, which is a collection of a whole bunch of files,
