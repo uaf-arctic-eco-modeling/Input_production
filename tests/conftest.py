@@ -47,7 +47,7 @@ def cru_arctic_timeseries_micro(micro_list_cru):
 def basic_tile():
   HIDX = 0
   VIDX = 8
-  tile_index = gpd.read_file('working/tile_index_annotated.shp')
+  tile_index = gpd.read_file('working/01-aoi/tile_index_annotated.shp')
   hdx = tile_index['H'] == HIDX
   vdx = tile_index['V'] == VIDX
   bounds = tile_index[vdx & hdx].bounds

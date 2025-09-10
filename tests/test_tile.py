@@ -5,7 +5,6 @@ import xarray
 import pyproj
 
 from temds import tile
-from temds.datasources import crujra
 from temds import datasources 
 
 def test_tile_crs(basic_tile):

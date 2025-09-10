@@ -380,7 +380,7 @@ class TEMDataset(object):
         x_dim = 'x'
         y_dim = 'y'
         if new.crs == CRS.from_epsg(4326): #is this true for other crs as well?
-            x_dim ='lon'
+            x_dim = 'lon'
             y_dim = 'lat'
 
 
@@ -871,8 +871,6 @@ class TEMDataset(object):
         in_dataset = xr.open_dataset(
             in_path, engine="netcdf4", chunks=chunks
         )
-
-
 
         if 'spatial_ref' in in_dataset:
             if 'crs_wkt' in in_dataset['spatial_ref'].attrs:
