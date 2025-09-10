@@ -901,10 +901,8 @@ class TEMDataset(object):
             if CRS(crs) == CRS('EPSG:4326'): #is this true for other crs as well?
                 x_dim = 'lon'
                 y_dim = 'lat'
-
-            if CRS(crs) == CRS('EPSG:6931'): #is this true for other crs as well?
-                x_dim = 'lon'
-                y_dim = 'lat'
+            else:
+                self.logger.info("Dataset has lon/lat dimensions but crs is not EPSG:4326. Using default x, y spatial dimensions.")
         else:
             self.logger.info("Dataset is missing lon/lat dimensions. Using default x, y spatial dimensions.")
 
