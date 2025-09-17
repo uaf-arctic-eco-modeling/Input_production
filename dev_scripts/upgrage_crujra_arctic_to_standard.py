@@ -24,7 +24,8 @@ def fix(file):
     corrected.save(out_path)
 
 import joblib
-with joblib.parallel_config(backend="loky", n_jobs=24, verbose=20):
+# Careful with too many jobs; will swamp memory
+with joblib.parallel_config(backend="loky", n_jobs=6, verbose=20):
     joblib.Parallel()(
         joblib.delayed(fix)(item) for item in sorted(Path(in_path ).glob('*.nc'))
     )
