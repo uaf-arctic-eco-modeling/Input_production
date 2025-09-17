@@ -884,7 +884,7 @@ class TEMDataset(object):
             crs = kwargs_crs
 
         ## BUGGY with dask multiprocess
-        if not force_aoi_to is None:
+        if force_aoi_to is not None:
             self.logger.debug((
                 f'{func_name}: force AOI to {force_aoi_to} '
                 'AOI for all vars'
