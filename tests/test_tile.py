@@ -57,6 +57,6 @@ def test_tile_loaded_datasets(loaded_tile):
 
 def test_tile_downscaled(downscaled_tile):
 
-  assert isinstance(downscaled_tile.data['downscaled_cru'], datasources.timeseries.YearlyTimeSeries) # subclass
+  assert isinstance(downscaled_tile.data['cru-downscaled'], datasources.timeseries.YearlyTimeSeries) # subclass
 
 

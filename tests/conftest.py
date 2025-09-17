@@ -1,16 +1,22 @@
 #!/usr/bin/env python
 
-import pytest
-from pathlib import Path
+#
+# Example for running the tests in a "development" mode - i.e. working on 
+# developing the tests:
+#     $ pytest tests/test_tile.py -x --pdb --pdbcls=IPython.terminal.debugger:TerminalPdb
+#
 
+import pathlib
+import pytest
 import geopandas as gpd
-import numpy as np
 
 import temds
-
-from temds.datasources import timeseries, worldclim
-from temds.datasources import crujra
 from temds import tile 
+
+def pytest_configure(config):
+    '''Setup any global variables that should be shared across all tests.'''
+    pytest.CRU_L1_FOLDER = 'working/02-arctic/cru-jra-standard/'
+    pytest.WORLDCLIM_L1_FILE = 'working/02-arctic/worldclim/worldclim-arctic.nc'
 
 
 @pytest.fixture(scope='module')
@@ -18,29 +24,19 @@ def worldclim_object():
   wc = temds.datasources.dataset.TEMDataset('working/02-arctic/worldclim/worldclim-arctic.nc')
   return wc
 
-@pytest.fixture(scope='module')
-def micro_list_cru():
- 
-  START_YR = 1990
-  END_YR = 1994
 
-  annual_list = []
-  file_list = sorted(list(Path('working/02-arctic/cru-jra-25/').glob('*.nc')))
-  for cru_file in file_list:
-      year = int(cru_file.name.split('.')[-4])
-      if year >= START_YR and year <= END_YR:
-          temp = temds.datasources.dataset.YearlyDataset(year, cru_file, verbose=False, force_aoi_to='tmax', crs='EPSG:4326', aoi_nodata=np.nan)
-          annual_list.append(temp)
-  return annual_list
+@pytest.fixture(scope="module")
+def cru_arctic_timeseries_micro():
+  '''This loads the Arctic files from the CRU JRA-25 dataset. There are
+  "level 1" processed files: we have already uncompressed, cropped to the arctic,
+  and saved as uncompressed netcdf files. Additionally, the variables have all been
+   combined into a single file for each year.
+  '''
+  files = sorted(list(pathlib.Path(pytest.CRU_L1_FOLDER).glob('*.nc')))
 
+  micro_arctic = temds.datasources.timeseries.YearlyTimeSeries(files[0:5], logger=temds.logger.Logger(), in_memory=False)
 
-@pytest.fixture(scope='module')
-def cru_arctic_timeseries_micro(micro_list_cru):
-  # This is a short timeseries of the CRU data
-  # It is not the full dataset, 'cuz that is so slow to load...
-  cru_arctic_ts = timeseries.YearlyTimeSeries(micro_list_cru, logger=temds.logger.Logger([], temds.logger.INFO), in_memory=False)
-
-  return cru_arctic_ts
+  return micro_arctic
 
 
 @pytest.fixture(scope='module')
