@@ -10,38 +10,49 @@ import sys
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-try:
-    data_path = Path(sys.argv[1])
-    extent_raster = Path(sys.argv[2])
+import argparse
+import textwrap
 
-    try:
-        download = sys.argv[3].lower() == 'download'
-    except:
-        download = False
-except:
-    print("""
-    Run this demo with: 
-          
-    if data is local
-        python demo_topo.py <data_path> <extent_raster> 
+def existing_path(string):
+    path = Path(string)
+    if not path.exists():
+        parser.error(f"Path does not exist: {path}")
+    return path
 
-    or to download data first:
-        python demo_topo.py <data_path> <extent_raster> download
-""")
+
+parser = argparse.ArgumentParser(
+formatter_class=argparse.RawDescriptionHelpFormatter,
+description=textwrap.dedent('''
+    Demo for working with topo data.
+''')
+)
+parser.add_argument('data_path', nargs=1, type=existing_path, metavar=('DATA PATH'),
+    help=textwrap.dedent('''Path to the source data'''))
+
+parser.add_argument('extent_raster', nargs=1, type=existing_path, metavar=('EXTENT RASTER'),
+    help=textwrap.dedent('''Path to a raster whose extents are used to subset/query the worldclim data.'''))
+
+parser.add_argument('--download', action='store_true', 
+    help=textwrap.dedent('''Flag for whether to download data if not found locally'''))
+
+
+args = parser.parse_args()
 
 log = Logger([], DEBUG)
-log.info(f'Data is at {data_path}')
-log.info(f'Extent is from {extent_raster}')
-if download:
+log.info(f'Data is at {args.data_path}')
+log.info(f'Extent is from {args.extent_raster}')
+
+if args.download:
     log.info('Downloading data')
 
 topo = TEMDataset.from_topo(
-    data_path,
-    download=False,
-    extent_raster=extent_raster,
+    args.data_path[0],
+    download=args.download,
+    extent_raster=args.extent_raster[0],
     logger=log
 )
 
+topo.save("/tmp/topo.nc", overwrite=True)
 
 log.info('TEMDataset.verify returns tuple (True, []) when data is TEMDS ready')
 log.info(f'Results of TEMDataset.verify: {topo.verify()}')
@@ -50,6 +61,8 @@ fig, axes= plt.subplots (1,1, dpi=100)
 im = axes.imshow(topo.dataset['elevation'].data, origin='lower')
 fig.colorbar(im, ax=axes)
 axes.set_title('Topography Elevation')
+plt.savefig("/tmp/topo.png")
+plt.show()
 
 ### Here is how to save the data
 # topo.save('topography.nc', overwrite=True)
