@@ -19,7 +19,7 @@ from cf_units import Unit
 from dapper.met import cmip_utils
 
 from . import errors
-from . import worldclim, crujra, cmip6
+from . import worldclim, crujra, cmip6, topo
 from temds import file_tools
 from temds import climate_variables 
 from temds.logger import Logger
@@ -245,24 +245,34 @@ class TEMDataset(object):
         ## do we need the dimension trick here?
         x_array = np.arange(minx, maxx, abs(x_res)) + (abs(x_res)/2)
         rows, cols = len(y_array), len(x_array)
-        dims = ['time', y_dim, x_dim]
-        n_time = len(ds_time_dim)
-        shape = [n_time, rows, cols]
 
-        empty_data = np.zeros(n_time * rows * cols)\
-                       .reshape(shape).astype('float32')
+        # handle case where there are no time dimensions.
+        n_time = len(ds_time_dim)
+        if n_time > 0:
+            dims = ['time', y_dim, x_dim]
+            shape = [n_time, rows, cols]
+            empty_data = np.zeros(n_time * rows * cols)\
+                        .reshape(shape).astype('float32')
+        else:
+            dims = [y_dim, x_dim]
+            shape = [rows, cols]
+            empty_data = np.zeros(rows * cols)\
+                        .reshape(shape).astype('float32')
+
+        # TODO: drop the zero length time coord that gets created
+
         data_vars = { 
             var : (dims, deepcopy(empty_data) ) for var in in_vars
         }
 
-        ## the deep copy is to prevent shared memory issues
-        ## might not be necessary here, but included just in
-        ## case
         coords={
             y_dim: y_array, 
             x_dim: x_array,
-            'time': deepcopy(ds_time_dim)
         }
+        if n_time > 0:
+            coords['time'] = deepcopy(ds_time_dim)  
+            ## the deep copy is to prevent shared memory issues
+            ## might not be necessary here, but included just in case
 
         logger.info(f'{func_name}: output crs - {extent_ds.GetProjection()}')        
 
@@ -284,6 +294,117 @@ class TEMDataset(object):
             .rio.write_coordinate_system(inplace=True)
 
         return TEMDataset(dataset, logger=logger)
+
+    @staticmethod
+    def from_topo(data_path, download=False, extent_raster=None,
+                  overwrite=False, logger=Logger(), buffer=0, 
+                  resample_alg='average'):
+
+        func_name = "TEMdataset.from_topo"
+
+        logger.info(f'{func_name}: Processing topography data in {data_path}')
+
+        ## download first if needed
+        if download:
+            logger.info(f'{func_name}: Downloading data.')
+            file_tools.download(topo.url, data_path, overwrite)
+
+        if not Path(data_path, topo.zipped_raw).exists():
+            raise topo.FileError("Something went wrong with the download.")
+
+        if not Path(data_path, topo.unzipped_raw).exists():
+            logger.info(f'{func_name}: Extracting data.')
+            file_tools.extract(Path(data_path, topo.unzipped_raw),
+                               Path(data_path, topo.zipped_raw))
+
+        if not extent_raster:
+            raise ValueError(f'{func_name}: extent_raster is required!')
+
+        logger.info(f'{func_name}: Using extent from {extent_raster}')
+        er = gdal.Open(extent_raster)
+
+        # Get the extent from the extent raster
+        er_gt = er.GetGeoTransform()
+        er_minx = er_gt[0]
+        er_miny = er_gt[3]
+        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
+        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
+
+        # get the full topography dataset in memory. This is an Arc/Info 
+        # Binary Grid format, which is a collection of a whole bunch of files,
+        # so its easier to read it with GDAL rather than the xarray tools.
+        # This is obtuse because the unzipped directory has another level, 
+        # with the same name, i.e.  mn75_grd/mn75_grd, we have to add that
+        # before gdal can figure out what/how to open the file.
+        logger.info(f'{func_name}: Loading topography data.')
+        srcDS = Path(data_path, topo.unzipped_raw, topo.unzipped_raw)
+        ds = gdal.Translate("", srcDS=srcDS, format="MEM")
+        ds.FlushCache()
+
+        logger.info(f'{func_name}: Reprojecting and cropping topography data.')
+        ds2 = gdal.Warp("", ds, 
+                        options=gdal.WarpOptions(format="MEM", 
+                                                 srcSRS=ds.GetSpatialRef(), 
+                                                 dstSRS=er.GetSpatialRef(), 
+                                                 xRes=er.GetGeoTransform()[1], 
+                                                 yRes=er.GetGeoTransform()[5], 
+                                                 resampleAlg='average',
+                                                 outputType=gdal.GDT_Float32,
+                                                 outputBounds=[er_minx, er_miny, er_maxx, er_maxy]))
+        ds2.FlushCache()
+        # logger.debug("Saving temp file out...")
+        # tmp = gdal.Translate("/tmp/topo_0_B.tif", ds2, format="GTiff")
+        # tmp.FlushCache()
+        # del(tmp)
+
+
+        logger.info(f'{func_name}: Computing aspect, slope, and TPI.')
+        assert np.abs(ds2.GetGeoTransform()[1]) == np.abs(ds2.GetGeoTransform()[5]), "Non-square pixels detected"
+        aspect_ds2 = gdal.DEMProcessing("", ds2, 
+                                        processing='aspect', 
+                                        options=gdal.DEMProcessingOptions(
+                                            format='MEM', 
+                                            computeEdges=True, 
+                                            scale=ds2.GetGeoTransform()[1], 
+                                            ))
+        aspect_ds2.FlushCache()
+
+        slope_ds2 = gdal.DEMProcessing("", ds2, 
+                                        processing='slope', 
+                                        options=gdal.DEMProcessingOptions(
+                                            format='MEM', 
+                                            computeEdges=True, 
+                                            slopeFormat='degree',
+                                            )) 
+        slope_ds2.FlushCache()
+
+        TPI_ds2 = gdal.DEMProcessing("", ds2, 
+                                        processing='TPI', 
+                                        options=gdal.DEMProcessingOptions(
+                                            format='MEM', 
+                                            computeEdges=True,
+                                            )) 
+        TPI_ds2.FlushCache()
+
+        logger.info(f'{func_name}: Creating empty xarray dataset')
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
+                                              in_vars='elevation aspect slope TPI'.split(), 
+                                              ds_time_dim=[], buffer_px=0)
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['elevation'] = (['y','x'], ds2.ReadAsArray())
+        newDS.dataset['aspect'] = (['y','x'], aspect_ds2.ReadAsArray())
+        newDS.dataset['slope'] = (['y','x'], slope_ds2.ReadAsArray())
+        newDS.dataset['TPI'] = (['y','x'], TPI_ds2.ReadAsArray())
+
+        newDS.dataset['elevation'].attrs.update(units='m', name='Elevation')
+        newDS.dataset['aspect'].attrs.update(units='degrees', name='Aspect')
+        newDS.dataset['slope'].attrs.update(units='degrees', name='Slope')
+        newDS.dataset['TPI'].attrs.update(units='', name='Topographic Position Index')
+
+        return newDS
+    
+
 
     @staticmethod
     def from_worldclim(
@@ -383,7 +504,7 @@ class TEMDataset(object):
         x_dim = 'x'
         y_dim = 'y'
         if new.crs == CRS.from_epsg(4326): #is this true for other crs as well?
-            x_dim ='lon'
+            x_dim = 'lon'
             y_dim = 'lat'
 
 
@@ -581,10 +702,20 @@ class TEMDataset(object):
         ## which may not be needed on all datasets, so be wary in in future
         s_gt = working_dataset.rio.transform()
         s_gt = s_gt.c, abs(s_gt.a), s_gt.b, s_gt.f, s_gt.d, abs(s_gt.e)
-        
-        
+
+        # gdal wants things in order, x, y, band count
+        source_dim_sizes = [s_x, s_y]
+        dest_dim_sizes = [c_x, c_y]
+
         # N time steps
-        n_ts = working_dataset['time'].shape[0]
+        if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
+            n_ts = working_dataset['time'].shape[0]
+            source_dim_sizes.append(n_ts)
+            dest_dim_sizes.append(n_ts)
+        else:
+            n_ts = 1 # not a time step; in GDAL's view always at least 1 Band.
+            dest_dim_sizes.append(1)
+            source_dim_sizes.append(1)
 
     
         self.logger.debug(f'TEMDataset.get_by_extent_gdal: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
@@ -597,17 +728,19 @@ class TEMDataset(object):
         dest_crs = extent_crs.to_wkt()
 
         # setup dest and soruce
-        dest = driver.Create("", c_x, c_y, n_ts, gdal_type)
+        dest = driver.Create("", *dest_dim_sizes, gdal_type)
         dest.SetProjection(dest_crs)
         dest.SetGeoTransform(c_gt)
         dest.FlushCache()
 
         source_crs = working_dataset.rio.crs.to_wkt()
-        source = driver.Create("", s_x, s_y, n_ts, gdal_type)
+        source = driver.Create("", *source_dim_sizes, gdal_type)
         source.SetProjection(source_crs)
         source.SetGeoTransform(s_gt)
-        
-        source.FlushCache()
+        source.FlushCache() # this should work just once, but when working in 
+                            # the interpreter, you often have to call it 
+                            # multiple times.
+
         ## opption 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
@@ -656,14 +789,19 @@ class TEMDataset(object):
         y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
 
         coords={
-            'time': deepcopy(working_dataset.time.values), 
             'x': x_coords,
             'y': y_coords
         }
+        dims = ['y', 'x']
+
+        # Handle the time dimension if present. 
+        if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
+            coords['time'] = deepcopy(working_dataset.time.values)
+            dims.insert(0, 'time')
 
         tile = xr.Dataset({
             var: xr.DataArray(
-                data, dims=['time','y','x'], coords=coords 
+                data, dims=dims, coords=coords
             ) for var, data in data_arrays.items()
         })
 

@@ -51,6 +51,13 @@ CLIMATE_VARIABLES = {
     'vgrd': ClimateVariable('Meridional component of wind speed', 'vgrd', Unit('m/s')),
     'spfh': ClimateVariable('Specific humidity', 'spfh', Unit('kg/kg')),
     'pres': ClimateVariable('Pressure', 'pres', Unit('Pa')),
+
+    # These aren't climate variables, maybe someday this class/module will
+    # get refactored to a more general name...
+    'slope': ClimateVariable('Slope', 'slope', Unit('degree')),
+    'aspect': ClimateVariable('Aspect', 'aspect', Unit('degree')),
+    'TPI': ClimateVariable('Topographic Position Index', 'TPI', Unit('')),
+    'elevation': ClimateVariable('Elevation', 'elevation', Unit('m'))
 }
 
 
