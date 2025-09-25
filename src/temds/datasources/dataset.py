@@ -1015,7 +1015,8 @@ class YearlyDataset(TEMDataset):
             )
         return self.year < other.year
     
-    def from_cmip6(year, data_path, 
+    def from_cmip6(year, data_path,
+            elevation = None,
             download=False,
             variables = 'all',
             models=[],
@@ -1093,10 +1094,13 @@ class YearlyDataset(TEMDataset):
 
 
         logger.info(f'{func_name}: Calculating vapo kPa')
-        ## we need elevation to convert psl to pres
-        ## TODO
-        #i.e. cmiphist['pres'] = cmiphist['psl'] * np.exp((-9.80665 * 0.0289644 * cmiphist['elevation']) / (8.3144598 * (cmiphist['tas'] + 273.15)))
-        pres = new.dataset['psl']
+        if elevation is None:
+            logger.warn(f'{func_name}: ELEVATION NOT PROVIDED setting PRES to PSL')
+            pres = new.dataset['psl']
+        else:
+            logger.info(f'{func_name}: Calualting pres from psl, elevation and, air temp')
+            pres = new.dataset['psl'] * np.exp((-9.80665 * 0.0289644 * elevation) / (8.3144598 * (new.dataset['tas'] + 273.15)))
+        
         spfh = new.dataset['huss']
         new.dataset['vapo'] = climate_variables.calculate_vapo(pres, spfh)
         unit = climate_variables.CLIMATE_VARIABLES['vapo'].std_unit.name
