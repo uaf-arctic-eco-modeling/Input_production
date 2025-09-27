@@ -20,7 +20,7 @@ class TileIndex(object):
     self.root = root
 
     self.aoimask = AOIMask.AOIMask(root=self.root)
-    self.aoimask.load_from_raster(self.root + '/aoi_5km_buffer_6931.tiff')
+    self.aoimask.load_from_raster(pathlib.Path(self.root, '01-aoi/aoi_5km_buffer_6931.tiff'))
 
   def remove_tiles(self):
     shutil.rmtree(self.root + "/tiles")
@@ -113,7 +113,7 @@ class TileIndex(object):
       }
 
       # Put it in a temporary dataset
-      ds = gdal.Warp('', self.root+'/aoi_5km_buffer_6931.tiff', **warpOptions)
+      ds = gdal.Warp('', self.root+'/01-aoi/aoi_5km_buffer_6931.tiff', **warpOptions)
 
       if np.count_nonzero(ds.ReadAsArray()) < 1:
         print("Skip tile!")
@@ -132,6 +132,7 @@ class TileIndex(object):
         vrt = gdal.GetDriverByName('VRT')
         ds = gdal.Translate('', ds, **transOptions)
 
+        # This will need updating with respect to location...
         outdir = pathlib.Path(self.root, 'tiles', f"H{tile['hidx']:02d}_V{tile['vidx']:02d}")
         util.mkdir_p(outdir)
 

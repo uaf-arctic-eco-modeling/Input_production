@@ -21,7 +21,7 @@ def test_aoi_create_from_shapefiles():
 
 def test_aoi_get_shapefile_bounds():
   aoimask = AOIMask.AOIMask(root = "working")
-  aoimask.load_from_vector('working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
+  aoimask.load_from_vector('working/01-aoi/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
   bounds = aoimask.get_shapefile_bounds()
   assert bounds['minx'] == pytest.approx(-4602000.0)
   assert bounds['miny'] == pytest.approx(-3485000.0)
@@ -30,12 +30,12 @@ def test_aoi_get_shapefile_bounds():
 
 def test_aoi_rasterize():
   aoimask = AOIMask.AOIMask(root = "working")
-  aoimask.load_from_vector('../working/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
+  aoimask.load_from_vector('working/01-aoi/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
   aoimask.rasterize_AOI()
 
 def test_aoi_load_raster():
   aoimask = AOIMask.AOIMask(root = "working")
-  aoimask.load_from_raster('working/aoi_5km_buffer_6931.tiff')
+  aoimask.load_from_raster('working/01-aoi/aoi_5km_buffer_6931.tiff')
   assert (2242, 1934) == aoimask.size()
 
 

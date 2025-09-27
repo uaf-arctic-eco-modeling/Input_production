@@ -33,13 +33,13 @@ class AOIMask(object):
     Go the web and get some stuff...
     '''
     r = requests.get(self.politic_map_url)
-    util.mkdir_p(pathlib.Path(self.root, 'download/mask'))
-    with open(pathlib.Path(self.root, 'download/mask', self.politic_map_fname), 'wb') as new_file:
+    util.mkdir_p(pathlib.Path(self.root, '00-download/mask'))
+    with open(pathlib.Path(self.root, '00-download/mask', self.politic_map_fname), 'wb') as new_file:
       new_file.write(r.content)
 
     r = requests.get(self.eco_map_url)
-    util.mkdir_p(pathlib.Path(self.root, 'download/mask'))
-    with open(pathlib.Path(self.root, 'download/mask', self.eco_map_fname), 'wb') as new_file:
+    util.mkdir_p(pathlib.Path(self.root, '00-download/mask'))
+    with open(pathlib.Path(self.root, '00-download/mask', self.eco_map_fname), 'wb') as new_file:
       new_file.write(r.content)
 
   def _unzip(self):
@@ -47,14 +47,14 @@ class AOIMask(object):
     uzips into a directory of the same name as the zip file and right next
     to the zip file.
     '''
-    fpath = pathlib.Path(self.root, 'download/mask', self.politic_map_fname)
+    fpath = pathlib.Path(self.root, '00-download/mask', self.politic_map_fname)
     print(f"Extracting {fpath=}")
     with zipfile.ZipFile(fpath, 'r') as zip_ref:
       x = pathlib.Path(fpath.parent, fpath.stem)
       print(f"Extracting {x=}")
       zip_ref.extractall(x)
 
-    fpath = pathlib.Path(self.root, 'download/mask', self.eco_map_fname)
+    fpath = pathlib.Path(self.root, '00-download/mask', self.eco_map_fname)
     print(f"Extracting {fpath=}")
     with zipfile.ZipFile(fpath, 'r') as zip_ref:
       x = pathlib.Path(fpath.parent, fpath.stem)
@@ -66,9 +66,10 @@ class AOIMask(object):
   #   self._unzip()
   #   self.create_from_shapefiles():
 
-  def create_from_shapefiles(self):
-    self.merge_and_buffer_shapefiles(pathlib.Path(self.root, 'download/mask', self.politic_map_fname),
-                                pathlib.Path(self.root, 'download/mask', self.eco_map_fname),
+  def create_from_shapefiles(self, trim_to_shape=None):
+    self.merge_and_buffer_shapefiles(pathlib.Path(self.root, '00-download/mask', self.politic_map_fname),
+                                pathlib.Path(self.root, '00-download/mask', self.eco_map_fname),
+                                trim_to_shape=trim_to_shape
                               )
 
   def load_from_raster(self, raster_file):
@@ -147,15 +148,15 @@ class AOIMask(object):
             '-te', f"{bnds['minx']}", f"{bnds['miny']}", f"{bnds['maxx']}", f"{bnds['maxy']}",
             '-ot', 'Int16',
             '-of', 'GTiff',
-            self.root + '/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp',
-            self.root + '/aoi_5km_buffer_6931.tiff'
+            self.root + '01-aoi/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp',
+            self.root + '01-aoi/aoi_5km_buffer_6931.tiff'
             ]
     print(args)
     subprocess.run(args)
 
 
 
-  def merge_and_buffer_shapefiles(self, global_political_map, eco_region_map):
+  def merge_and_buffer_shapefiles(self, global_political_map, eco_region_map, trim_to_shape=None):
     '''
     Creates two shape files in different projections that cover the whole
     area of interest. Each file is a single feature (not sure if this is the
@@ -169,8 +170,8 @@ class AOIMask(object):
         path to the global political shapefile
     eco_region_map: str
         path to the eco regeion shapefile
-    outdir: str
-        path to where the files will be written
+    trim_to_shape: None or path to shapefile or raster
+    
 
     Returns
     ========
@@ -195,6 +196,35 @@ class AOIMask(object):
     ak_greenland.to_crs(eco_north.crs)
 
     AOI = eco_north.union(ak_greenland, align=True)
+
+    if trim_to_shape:
+      from IPython import embed; embed()
+
+      clipping_shape = gpd.read_file(pathlib.Path(self.root, "01-aoi/southcentral_AK_rough/southcentral_AK_rough.shp"))
+
+
+
+    #  {01-aoi}/{name}/{name}_{CRS}_{RES}.tif
+    # 01-aoi/
+    #     full_arctic/
+    #         full_arctic_6931_4km.tiff
+    #         full_arctic_6931/
+    #             full_arctic_6931.shp
+
+    #         full_arctic_4327.tiff
+    #         full_arctic_4327/
+    #             full_arctic_4327.shp
+    
+    #     southcentral_AK/
+    #         southcentral_AK_6931_4km.tiff
+    #         southcentral_AK_6931/
+    #             southcentral_AK_6931.shp
+
+    #         southcentral_AK_4327.tiff
+    #         southcentral_AK_4327/
+    #             southcentral_AK_4327.shp
+
+
 
     util.mkdir_p(self.root + '/aoi_4326/')
     util.mkdir_p(self.root + '/aoi_6931/')
