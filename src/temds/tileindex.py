@@ -8,7 +8,7 @@ from osgeo import gdal
 
 
 from . import util
-from . import AOIMask
+from . import aoitools
 
 TILE_SIZE_X = 100
 TILE_SIZE_Y = 100
@@ -19,7 +19,7 @@ class TileIndex(object):
   def __init__(self, root):
     self.root = root
 
-    self.aoimask = AOIMask.AOIMask(root=self.root)
+    self.aoimask = aoitools.AOIMask(root=self.root)
     self.aoimask.load_from_raster(pathlib.Path(self.root, '01-aoi/aoi_5km_buffer_6931.tiff'))
 
   def remove_tiles(self):

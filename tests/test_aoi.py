@@ -1,26 +1,27 @@
 #!/usr/bin/env python
 
+# pytest -x --pdb --pdbcls=IPython.terminal.debugger:TerminalPdb /path/to/test.py
 
 import pytest
 
-from temds import AOIMask
+from temds import aoitools
 from temds import tileindex
 
 
 def test_aoi_download():
-  aoimask = AOIMask.AOIMask(root = "working")
+  aoimask = aoitools.AOIMask(root = "working")
   aoimask._download()
 
 def test_aoi_unzip():
-  aoimask = AOIMask.AOIMask(root = "working")
+  aoimask = aoitools.AOIMask(root = "working")
   aoimask._unzip()
 
 def test_aoi_create_from_shapefiles():
-  aoimask = AOIMask.AOIMask(root = "working")
+  aoimask = aoitools.AOIMask(root = "working")
   aoimask.create_from_shapefiles()
 
 def test_aoi_get_shapefile_bounds():
-  aoimask = AOIMask.AOIMask(root = "working")
+  aoimask = aoitools.AOIMask(root = "working")
   aoimask.load_from_vector('working/01-aoi/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
   bounds = aoimask.get_shapefile_bounds()
   assert bounds['minx'] == pytest.approx(-4602000.0)
@@ -29,12 +30,12 @@ def test_aoi_get_shapefile_bounds():
   assert bounds['maxy'] == pytest.approx(4251000.0)
 
 def test_aoi_rasterize():
-  aoimask = AOIMask.AOIMask(root = "working")
+  aoimask = aoitools.AOIMask(root = "working")
   aoimask.load_from_vector('working/01-aoi/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
   aoimask.rasterize_AOI()
 
 def test_aoi_load_raster():
-  aoimask = AOIMask.AOIMask(root = "working")
+  aoimask = aoitools.AOIMask(root = "working")
   aoimask.load_from_raster('working/01-aoi/aoi_5km_buffer_6931.tiff')
   assert (2242, 1934) == aoimask.size()
 
