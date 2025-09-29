@@ -248,6 +248,7 @@ class TEMDataset(object):
 
         # handle case where there are no time dimensions.
         n_time = len(ds_time_dim)
+
         if n_time > 0:
             dims = ['time', y_dim, x_dim]
             shape = [n_time, rows, cols]
@@ -401,6 +402,10 @@ class TEMDataset(object):
         newDS.dataset['aspect'].attrs.update(units='degrees', name='Aspect')
         newDS.dataset['slope'].attrs.update(units='degrees', name='Slope')
         newDS.dataset['TPI'].attrs.update(units='', name='Topographic Position Index')
+
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
 
         return newDS
     
@@ -798,7 +803,7 @@ class TEMDataset(object):
         if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
             coords['time'] = deepcopy(working_dataset.time.values)
             dims.insert(0, 'time')
-
+        # return data_arrays
         tile = xr.Dataset({
             var: xr.DataArray(
                 data, dims=dims, coords=coords
@@ -965,8 +970,12 @@ class TEMDataset(object):
         self.dataset.attrs.update(TEMDS_version = Version())
         self.dataset.attrs.update(extra_attrs)
 
+            
+
         if  not Path(out_file).exists() or overwrite:
+            
             Path(out_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(out_file).unlink(missing_ok=True)
             self.dataset.to_netcdf(
                     out_file, 
                     # encoding=encoding, 
@@ -1154,7 +1163,7 @@ class YearlyDataset(TEMDataset):
         return self.year < other.year
     
     def from_cmip6(year, data_path,
-            elevation = None,
+            elevation = 0,
             download=False,
             variables = 'all',
             models=[],
@@ -1162,6 +1171,7 @@ class YearlyDataset(TEMDataset):
             ensambles=[],
             extent=None,
             logger=Logger(),
+            calcualte_vapo=False
         ):
         func_name = "YearlyDataset.from_cmip6"
         table=['day']
@@ -1182,6 +1192,13 @@ class YearlyDataset(TEMDataset):
 
         available = cmip_utils.find_available_data(params)
         logger.info(f'YearlyDataset.from_cmip6: found {available.shape[0]} datasets')
+        if available.shape[0] == 0:
+            msg = (
+                'YearlyDataset.from_cmip6: requested cmip6 datasets not found.'
+                'Check your arguments for models, expiremnts, etc.'
+            )
+            logger.error(msg)
+            raise errors.YearlyTimeSeriesError(msg)
 
 
         lat_bounds=None
@@ -1189,17 +1206,32 @@ class YearlyDataset(TEMDataset):
         if not extent is None:
             lon_bounds = (extent.minx, extent.maxx)
             lat_bounds = (extent.miny, extent.maxy)
-        print(lon_bounds)
+        # print(lon_bounds)
 
         if download:
             cmip_utils.download_pangeo(
                 available, data_path, lat_bounds=lat_bounds, lon_bounds=lon_bounds
             )
 
-        variables = []
+        ready_variables = []
         for var_file in Path(data_path).glob('*.nc'):
-            logger.debug(var_file)
-            var = var_file.name.split('_')[0]
+            # logger.debug(f'checking: {var_file}')
+            var, model, experiment, ensamble = var_file.stem.split('_')
+            if not var in variables:
+                # print('var')
+                continue
+            if models != [] and not model in models:
+                # print('model')
+                continue
+            if experiments != [] and not experiment in experiments:
+                # print('exp')
+                continue
+            if ensambles != [] and not ensamble in ensambles:
+                # print(ensamble, ensambles)
+                # print('ens', ensambles != [],not ensamble in ensambles)
+                continue
+            logger.debug(f'processing: {var_file}')
+
             data =  xr.open_dataset(var_file)
 
             ## Drop original encoding as we will redo this 
@@ -1210,9 +1242,26 @@ class YearlyDataset(TEMDataset):
             data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
             data = data.sortby(data.lon)
 
-            variables.append(data)
-        data = xr.merge(variables)
+            ready_variables.append(data)
+        logger.info(f'YearlyDataset.from_cmip6: datasets open = {len(ready_variables)}')
+        
+        data = xr.merge(ready_variables)
+        # return data
         data = data.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
+        # return data
+        ## we use 'noleap' calender
+        data = data.convert_calendar('noleap')
+        if data.time.size != 365:
+            msg = (
+                'YearlyDataset.from_cmip6: full year of data(noleap) not '
+                f'found for year: {year}, N timestps was {data.time.size}. '
+                'It should be 365. Check if data is available for the year '
+                'in CMIP6 experiment being used'
+            )
+            logger.error(msg)
+            raise errors.YearlyTimeSeriesError(msg)
+
+        
 
 
         new = YearlyDataset(year, data, logger=logger)
@@ -1226,25 +1275,13 @@ class YearlyDataset(TEMDataset):
                 )
                 cv = climate_variables.lookup_alias(source, var)
                 unit = str(cv.std_unit)
-                print(unit)
+                # print(unit)
                 v_name = cv.name
                 new.dataset[var].attrs.update(units=unit, name=v_name)
 
 
-        logger.info(f'{func_name}: Calculating vapo kPa')
-        if elevation is None:
-            logger.warn(f'{func_name}: ELEVATION NOT PROVIDED setting PRES to PSL')
-            pres = new.dataset['psl']
-        else:
-            logger.info(f'{func_name}: Calualting pres from psl, elevation and, air temp')
-            pres = new.dataset['psl'] * np.exp((-9.80665 * 0.0289644 * elevation) / (8.3144598 * (new.dataset['tas'] + 273.15)))
-        
-        spfh = new.dataset['huss']
-        new.dataset['vapo'] = climate_variables.calculate_vapo(pres, spfh)
-        unit = climate_variables.CLIMATE_VARIABLES['vapo'].std_unit.name
-        v_name = climate_variables.CLIMATE_VARIABLES['vapo'].name
-        new.dataset['vapo'].attrs.update(units=unit, name=v_name)
-
+        if calcualte_vapo:
+            new.dataset = cmip6.callback_psl_to_vapo(new.dataset, logger, elevation=elevation)
 
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(cmip6.NAME, 'dict_r')
@@ -1255,13 +1292,13 @@ class YearlyDataset(TEMDataset):
 
         # data is in wgs84; is it always though?
         new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
-            .rio.set_spatial_dims(x_dim='lat', y_dim='lon', inplace=True)\
+            .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
             .rio.write_coordinate_system(inplace=True)
         new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
-            .rio.set_spatial_dims(x_dim='lat', y_dim='lon', inplace=True)\
+            .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
             .rio.write_coordinate_system(inplace=True)
-    
-        
+        gt = (-180.0, 1.8617204339585491, 0.0, 83.75, 0.0, -1.8617204339523812)
+        new.dataset.rio.write_transform(Affine.from_gdal(*gt), inplace=True)
 
         return new
 
@@ -1371,7 +1408,7 @@ class YearlyDataset(TEMDataset):
         var = 'pre'
         cv = climate_variables.lookup_alias(crujra.NAME, var)
         unit = str(cv.std_unit)
-        print(unit)
+        # print(unit)
         v_name = cv.name
         new.dataset[var].attrs.update(units=unit, name=v_name)
 
