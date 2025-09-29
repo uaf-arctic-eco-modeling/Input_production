@@ -185,7 +185,7 @@ class Tile(object):
             else:
                 self.data[item] = dataset.TEMDataset(in_path)
 
-    def import_and_normalize(self, name, datasource, buffered=True, **kwargs):
+    def import_and_normalize(self, name, datasource, buffered=True, callback = None, **kwargs):
         """Loads an item to `data` as name from datasource. Each datasource 
         (e.g. AnnualDaily, WorldClim) needs to implement a get_by_extent() 
         method that can return an xarray dataset or AnnualTimeseries to a 
@@ -217,7 +217,14 @@ class Tile(object):
         )
         self.data[name] = datasource.get_by_extent(
             minx, miny, maxx, maxy, self.crs, **kwargs
-        ) 
+        )
+        if not callback is None:
+            if isinstance(self.data[name],dataset.TEMDataset ):
+                self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)
+            else:
+                for year in self.data[name].range():
+                    self.data[name][year].dataset = callback(self.data[name][year].dataset, self.logger, **kwargs)
+
 
     def save(self, where, **kwargs): 
         """Save `dataset` as a netCDF file.
