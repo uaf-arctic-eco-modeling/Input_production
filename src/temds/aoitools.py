@@ -480,19 +480,18 @@ TILE_SIZE_Y = 100
 
 class TileIndex(object):
 
-  def __init__(self, root):
+  def __init__(self, root, aoimask):
     self.root = root
 
-    self.aoimask = AOIMask(root=self.root)
-    self.aoimask.load_from_raster(pathlib.Path(self.root, '01-aoi/aoi_5km_buffer_6931.tiff'))
+    self.aoimask = aoimask
 
   def remove_tiles(self):
     shutil.rmtree(self.root + "/tiles")
-  
+
 
   def calculate_tile_gridsize(self):
 
-    maskX, maskY = self.aoimask.size()
+    maskX, maskY = self.aoimask.raster_size()
 
     N_TILES_X = int(maskX / TILE_SIZE_X)
     N_TILES_Y = int(maskY / TILE_SIZE_Y)
@@ -514,12 +513,12 @@ class TileIndex(object):
     resolution.
     '''
 
-    
-    maskX, maskY = self.aoimask.size()
 
-    aoi_extents = self.aoimask.extents()
+    maskX, maskY = self.aoimask.raster_size()
 
-    aoiGT = self.aoimask.geoTransform()
+    aoi_extents = self.aoimask.raster_extents()
+
+    aoiGT = self.aoimask.raster_geoTransform()
 
     N_tiles_X, N_tiles_Y = self.calculate_tile_gridsize()
 
@@ -577,7 +576,8 @@ class TileIndex(object):
       }
 
       # Put it in a temporary dataset
-      ds = gdal.Warp('', self.root+'/01-aoi/aoi_5km_buffer_6931.tiff', **warpOptions)
+      #ds = gdal.Warp('', self.root+'/01-aoi/aoi_5km_buffer_6931.tiff', **warpOptions)
+      ds = gdal.Warp('', self.aoimask.as_raster(), **warpOptions)
 
       if np.count_nonzero(ds.ReadAsArray()) < 1:
         print("Skip tile!")
@@ -624,7 +624,7 @@ class TileIndex(object):
                    **opts)
     if not dstPath.exists():
       raise RuntimeError(f"PROBLEM CREATING TILE INDEX: {dstPath}")
-    
+
 
   def get_tile_index_total_area(self):
     files = glob.glob(self.root + "/tiles/**/EPSG_6931.tiff")
