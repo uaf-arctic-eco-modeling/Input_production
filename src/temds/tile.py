@@ -40,6 +40,9 @@ class Tile(object):
     are typically derived from observed data and are used to adjust the data
     once it has been interpolated.
 
+    The extent reported by the tile will be the **TILE** extents. The individual
+    datasources will generally be buffered, so if you query their extents, then
+    you will get extents that go to the outside of the buffer.
 
     Attributes
     ----------
@@ -51,6 +54,8 @@ class Tile(object):
         logging #TODO implement INT code
     extent: pandas.DataFrame
         DataFrame with columns 'minx', 'miny', 'maxx', 'maxy', and a single row
+        This represents the spatial extent of the tile in the CRS of the tile,
+        NOT including the buffer.
     resolution: float
         resolution of pixels for tile
     crs: ??
@@ -180,7 +185,7 @@ class Tile(object):
             else:
                 self.data[item] = dataset.TEMDataset(in_path)
 
-    def import_and_normalize(self, name, datasource, buffered=True, **kwargs):
+    def import_and_normalize(self, name, datasource, buffered=True, callback = None, **kwargs):
         """Loads an item to `data` as name from datasource. Each datasource 
         (e.g. AnnualDaily, WorldClim) needs to implement a get_by_extent() 
         method that can return an xarray dataset or AnnualTimeseries to a 
@@ -212,7 +217,14 @@ class Tile(object):
         )
         self.data[name] = datasource.get_by_extent(
             minx, miny, maxx, maxy, self.crs, **kwargs
-        ) 
+        )
+        if not callback is None:
+            if isinstance(self.data[name],dataset.TEMDataset ):
+                self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)
+            else:
+                for year in self.data[name].range():
+                    self.data[name][year].dataset = callback(self.data[name][year].dataset, self.logger, **kwargs)
+
 
     def save(self, where, **kwargs): 
         """Save `dataset` as a netCDF file.
@@ -513,17 +525,17 @@ class Tile(object):
         '''
         
         if downscaled_id not in self.data:
-            raise ValueError("The tile object must have a 'downscaled_cru' key in its data dictionary.")
+            raise ValueError(f"Can't find {downscaled_id}! Available keys are: {self.data.keys()}")
 
         target_vars = {
-            'tair_avg': 'mean', 
+            'tavg': 'mean', 
             'vapo': 'mean', 
             'nirr': 'mean',
             'prec': 'sum'
         }
 
         new_names = {
-            'tair_avg':'tair', 
+            'tavg':'tair', 
             'vapo':'vapor_press', 
             'nirr':'nirr', 
             'prec':'precip'

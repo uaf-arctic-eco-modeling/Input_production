@@ -11,6 +11,7 @@ to the units used in downscaling process
 # from collections import namedtuple
 from dataclasses import dataclass, field
 from cf_units import Unit
+import numpy as np
 
 
 ## ClimateVariable  namedtuple type
@@ -51,6 +52,14 @@ CLIMATE_VARIABLES = {
     'vgrd': ClimateVariable('Meridional component of wind speed', 'vgrd', Unit('m/s')),
     'spfh': ClimateVariable('Specific humidity', 'spfh', Unit('kg/kg')),
     'pres': ClimateVariable('Pressure', 'pres', Unit('Pa')),
+    'psl': ClimateVariable('Sea Level Pressure ', 'psl', Unit('Pa')),
+
+    # These aren't climate variables, maybe someday this class/module will
+    # get refactored to a more general name...
+    'slope': ClimateVariable('Slope', 'slope', Unit('degree')),
+    'aspect': ClimateVariable('Aspect', 'aspect', Unit('degree')),
+    'TPI': ClimateVariable('Topographic Position Index', 'TPI', Unit('')),
+    'elevation': ClimateVariable('Elevation', 'elevation', Unit('m'))
 }
 
 
@@ -226,3 +235,23 @@ def lookup_alias(source, alias):
     cvn = aliases_for(source, 'dict_r')[alias]
     return CLIMATE_VARIABLES[cvn]
     
+def calculate_vapo(pres, spfh):
+    """Calculate Vapor pressure from sea level pressure and
+    specific humidity
+    """
+    return (0.001 * pres * spfh) / (0.622 + 0.378 * spfh)
+
+def calculate_pres_from_psl(psl, air_temp, elevation):
+    """Calculate PRES from PSL, air_temp, and elevation
+
+    xr.DataArray shapes must match in parametes
+
+    Parameters
+    ----------
+    psl: xr.DataArray
+    air_temp xr.DataArray
+    elevation: xr.DataArray, or float
+        if 0, PRES = PSL (because e^0 == 1)
+ 
+    """
+    return psl * np.exp((-9.80665 * 0.0289644 * elevation) / (8.3144598 * (air_temp + 273.15)))
