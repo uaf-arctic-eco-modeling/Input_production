@@ -954,6 +954,23 @@ class TEMDataset(object):
         overwrite = lookup(kwargs, 'overwrite', False)
         extra_attrs = lookup(kwargs, 'extra_attrs', {})
 
+        ## fixes all the weird rio stuff
+        crs = self.dataset.spatial_ref.attrs['spatial_ref']
+        x_dim = 'x'
+        y_dim = 'y'
+        if CRS(crs) == CRS('EPSG:4326'): #is this true for other crs as well?
+            x_dim ='lon'
+            y_dim = 'lat'
+        self.dataset = self.dataset.rio.write_crs(crs, inplace=True).\
+                 rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
+                 rio.write_coordinate_system(inplace=True) 
+        
+        self.dataset = self.dataset.rio.write_crs(crs, inplace=True).\
+                 rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
+                 rio.write_coordinate_system(inplace=True) 
+
+
+
         # self.set_climate_encoding(**kwargs)
         if 'climate_encoding' in kwargs:            
             climate_enc = kwargs['climate_encoding']
