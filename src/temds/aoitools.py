@@ -6,13 +6,145 @@ import zipfile
 import subprocess
 import shutil
 import glob
+import tempfile
+import os
 
 import numpy as np
 import geopandas as gpd
+import pandas as pd
 
-from osgeo import gdal
+from osgeo import gdal, ogr, osr
 
 import temds.util
+
+
+def geopandas_to_ogr_dataset(geoseries, layer_name="layer"):
+    """Convert GeoPandas GeoSeries to OGR vector dataset (in-memory)
+
+    Parameters
+    ----------
+    geoseries : geopandas.GeoSeries
+        The vector data to convert
+    layer_name : str, default "layer"
+        Name for the output layer
+
+    Returns
+    -------
+    ogr.DataSource
+        In-memory OGR dataset containing the vector data
+    ogr.Layer
+        The layer within the dataset
+    """
+
+    # Create in-memory vector dataset
+    driver = ogr.GetDriverByName('Memory')
+    ds = driver.CreateDataSource('')
+
+    # Set up spatial reference
+    srs = None
+    if geoseries.crs is not None:
+        srs = osr.SpatialReference()
+        srs.ImportFromWkt(geoseries.crs.to_wkt())
+
+    # Determine geometry type from first geometry
+    first_geom = geoseries.iloc[0]
+    geom_type_map = {
+        'Point': ogr.wkbPoint,
+        'LineString': ogr.wkbLineString,
+        'Polygon': ogr.wkbPolygon,
+        'MultiPoint': ogr.wkbMultiPoint,
+        'MultiLineString': ogr.wkbMultiLineString,
+        'MultiPolygon': ogr.wkbMultiPolygon,
+    }
+
+    geom_type = geom_type_map.get(first_geom.geom_type, ogr.wkbUnknown)
+
+    # Create layer
+    layer = ds.CreateLayer(layer_name, srs, geom_type)
+
+    # Add features to layer
+    for idx, geom in geoseries.items():
+        feature = ogr.Feature(layer.GetLayerDefn())
+
+        # Convert shapely geometry to OGR
+        ogr_geom = ogr.CreateGeometryFromWkt(geom.wkt)
+        feature.SetGeometry(ogr_geom)
+
+        layer.CreateFeature(feature)
+        feature = None  # Clean up reference
+
+    return ds, layer  
+
+def raster_to_polygon(gdal_dataset, output_shapefile_dir=None):
+    """Convert gdal.Dataset to polygon(s)"""
+
+    layer_name = 'aoi_polygons'
+
+    # Get the raster band (assuming band 1)
+    srcband = gdal_dataset.GetRasterBand(1)
+
+    if not pathlib.Path(output_shapefile_dir).is_dir():
+      raise ValueError(f"Output shapefile path is not a directory: {output_shapefile_dir}")
+
+    # if not pathlib.Path(output_shapefile_dir).is_dir():
+    #     output_shapefile_dir = pathlib.Path(output_shapefile_dir).with_suffix('')
+
+    # Create output vector dataset
+    if output_shapefile_dir:
+        # Save to file
+        driver = ogr.GetDriverByName("ESRI Shapefile")
+        print(output_shapefile_dir)
+        dst_ds = driver.Create(output_shapefile_dir, 0, 0, 0, gdal.GDT_Unknown)
+    else:
+        # In-memory
+        driver = ogr.GetDriverByName("Memory")
+        dst_ds = driver.CreateDataSource("")
+
+
+    assert dst_ds is not None, "Failed to create output dataset"
+    # Create output layer
+
+    srs = osr.SpatialReference(wkt=gdal_dataset.GetProjection())
+    dst_layer = dst_ds.CreateLayer(layer_name, srs=srs)
+
+    # Add a field to store pixel values
+    field_defn = ogr.FieldDefn("DN", ogr.OFTInteger)
+    dst_layer.CreateField(field_defn)
+
+    # Polygonize
+    gdal.Polygonize(srcband, None, dst_layer, 0, [], callback=None)
+
+    del dst_layer
+    del dst_ds
+
+    return layer_name
+
+def gdal_dataset_to_geopandas(gdal_dataset, mask_value=1):
+    """Convert gdal.Dataset to GeoPandas GeoDataFrame"""
+
+    # Create temporary shapefile
+    with tempfile.TemporaryDirectory() as tmp_shapefile_dir:
+
+      try:
+          # Polygonize to temporary shapefile
+          foo = raster_to_polygon(gdal_dataset, tmp_shapefile_dir)
+
+          # Read with GeoPandas
+          gdf = gpd.read_file(pathlib.Path(tmp_shapefile_dir, foo).with_suffix('.shp'))
+
+          # Filter by pixel value if needed
+          if mask_value is not None:
+              gdf = gdf[gdf['DN'] == mask_value]
+
+          return gdf
+
+      finally:
+          # Clean up temp files
+          for ext in ['.shp', '.shx', '.dbf', '.prj']:
+              try:
+                  os.unlink(tmp_shapefile_dir.replace('.shp', ext))
+              except Exception:
+                  pass
 
 
 
@@ -20,152 +152,251 @@ class AOIMask(object):
   '''
   Object that encapsulates an Area of Interest Mask.
   '''
-  def __init__(self, root):
-    self.politic_map_fname = "geoBoundariesCGAZ_ADM1.zip"
-    self.politic_map_url = f"https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/{self.politic_map_fname}"
-    self.eco_map_fname = "Ecoregions2017.zip"
-    self.eco_map_url = f"https://storage.googleapis.com/teow2016/{self.eco_map_fname}"
+  politic_map_fname = "geoBoundariesCGAZ_ADM1.zip"
+  politic_map_url = f"https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/{politic_map_fname}"
+  eco_map_fname = "Ecoregions2017.zip"
+  eco_map_url = f"https://storage.googleapis.com/teow2016/{eco_map_fname}"
 
-    self.root = root
-    self.RES = 4000 # meters
+  RES = 4000 # meters
 
+  def __init__(self):
+    # anything to do here?
+    pass
 
-
-  def _download(self):
+  @staticmethod
+  def download():
     '''
     Go the web and get some stuff...
     '''
-    r = requests.get(self.politic_map_url)
-    temds.util.mkdir_p(pathlib.Path(self.root, '00-download/mask'))
-    with open(pathlib.Path(self.root, '00-download/mask', self.politic_map_fname), 'wb') as new_file:
+    r = requests.get(AOIMask.politic_map_url)
+    temds.util.mkdir_p(pathlib.Path('working/00-download/mask'))
+    with open(pathlib.Path('working/00-download/mask', AOIMask.politic_map_fname), 'wb') as new_file:
       new_file.write(r.content)
 
-    r = requests.get(self.eco_map_url)
-    temds.util.mkdir_p(pathlib.Path(self.root, '00-download/mask'))
-    with open(pathlib.Path(self.root, '00-download/mask', self.eco_map_fname), 'wb') as new_file:
+    r = requests.get(AOIMask.eco_map_url)
+    temds.util.mkdir_p(pathlib.Path( 'working/00-download/mask'))
+    with open(pathlib.Path('working/00-download/mask', AOIMask.eco_map_fname), 'wb') as new_file:
       new_file.write(r.content)
 
-  def _unzip(self):
+  @staticmethod
+  def unzip():
     '''
     uzips into a directory of the same name as the zip file and right next
     to the zip file.
     '''
-    fpath = pathlib.Path(self.root, '00-download/mask', self.politic_map_fname)
+    fpath = pathlib.Path('working/00-download/mask', AOIMask.politic_map_fname)
     print(f"Extracting {fpath=}")
     with zipfile.ZipFile(fpath, 'r') as zip_ref:
       x = pathlib.Path(fpath.parent, fpath.stem)
       print(f"Extracting {x=}")
       zip_ref.extractall(x)
 
-    fpath = pathlib.Path(self.root, '00-download/mask', self.eco_map_fname)
+    fpath = pathlib.Path('working/00-download/mask', AOIMask.eco_map_fname)
     print(f"Extracting {fpath=}")
     with zipfile.ZipFile(fpath, 'r') as zip_ref:
       x = pathlib.Path(fpath.parent, fpath.stem)
       print(f"Extracting {x=}")
       zip_ref.extractall(x)
 
-  # def create_from_scratch(self):
-  #   self._download()
-  #   self._unzip()
-  #   self.create_from_shapefiles():
-
-  def create_from_shapefiles(self, trim_to_shape=None):
-    self.merge_and_buffer_shapefiles(pathlib.Path(self.root, '00-download/mask', self.politic_map_fname),
-                                pathlib.Path(self.root, '00-download/mask', self.eco_map_fname),
-                                trim_to_shape=trim_to_shape
-                              )
-
-  def load_from_raster(self, raster_file):
-    self.aoi_raster = gdal.Open(raster_file,  gdal.gdalconst.GA_ReadOnly)
-    if self.aoi_raster is None:
-      raise RuntimeError(f"Can't open file: {raster_file}")
-
-  def load_from_vector(self, vector_file):
-    self.aoi_vector = gpd.read_file(vector_file)
-
-  def geoTransform(self):
-    geotransform = self.aoi_raster.GetGeoTransform()
-    return geotransform
-
-  def extents(self):
+  @staticmethod
+  def from_raw(download=False, unzip=False, trim_to_shape=None):
     '''
-    maybe extents is for raster files?
-    returns dict with keys (minx, miny, maxx, maxy)
-    '''
-    geoTransform = self.aoi_raster.GetGeoTransform()
-    minx = geoTransform[0]
-    miny = geoTransform[3]
-    maxx = minx + geoTransform[1] * self.aoi_raster.RasterXSize
-    maxy = miny + geoTransform[5] * self.aoi_raster.RasterYSize
-
-    return dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
-
-  def get_shapefile_bounds(self):
-    '''
-    maybe bounds is for vectors?
-    WARNING! THIS ONE AND THE RASTER VERSION HAVE miny, maxy REVERSED!!
-    ONE IS BOTTOM UP THE OTHER IS TOP DOWN CONFIRM!!!!
-    returns dict with keys (minx, miny, maxx, maxy)
+    Need a better name for this.
+    But it is supposed to make the full AOI mask as per the original means from 
+    H.G. work. Makes a circumpolar mask (so above a certain latitude) in 
+    the 6931 projection (or at least that where it looks the best.)
     '''
 
-    bounds = self.aoi_vector.geometry.bounds
+    if download:
+      AOIMask.download()
+    if unzip:
+      AOIMask.unzip()
 
-    # Funky business to get nice clean numbers for the bounds that are big enough.
-    # Extents is a DataFrame, so we can proccess it en masse.
-    # numbers start like this:
-    #
-    #                minx          miny          maxx          maxy
-    #     0 -4.602688e+06 -3.485976e+06  4.363719e+06  4.247969e+06
-    #
-    # and end like this:
-    #
-    #             minx       miny       maxx       maxy
-    #     0 -4602000.0 -3485000.0  4364000.0  4248000.0
-    #
-    # actually not sure this works as intended for negative numbers??
+    aoimask = AOIMask()
+
+    aoimask.create_from_political_and_ecoregion_maps(
+      "working/00-download/mask/geoBoundariesCGAZ_ADM1",
+      "working/00-download/mask/Ecoregions2017",
+      trim_to_shape=trim_to_shape
+    )
+
+    assert aoimask.aoi is not None, "AOI not defined yet"
+    assert aoimask.aoi.crs is not None, "AOI has no CRS"
+    assert aoimask.aoi.crs.to_string() == 'EPSG:6931'
+
+    return aoimask
+
+  @staticmethod
+  def load_vector(vector_file):
+
+    instance = AOIMask()
+
+    instance.aoi = gpd.read_file(vector_file).geometry # Make sure we end up with a GeoSeries
+
+    return instance
+
+  @staticmethod
+  def load_raster(raster_file):
+
+    gdf = gdal_dataset_to_geopandas(gdal.Open(raster_file,gdal.gdalconst.GA_ReadOnly), mask_value=1)
+
+    dissolved = gdf.dissolve()
+    aoi = dissolved.geometry
+
+    instance = AOIMask()
+
+    instance.aoi = aoi
+
+    return instance
+
+  def get_bounds(self):
+    assert self.aoi is not None, "AOI not defined yet"
+
+    bounds = self.aoi.geometry.bounds
+
+    return bounds
+
+  def get_resolution_aligned_bounds(self):
+    '''
+    Round the bounds outward to the nearest pixel edge, considering the 
+    resolution. Only works for certain projections I think?
+    '''
+    assert self.aoi.crs is not None, "AOI has no CRS"
+    assert self.aoi.crs.to_epsg() == 6931, "AOI must be in EPSG:6931"
+
+    bounds = self.get_bounds()
+    print(f"Bounds before rounding outwards\n {bounds}")
+
     bounds = np.ceil((bounds/1000))*1000
 
     max_x = bounds['maxx'] + (self.RES - (bounds['maxx'] - bounds['minx']) % self.RES)
     max_y = bounds['maxy'] + (self.RES - (bounds['maxy'] - bounds['miny']) % self.RES)
 
+    bounds_2 = pd.Series(dict(minx=bounds['minx'].squeeze(),
+                miny=bounds['miny'].squeeze(),
+                maxx=max_x.squeeze(),
+                maxy=max_y.squeeze()))
+    print(f"Bounds after rounding outwards\n {bounds_2}")
 
-    # The above data structures are all pandas.DataFrames so you gotta get just
-    # the values out.
-    return dict(minx=bounds['minx'].values[0],
-                miny=bounds['miny'].values[0],
-                maxx=max_x.values[0],
-                maxy=max_y.values[0])
+    print(f"Differences in bounds: {bounds_2 - bounds}")
+
+    return bounds_2
+
+  def to_shapefile(self, output_dir, name, crs='6931'):
+
+    if self.aoi.crs.to_epsg() != crs:
+      print(f"Converting AOI from {self.aoi.crs.to_epsg()} to {crs}")
+      aoi_vector = self.aoi.to_crs(crs)
+    else:
+      print(f"AOI is already in {crs}")
+      aoi_vector = self.aoi
+
+    ## f"{output_dir}/{name}/{name}_{EPSG}/{name}_{EPSG}.shp"
+    outfolder = pathlib.Path(output_dir, f"{name}", f"{name}_{aoi_vector.crs.to_epsg()}")
+    outfolder.mkdir(parents=True, exist_ok=True)
+
+    outfile_name = pathlib.Path(outfolder,  f"{name}_{aoi_vector.crs.to_epsg()}.shp")
+    print(f"Saving shapefile...{outfile_name}")
+    aoi_vector.to_file(outfile_name, layer='aoi_mask')
+
+  def to_rasterfile(self, output_dir, name, crs=6931):
+
+    assert self.aoi is not None, "AOI not defined yet; you need an AOI to rasterize!"
+
+    r_aoi = self.as_raster(crs=crs)
+
+    outfolder = pathlib.Path(output_dir, f"{name}")
+    outfolder.mkdir(parents=True, exist_ok=True)
+    outfile_name = pathlib.Path(outfolder, f"{name}_{crs}_{self.RES}m.tiff")
+
+    driver = gdal.GetDriverByName('GTiff')
+    driver.CreateCopy(str(outfile_name), r_aoi)
+    print(f"Raster AOI saved to {outfile_name}")
+
+  def raster_size(self):
+    assert self.aoi is not None, "AOI not defined yet; you need an AOI geometry to get its size!"
+    r_aoi = self.as_raster()
+    return (r_aoi.RasterXSize, r_aoi.RasterYSize)
+
+  def as_raster(self, crs=6931):
+
+    assert self.aoi is not None, "AOI not defined yet; you need an AOI geometry to rasterize!"
+
+    if self.aoi.crs.to_epsg() != crs:
+      print(f"Converting AOI from {self.aoi.crs.to_epsg()} to {crs}")
+      aoi_vector = self.aoi.to_crs(crs)
+    else:
+      print(f"AOI is already in {crs}")
+      aoi_vector = self.aoi
+
+    if aoi_vector.crs.to_epsg() != 6931:
+      raise RuntimeError("Can only rasterize in EPSG:6931 right now.")
+
+    #output_path = pathlib.Path(f"{name}/{name}_{srs}_{resolution}_{xsize}_{ysize}.tiff")
+    name = 'aoi_mask'
+    layer_name = f'{name}_{crs}' # For shapefiles, this seems to be the filename
+
+    # Might be able to simply use target Aligned pixels (-tap)?
+    # although I have some memory of trying -tap option and having it be buggy
+    bounds = self.get_resolution_aligned_bounds()
+
+    # Get in memory shape file representation that can be passed to 
+    # the rasterization process.
+    ds, layer = geopandas_to_ogr_dataset(aoi_vector, layer_name=layer_name)
+
+    opts = gdal.RasterizeOptions(
+      format='MEM',
+      outputBounds=(bounds['minx'], bounds['miny'], bounds['maxx'], bounds['maxy']),
+      xRes=self.RES,
+      yRes=self.RES,
+      noData=0,
+      layers=[layer.GetName()],
+      outputType=gdal.GDT_Int16
+
+    )
+
+    rds = gdal.Rasterize('', ds, options=opts)
+
+    return rds
 
 
-  def rasterize_AOI(self):
+    # args = ['gdal_rasterize',
+    #         '-l', layer_name,
+    #         '-burn', str(1),
+    #         '-tr', str(self.RES), str(self.RES),
+    #         '-a_nodata', str(0),
+    #         '-te', f"{bounds['minx']}", f"{bounds['miny']}", f"{bounds['maxx']}", f"{bounds['maxy']}",
+    #         '-ot', 'Int16',
+    #         '-of', 'GTiff',
+    #         f'{output_dir}/{name}/{name}_{crs}/{name}_{crs}.shp',
+    #         f'{output_dir}/{name}/{name}_{crs}_{self.RES}m.tiff'
+    #         ]
+    # print(args)
+    # subprocess.run(args)
 
-    layer_name = 'aoi_5km_buffer_6931'
+  def raster_geoTransform(self):
+    assert self.aoi is not None, "AOI not defined yet; you need and AOI geometry to get the transform!"
+    r_aoi = self.as_raster()
+    geotransform = r_aoi.GetGeoTransform()
+    return geotransform
 
-    bnds = self.get_shapefile_bounds()
+  def raster_extents(self):
+    assert self.aoi is not None, "AOI not defined yet; you need and AOI geometry to get the extents!"
+    r_aoi = self.as_raster()
+    geotransform = self.raster_geoTransform()
+    minx = geotransform[0]
+    maxy = geotransform[3]
+    maxx = minx + geotransform[1] * r_aoi.RasterXSize
+    miny = maxy + geotransform[5] * r_aoi.RasterYSize
 
-    args = ['gdal_rasterize',
-            '-l', layer_name,
-            '-burn', str(1),
-            '-tr', str(self.RES), str(self.RES),
-            '-a_nodata', str(0),
-            '-te', f"{bnds['minx']}", f"{bnds['miny']}", f"{bnds['maxx']}", f"{bnds['maxy']}",
-            '-ot', 'Int16',
-            '-of', 'GTiff',
-            self.root + '01-aoi/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp',
-            self.root + '01-aoi/aoi_5km_buffer_6931.tiff'
-            ]
-    print(args)
-    subprocess.run(args)
+    return dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
 
-
-
-  def merge_and_buffer_shapefiles(self, global_political_map, eco_region_map, trim_to_shape=None):
+  def create_from_political_and_ecoregion_maps(self, global_political_map, eco_region_map, trim_to_shape=None):
     '''
-    Creates two shape files in different projections that cover the whole
-    area of interest. Each file is a single feature (not sure if this is the
-    right term?) with a bunch of polygons defining the outline of the AOI.
-
-    Writes various files to disk. 
+    Need a better name for this method......
+    Creates a vector geometry. This geometry is a geopandas.geoseries.GeoSeries
+    which is a polygon of the arctic region, with CRS EPSG:6931. This shape is
+    buffered by 5km as the last step.
 
     Parameters
     ==========
@@ -174,7 +405,7 @@ class AOIMask(object):
     eco_region_map: str
         path to the eco regeion shapefile
     trim_to_shape: None or path to shapefile or raster
-    
+
 
     Returns
     ========
@@ -198,12 +429,21 @@ class AOIMask(object):
     ak_greenland = ak_greenland.dissolve()
     ak_greenland.to_crs(eco_north.crs)
 
-    AOI = eco_north.union(ak_greenland, align=True)
+    self.aoi = eco_north.union(ak_greenland, align=True)
 
-    if trim_to_shape:
-      from IPython import embed; embed()
+    # Convert to EPSG:6931
+    self.aoi = self.aoi.to_crs(epsg=6931)
 
-      clipping_shape = gpd.read_file(pathlib.Path(self.root, "01-aoi/southcentral_AK_rough/southcentral_AK_rough.shp"))
+    # Buffer it by 5km. This needs to be done after converting to EPSG:6931
+    # so that it gets the southern latitude 
+    self.aoi = self.aoi.buffer(5000)
+
+
+
+
+    # if trim_to_shape:
+
+    #   clipping_shape = gpd.read_file(pathlib.Path(self.root, "01-aoi/southcentral_AK_rough/southcentral_AK_rough.shp"))
 
 
 
@@ -217,7 +457,7 @@ class AOIMask(object):
     #         full_arctic_4327.tiff
     #         full_arctic_4327/
     #             full_arctic_4327.shp
-    
+
     #     southcentral_AK/
     #         southcentral_AK_6931_4km.tiff
     #         southcentral_AK_6931/
@@ -229,33 +469,7 @@ class AOIMask(object):
 
 
 
-    temds.util.mkdir_p(self.root + '/aoi_4326/')
-    temds.util.mkdir_p(self.root + '/aoi_6931/')
-    temds.util.mkdir_p(self.root + '/aoi_5km_buffer_6931/')
 
-    print("Writing AOI files...")
-    AOI.to_crs(4326).to_file(self.root + '/aoi_4326/aoi_4326.shp')
-    AOI.to_crs(6931).to_file(self.root + '/aoi_6931/aoi_6931.shp')
-
-    AOI_5km_buffer = AOI.to_crs(6931).buffer(5000) # 5km
-    AOI_5km_buffer.tmp = 1 # ?? what is this for?
-    print("Writing buffered AOI file...")
-    AOI_5km_buffer.to_file(self.root + '/aoi_5km_buffer_6931/aoi_5km_buffer_6931.shp')
-
-
-
-
-
-  def size(self):
-    '''Return (width, height).'''
-    return self.aoi_raster.RasterXSize, self.aoi_raster.RasterYSize
-
-
-  def save_rasterize(self):
-    pass
-
-  def save_vector(self):
-    pass
 
 
 
