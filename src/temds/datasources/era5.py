@@ -13,6 +13,10 @@ from temds import climate_variables
 
 NAME = 'ERA 5'
 
+IMAGE_COLLECTION = "ECMWF/ERA5_LAND/DAILY_AGGR"
+BANDS = ['temperature_2m', 'dewpoint_temperature_2m', 'total_precipitation_sum',  "surface_solar_radiation_downwards_sum", ]
+
+
 
 CITATION = (
 
