@@ -161,6 +161,7 @@ class AOIMask(object):
 
   def __init__(self):
     # anything to do here?
+    self._raster = None
     pass
 
   @staticmethod
@@ -322,6 +323,9 @@ class AOIMask(object):
 
     assert self.aoi is not None, "AOI not defined yet; you need an AOI geometry to rasterize!"
 
+    if self._raster is not None:
+      return self._raster
+
     if self.aoi.crs.to_epsg() != crs:
       print(f"Converting AOI from {self.aoi.crs.to_epsg()} to {crs}")
       aoi_vector = self.aoi.to_crs(crs)
@@ -357,6 +361,7 @@ class AOIMask(object):
 
     rds = gdal.Rasterize('', ds, options=opts)
 
+    self._raster = rds
     return rds
 
 
