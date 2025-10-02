@@ -265,7 +265,7 @@ class AOIMask(object):
     assert self.aoi.crs.to_epsg() == 6931, "AOI must be in EPSG:6931"
 
     bounds = self.get_bounds()
-    print(f"Bounds before rounding outwards\n {bounds}")
+    #print(f"Bounds before rounding outwards\n {bounds}")
 
     bounds = np.ceil((bounds/1000))*1000
 
@@ -276,9 +276,9 @@ class AOIMask(object):
                 miny=bounds['miny'].squeeze(),
                 maxx=max_x.squeeze(),
                 maxy=max_y.squeeze()))
-    print(f"Bounds after rounding outwards\n {bounds_2}")
+    #print(f"Bounds after rounding outwards\n {bounds_2}")
 
-    print(f"Differences in bounds: {bounds_2 - bounds}")
+    #print(f"Differences in bounds: {bounds_2 - bounds}")
 
     return bounds_2
 
