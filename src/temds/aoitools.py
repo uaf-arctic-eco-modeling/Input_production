@@ -355,6 +355,7 @@ class AOIMask(object):
       xRes=self.RES,
       yRes=self.RES,
       noData=0,
+      burnValues=[1],
       layers=[layer.GetName()],
       outputType=gdal.GDT_Int16
 
