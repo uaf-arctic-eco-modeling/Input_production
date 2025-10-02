@@ -385,9 +385,9 @@ class AOIMask(object):
     r_aoi = self.as_raster()
     geotransform = self.raster_geoTransform()
     minx = geotransform[0]
-    maxy = geotransform[3]
+    miny = geotransform[3]
     maxx = minx + geotransform[1] * r_aoi.RasterXSize
-    miny = maxy + geotransform[5] * r_aoi.RasterYSize
+    maxy = miny + geotransform[5] * r_aoi.RasterYSize
 
     return dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
 
