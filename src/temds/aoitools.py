@@ -17,6 +17,7 @@ from osgeo import gdal, ogr, osr
 
 import temds.util
 
+gdal.UseExceptions()
 
 def geopandas_to_ogr_dataset(geoseries, layer_name="layer"):
     """Convert GeoPandas GeoSeries to OGR vector dataset (in-memory)
