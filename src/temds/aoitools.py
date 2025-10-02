@@ -320,11 +320,11 @@ class AOIMask(object):
     r_aoi = self.as_raster()
     return (r_aoi.RasterXSize, r_aoi.RasterYSize)
 
-  def as_raster(self, crs=6931):
+  def as_raster(self, crs=6931, forceUpdate=False):
 
     assert self.aoi is not None, "AOI not defined yet; you need an AOI geometry to rasterize!"
 
-    if self._raster is not None:
+    if self._raster is not None and not forceUpdate:
       return self._raster
 
     if self.aoi.crs.to_epsg() != crs:
