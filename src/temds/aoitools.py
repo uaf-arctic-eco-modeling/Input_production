@@ -489,7 +489,6 @@ class TileIndex(object):
 
   def __init__(self, root, aoimask):
     self.root = root
-
     self.aoimask = aoimask
 
   def remove_tiles(self):
@@ -584,24 +583,38 @@ class TileIndex(object):
 
       # Put it in a temporary dataset
       #ds = gdal.Warp('', self.root+'/01-aoi/aoi_5km_buffer_6931.tiff', **warpOptions)
-      ds = gdal.Warp('', self.aoimask.as_raster(), **warpOptions)
+      ds_tile = gdal.Warp('', self.aoimask.as_raster(), **warpOptions)
 
-      if np.count_nonzero(ds.ReadAsArray()) < 1:
+      if np.count_nonzero(ds_tile.ReadAsArray()) < 1:
         print("Skip tile!")
       else:
-        # get indices of non-zero data. Use theses to further trim down the
+        print(f"TIME TO TILE! {tile=}")
+        # get indices of non-zero data. Use these to further trim down the
         # extents of the tiles.
-        valid_y, valid_x = np.nonzero(ds.ReadAsArray())
-        transOptions = {
-          'format': 'VRT',
-          # [left x, top_y, width, height]
-          'srcWin': [valid_x.min(), valid_y.min(), 
-                    valid_x.max()-valid_x.min()+1, valid_y.max()-valid_y.min()+1 ] 
-        }
+        valid_y, valid_x = np.nonzero(ds_tile.ReadAsArray())
 
-        print(f"cropping H{tile['hidx']} V{tile['vidx']}", transOptions)
-        vrt = gdal.GetDriverByName('VRT')
-        ds = gdal.Translate('', ds, **transOptions)
+        xoffset, px_w, rot1, yoffset, rot2, px_h = ds_tile.GetGeoTransform()
+
+        MINX = px_w * valid_x.min() + rot1 * 0 + xoffset
+        MAXX = px_w * (valid_x.max()+1) + rot1 * 0 + xoffset
+        MINY = rot2 * 0 + px_h * valid_y.min() + yoffset
+        MAXY = rot2 * 0 + px_h * (valid_y.max()+1) + yoffset
+
+        warpOptions2 = {
+          'format': 'VRT',
+          'srcSRS': 'EPSG:6931',
+          'dstSRS': 'EPSG:6931',
+          'xRes': tile['xrez'],
+          'yRes': tile['yrez'],
+          'outputBounds': [MINX, MINY, MAXX, MAXY],
+        }
+        ds_tile_clipped = gdal.Warp('', ds_tile, **warpOptions2)
+
+        # Tried implementing this with gdal.Translate and using the srcWin
+        # option, which uses pixel/line coords, but it seemed kinda buggy
+        # for some edge pixels - so gave up and used gdal warp which requried
+        # calculating extents in projection coords.
+
 
         # This will need updating with respect to location...
         outdir = pathlib.Path(self.root, 'tiles', f"H{tile['hidx']:02d}_V{tile['vidx']:02d}")
@@ -609,13 +622,16 @@ class TileIndex(object):
 
         print(f"Writing to: {outdir}")
         out = gdal.GetDriverByName('GTiff')
-        out.CreateCopy(pathlib.Path(outdir, "EPSG_6931.tiff"), ds)
+        out.CreateCopy(pathlib.Path(outdir, "EPSG_6931.tiff"), ds_tile_clipped)
 
-        warpOpts = {'dstSRS':'EPSG:4326'}
-        ds = gdal.Warp(pathlib.Path(outdir, "EPSG_4326.tiff"), ds, **warpOpts)
+        # This fails in some small tiles - the warping to a different projection
+        # collapses one of the dimensons to zero...
+        # warpOpts = {'dstSRS':'EPSG:4326'}
+        # _ = gdal.Warp(pathlib.Path(outdir, "EPSG_4326.tiff"), ds_tile_clipped, **warpOpts)
 
 
-  def create_tile_index(self):
+
+  def create_tile_index(self, id=''):
     opts = {
       'overwrite': True,
       'filenameFilter' : "*6931.tiff",
@@ -624,7 +640,7 @@ class TileIndex(object):
     files = glob.glob(self.root + "/tiles/**/EPSG_6931.tiff")
 
     print(f"Found {len(files)} files to tile.")    
-    dstPath = pathlib.Path(self.root, "tile_index.shp")
+    dstPath = pathlib.Path(self.root, f"tile_index{id}.shp")
 
     gdal.TileIndex(dstPath, 
                    files,
