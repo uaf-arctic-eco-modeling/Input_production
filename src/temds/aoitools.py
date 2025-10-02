@@ -442,17 +442,15 @@ class AOIMask(object):
     self.aoi = self.aoi.to_crs(epsg=6931)
 
     # Buffer it by 5km. This needs to be done after converting to EPSG:6931
-    # so that it gets the southern latitude 
+    # so that it gets the southern latitudes correctly 
     self.aoi = self.aoi.buffer(5000)
 
 
+    if trim_to_shape:
+      clipping_shape = gpd.read_file(trim_to_shape)
+      clipping_shape = clipping_shape.to_crs(epsg=6931)
 
-
-    # if trim_to_shape:
-
-    #   clipping_shape = gpd.read_file(pathlib.Path(self.root, "01-aoi/southcentral_AK_rough/southcentral_AK_rough.shp"))
-
-
+      self.aoi = gpd.clip(self.aoi, clipping_shape)
 
     #  {01-aoi}/{name}/{name}_{CRS}_{RES}.tif
     # 01-aoi/
