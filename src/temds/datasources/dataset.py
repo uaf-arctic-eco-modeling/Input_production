@@ -346,6 +346,9 @@ class TEMDataset(object):
         ds = gdal.Translate("", srcDS=srcDS, format="MEM")
         ds.FlushCache()
 
+        # ^---consider replacing with plain gdal open, read only.
+        # refactor to  "src" and "dest" or "aoi" and "topo" rather than ds, ds2, etc
+
         logger.info(f'{func_name}: Reprojecting and cropping topography data.')
         ds2 = gdal.Warp("", ds, 
                         options=gdal.WarpOptions(format="MEM", 
@@ -547,13 +550,15 @@ class TEMDataset(object):
                     f'month {month} at index {idx}'
                 ))
                 
-                # load result to memory so we don't have temp files
-                result = gdal.Warp(
-                    '', data_raster, 
-                    xRes=abs(gt[1]), yRes=abs(gt[5]),
-                    outputBounds=extent,
-                    dstSRS=new.crs.to_wkt(),
-                    format='mem',
+                # Explicitly create destination dataset of the correct size and 
+                # with the geo ref info assigned.
+                result = gdal_tools.empty_dataset(new.dataset[x_dim].size, 
+                                                  new.dataset[y_dim].size, 
+                                                  new.crs.to_wkt(), gt)
+
+                # Now warp into this empty dataset...
+                _ = gdal.Warp(
+                    result, data_raster, 
                     resampleAlg=resample_alg,
                     dstNodata=-3.4e+38,
                     outputType=gdal.GDT_Float32,
