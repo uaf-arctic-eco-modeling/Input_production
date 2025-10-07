@@ -251,7 +251,31 @@ class AOIMask(object):
 
     return instance
 
-  def get_bounds(self):
+  def get_raster_extent(self):
+    '''
+    Returns a pandas.DataFrame with columns: (minx, miny, maxx, maxy) that
+    is the extent of the raster representation of the AOI.
+    '''
+    assert self.aoi is not None, "AOI not defined yet"
+
+    if not self._raster:
+      self._raster = self.as_raster()
+
+   # Get the extent from the extent raster
+    gt = self._raster.GetGeoTransform()
+
+    minx = gt[0]
+    miny = gt[3]
+    maxx = gt[0] + (gt[1] * self._raster.RasterXSize)
+    maxy = gt[3] + (gt[5] * self._raster.RasterYSize)
+
+    return pd.DataFrame(dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy), index=[0])
+
+  def get_vector_bounds(self):
+    '''
+    Returns a pandas DataFrame with columns: (minx, miny, maxx, maxy) that 
+    are the extents of the vector representation of the AOI.
+    '''
     assert self.aoi is not None, "AOI not defined yet"
 
     bounds = self.aoi.geometry.bounds
@@ -266,7 +290,7 @@ class AOIMask(object):
     assert self.aoi.crs is not None, "AOI has no CRS"
     assert self.aoi.crs.to_epsg() == 6931, "AOI must be in EPSG:6931"
 
-    bounds = self.get_bounds()
+    bounds = self.get_vector_bounds()
     #print(f"Bounds before rounding outwards\n {bounds}")
 
     bounds = np.ceil((bounds/1000))*1000
@@ -326,6 +350,8 @@ class AOIMask(object):
 
     if self._raster is not None and not forceUpdate:
       return self._raster
+
+    #log.debug("Computing raster representation of AOI")
 
     if self.aoi.crs.to_epsg() != crs:
       print(f"Converting AOI from {self.aoi.crs.to_epsg()} to {crs}")
