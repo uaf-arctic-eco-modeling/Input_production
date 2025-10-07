@@ -133,18 +133,22 @@ class TEMDataset(object):
     
     @property
     def extent(self):
-        """Property for Quick access to resolution"""
+        """
+        Returns (left,bottom,right,top), outer most coords (bounds) of the data.
+        """
         return self.dataset.rio.bounds()
 
     @property
     def vars(self):
-        """Property for quick access to variables in dataset
+        """
+        Property for quick access to variables in dataset
         """
         return list(self.dataset.data_vars)
     
     @property
     def units(self):
-        """Property for quick access to units for variables in dataset
+        """
+        Property for quick access to units for variables in dataset
         """
         return {var: Unit(self.dataset[var].units) for var in self.vars}
    
@@ -746,7 +750,7 @@ class TEMDataset(object):
                             # the interpreter, you often have to call it 
                             # multiple times.
 
-        ## opption 2
+        ## option 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         del(vars_dict)
