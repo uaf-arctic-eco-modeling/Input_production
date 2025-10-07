@@ -46,7 +46,7 @@ if args.download:
     log.info('Downloading data')
 
 
-wc_arctic = TEMDataset.from_worldclim(
+wc_dataset = TEMDataset.from_worldclim(
             args.data_path[0], 
             download=args.download, 
             version='2.1', 
@@ -59,11 +59,12 @@ wc_arctic = TEMDataset.from_worldclim(
         )
 
 
+
 log.info('dataset.verify returns tuple (True, []) when data is TEMDS ready')
-log.info(f'Results of dataset.verify: {wc_arctic.verify()}')
+log.info(f'Results of dataset.verify: {wc_dataset.verify()}')
 
 fig, axes= plt.subplots (1,1, dpi=100)
-im = axes.imshow(wc_arctic.dataset['tair_max'].data[0], origin='lower')
+im = axes.imshow(wc_dataset.dataset['tair_max'].data[0], origin='lower')
 fig.colorbar(im, ax=axes)
 axes.set_title('Worldclim Arctic Max Air Temp')
 
