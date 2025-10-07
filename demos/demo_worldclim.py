@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 demo creating worldclim dataset from cloud
 """
@@ -29,13 +30,16 @@ parser.add_argument('data_path', nargs=1, type=existing_path, metavar=('DATA PAT
 parser.add_argument('extent_raster', nargs=1, type=existing_path, metavar=('EXTENT RASTER'),
     help=textwrap.dedent('''Path to a raster whose extents are used to subset/query the worldclim data.'''))
 
+parser.add_argument('--save', type=str, default=None, metavar=('SAVE PATH'),
+    help=textwrap.dedent('''Path to save the resulting dataset (optional). If not provided, the data will not be saved.'''))
+
 parser.add_argument('--download', action='store_true', 
     help=textwrap.dedent('''Flag for whether to download data if not found locally'''))
 
 args = parser.parse_args()
 
-
 log = Logger([], DEBUG)
+log.debug(f"{args=}")
 log.info(f'Data is at {args.data_path}')
 log.info(f'Extent is from {args.extent_raster}')
 if args.download:
@@ -64,4 +68,6 @@ fig.colorbar(im, ax=axes)
 axes.set_title('Worldclim Arctic Max Air Temp')
 
 ### Here is how to save the data
-# wc_arctic.save('worldclim-arctic.nc', overwrite=True)
+if args.save:
+    log.info(f'Saving data to {args.save} ...')
+    wc_dataset.save(args.save, overwrite=True)
