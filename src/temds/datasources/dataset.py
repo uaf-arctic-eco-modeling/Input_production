@@ -176,7 +176,7 @@ class TEMDataset(object):
 
     @staticmethod
     def from_raster_extent(
-            raster, in_vars = [], ds_time_dim=[], buffer_px=30, logger=Logger()
+            raster, in_vars = [], ds_time_dim=[], buffer_px=0, logger=Logger()
         ):
         """
         Creates new xr.Dataset for `dataset` using the extent, transform, and 
@@ -191,7 +191,7 @@ class TEMDataset(object):
             List of variables to create `Dataset.data_vars` for
         ds_time_dim: list, defaults []
             The time dimension for the `Dataset`
-        buffer_px: int, default 30
+        buffer_px: int, default 0
             Buffer in pixels to add to extent. When `raster` crs is EPSG:4326
             This argument is ignored
         logger: logger.Logger, defaults to new object
@@ -507,7 +507,8 @@ class TEMDataset(object):
             extent_raster, 
             in_vars=in_vars, 
             ds_time_dim=MONTH_START_DAYS, 
-            logger=logger
+            logger=logger,
+            buffer_px=0
         )
 
         x_dim = 'x'
