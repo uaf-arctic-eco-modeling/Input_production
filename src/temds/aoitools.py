@@ -206,7 +206,7 @@ class AOIMask(object):
     Need a better name for this.
     But it is supposed to make the full AOI mask as per the original means from 
     H.G. work. Makes a circumpolar mask (so above a certain latitude) in 
-    the 6931 projection (or at least that where it looks the best.)
+    the 6931 projection.
     '''
 
     if download:
@@ -588,7 +588,7 @@ class TileIndex(object):
 
     return tile_extents    
 
-  def cut_tileset(self, tile_extents):
+  def cut_tileset(self, tile_extents, nickname=''):
     '''Given a list of tile extents, call gdal warp and actually crop out
     the tile from the raster.'''
 
@@ -641,7 +641,7 @@ class TileIndex(object):
 
 
         # This will need updating with respect to location...
-        outdir = pathlib.Path(self.root, 'tiles', f"H{tile['hidx']:02d}_V{tile['vidx']:02d}")
+        outdir = pathlib.Path(self.root, nickname, 'tiles', f"H{tile['hidx']:02d}_V{tile['vidx']:02d}")
         temds.util.mkdir_p(outdir)
 
         print(f"Writing to: {outdir}")
@@ -655,16 +655,38 @@ class TileIndex(object):
 
 
 
-  def create_tile_index(self, id=''):
+  def create_tile_index(self, nickname='', id=''):
+    '''Use gdal.TileIndex() to create a shapefile tile index of the tileset.
+    In its present form, this requires the tileset to have been "cut" already,
+    meaning that there needs to be a hierarchy of folders containing the tile
+    rasters.
+
+    nickname: str 
+      A name to identify the tileset. If nickname was used to cut the tileset,
+      then you should use the same name here, so that the tile folders can be
+      found. Nickname corresponds to the folder name that contains the "tiles/"
+      directory.
+
+    id: str
+      A unique identifier for the tileset. This can be used to distinguish
+      between different tilesets that may have similar names. This is added to
+      the tile index shapefile name.
+
+    '''
     opts = {
       'overwrite': True,
       'filenameFilter' : "*6931.tiff",
 
     }
-    files = glob.glob(self.root + "/tiles/**/EPSG_6931.tiff")
 
-    print(f"Found {len(files)} files to tile.")    
-    dstPath = pathlib.Path(self.root, f"tile_index{id}.shp")
+    pattern = pathlib.Path(self.root, nickname, "tiles/**/EPSG_6931.tiff")
+    files = glob.glob(str(pattern))
+
+    if len(files) < 1:
+      raise RuntimeError(f"No files found matching {pattern}, can't create tile index.")
+
+    print(f"Found {len(files)} files to tile.")
+    dstPath = pathlib.Path(self.root, nickname, f"tile_index{id}.shp")
 
     gdal.TileIndex(dstPath, 
                    files,
@@ -673,9 +695,17 @@ class TileIndex(object):
       raise RuntimeError(f"PROBLEM CREATING TILE INDEX: {dstPath}")
 
 
-  def get_tile_index_total_area(self):
-    files = glob.glob(self.root + "/tiles/**/EPSG_6931.tiff")
+  def get_tile_index_total_area(self, nickname=''):
+    '''
+    Full area of all the tiles in the tileset. Counting ocean pixels, etc,
+    that may be masked later...
+    '''
+    pattern = pathlib.Path(self.root, nickname, "tiles/**/EPSG_6931.tiff")
+    files = glob.glob(str(pattern))
     total = 0
+    if len(files) < 1:
+      print(f"No files found matching {pattern}")
+      raise RuntimeError(f"No files found matching {pattern} for tile index area calculation.")
     for raster_file in files:
       ds = gdal.Open(raster_file,  gdal.gdalconst.GA_ReadOnly)
       total += ds.RasterXSize * ds.RasterYSize
