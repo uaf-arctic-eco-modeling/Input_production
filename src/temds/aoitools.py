@@ -3,7 +3,6 @@
 import requests
 import pathlib
 import zipfile
-import subprocess
 import shutil
 import glob
 import tempfile
@@ -268,6 +267,12 @@ class AOIMask(object):
     miny = gt[3]
     maxx = gt[0] + (gt[1] * self._raster.RasterXSize)
     maxy = gt[3] + (gt[5] * self._raster.RasterYSize)
+
+    # Force the image to have miny < maxy
+    # (origin in lower left)
+    if miny > maxy:
+      #print("Flipping image vertically...")
+      miny, maxy = maxy, miny
 
     return pd.DataFrame(dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy), index=[0])
 
