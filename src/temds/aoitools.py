@@ -693,6 +693,21 @@ class TileIndex(object):
                    **opts)
     if not dstPath.exists():
       raise RuntimeError(f"PROBLEM CREATING TILE INDEX: {dstPath}")
+    
+    # Add some convenience columns to the shapefile with tile id and 
+    # tile H and V indices...
+
+    # Need to read the file in, add a few columns and save it again...
+    df = gpd.read_file(dstPath)
+    df['tile_id'] = df['location'].str.extract(r'(H\d+_V\d+)')
+
+    # Separate H and V columns:
+    df[['H', 'V']] = df['location'].str.extract(r'H(\d+)_V(\d+)')
+    df['H'] = df['H'].astype(int)  # Convert to integers
+    df['V'] = df['V'].astype(int)
+
+    print(f"Finished adding convenience columns to tile index, saving to {dstPath}")
+    df.to_file(dstPath, driver='ESRI Shapefile')
 
 
   def get_tile_index_total_area(self, nickname=''):
