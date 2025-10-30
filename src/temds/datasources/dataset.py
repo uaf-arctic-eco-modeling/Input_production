@@ -510,6 +510,9 @@ class TEMDataset(object):
             ds_time_dim=MONTH_START_DAYS, 
             logger=logger
         )
+        logger.info(f"{func_name}: Initialization complete")
+        logger.info(f"{func_name}: {new.dataset.rio.transform()=}")
+        logger.info(f"{func_name}: {new.dataset.rio.transform().to_gdal()=}")
 
         x_dim = 'x'
         y_dim = 'y'
@@ -519,6 +522,7 @@ class TEMDataset(object):
 
 
         gt = new.transform.to_gdal()
+        logger.debug(f"{func_name}: {gt=}")
         minx, miny = gt[0], gt[3]
         maxx = minx + abs(gt[1]) * new.dataset[x_dim].size
         maxy = miny + abs(gt[5]) * new.dataset[y_dim].size
@@ -623,6 +627,8 @@ class TEMDataset(object):
             subset of data from extent (`minx`,`miny`)(`maxx`,`maxy`)
 
         """
+        funcname = 'TEMDataset.get_by_extent'
+        self.logger.debug(f'{funcname}: Starting with extent {minx},{miny},{maxx},{maxy}')
         if self._dataset is None:
             raise errors.UninitializedError(
                 "Cannot operate on Uninitialized TEMDataset"
@@ -653,7 +659,7 @@ class TEMDataset(object):
                 'class attribute `resolution` != None'
             ))
 
-        self.logger.debug(f'TEMDataset.get_by_extent kwargs: {kwargs}')
+        self.logger.debug(f'{funcname}: kwargs: {kwargs}')
 
         use = lookup('clip_with', 'gdal')
         if use == 'gdal':
@@ -668,8 +674,11 @@ class TEMDataset(object):
             self._dataset = file_location
             self.in_memory = False
         
-
+        self.logger.debug(f'{funcname}: ...cleaning up memory at the end of function')
         gc.collect()
+        # disabling here leads to ~.15GB memory increase per year.
+
+        self.logger.debug(f'{funcname}: ...calling malloc_trim(0) at the end of function (pass thru lambda if not supported)')
         malloc_trim(0)
 
         return TEMDataset(tile)
@@ -688,7 +697,9 @@ class TEMDataset(object):
             at `resolution`
 
         """
-        # print('clipping gdal loading dataset')
+        funcname = 'TEMDataset.get_by_extent_gdal'
+        self.logger.debug(f'{funcname}: Starting with extent {minx},{miny},{maxx},{maxy}')
+
         working_dataset = self.dataset
         
         resolution = kwargs['resolution']
@@ -740,11 +751,11 @@ class TEMDataset(object):
             source_dim_sizes.append(1)
 
     
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: source GeoTransform: {s_gt}')
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: destination dimensions (for each Variable): x={c_x}, y={c_y}, time={n_ts}')
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: destination GeoTransform: {c_gt}')
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: Resampling Algorithm: {resample_alg}')
+        self.logger.debug(f'{funcname}: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
+        self.logger.debug(f'{funcname}: source GeoTransform: {s_gt}')
+        self.logger.debug(f'{funcname}: destination dimensions (for each Variable): x={c_x}, y={c_y}, time={n_ts}')
+        self.logger.debug(f'{funcname}: destination GeoTransform: {c_gt}')
+        self.logger.debug(f'{funcname}: Resampling Algorithm: {resample_alg}')
 
 
         dest_crs = extent_crs.to_wkt()
@@ -766,6 +777,7 @@ class TEMDataset(object):
         ## opption 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
+        self.logger.debug(f"{funcname}: deleting vars_dict")
         del(vars_dict)
 
         # Option 1
@@ -807,6 +819,7 @@ class TEMDataset(object):
         #     data_arrays[var] = dest.ReadAsArray()
             
         ## we want these to be teh center of the pixels so for x and y the range
+        self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
         x_coords = np.arange(minx+resolution/2, minx + c_x * resolution, resolution) 
         y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
 
@@ -820,7 +833,8 @@ class TEMDataset(object):
         if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
             coords['time'] = deepcopy(working_dataset.time.values)
             dims.insert(0, 'time')
-        # return data_arrays
+
+        self.logger.debug(f"{funcname}: allocating Dataset")
         tile = xr.Dataset({
             var: xr.DataArray(
                 data, dims=dims, coords=coords
@@ -830,18 +844,22 @@ class TEMDataset(object):
         for var in self.vars:
             tile[var].attrs.update(working_dataset[var].attrs)
 
+        self.logger.debug(f"{funcname}: writing spatial metadata to Dataset")
         tile.rio.write_crs(
             dest_crs, 
             inplace=True
         )
+        self.logger.debug(f"{funcname}: writing coordinate system to Dataset in place")
         tile.rio.write_transform(Affine.from_gdal(*c_gt), inplace=True)
 
-        
-        
+        self.logger.debug(f"{funcname}: cleaning up gdal source and dest datasets")
         del(source)
         del(dest)
+        self.logger.debug(f"{funcname}: ...forcing garbage collection" )
         gc.collect()
+        self.logger.debug(f"{funcname}: ...trimming malloc'd memory (pass thru lambda on some systems...)" )
         malloc_trim(0)
+
         return tile
 
     def get_by_extent_xr(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
@@ -1062,13 +1080,16 @@ class TEMDataset(object):
 
         if 'spatial_ref' in in_dataset:
             if 'crs_wkt' in in_dataset['spatial_ref'].attrs:
-                self.logger.warn(f"Dataset is carrying CRS info: {in_dataset['spatial_ref'].attrs['crs_wkt']}. Ignoring crs passed in kwargs: ({kwargs_crs=})")
+                self.logger.warn(f"{func_name}: Dataset is carrying CRS info: {in_dataset['spatial_ref'].attrs['crs_wkt'][0:50]}...")
+                self.logger.warn(f"Ignoring crs passed in kwargs: ({kwargs_crs=})")
                 crs = in_dataset['spatial_ref'].attrs['crs_wkt']
             else:
-                self.logger.warn(f"Dataset has spatial_ref attribute, but does not have crs_wkt. Using crs passed in kwargs: ({kwargs_crs=})")
+                self.logger.warn(f"{func_name}: Dataset has spatial_ref attribute, but does not have crs_wkt.")
+                self.logger.warn(f"Using crs passed in kwargs: ({kwargs_crs=})")
                 crs = kwargs_crs
         else:
-            self.logger.warn(f"Dataset is missing CRS info. Using crs passed in kwargs: ({kwargs_crs=})")
+            self.logger.warn(f"{func_name}: Dataset is missing CRS info.")
+            self.logger.warn(f"Using crs passed in kwargs: ({kwargs_crs=})")
             crs = kwargs_crs
 
         ## BUGGY with dask multiprocess
@@ -1501,15 +1522,11 @@ class YearlyDataset(TEMDataset):
         unit = climate_variables.CLIMATE_VARIABLES['winddir'].std_unit.name
         v_name = climate_variables.CLIMATE_VARIABLES['winddir'].name
         new.dataset['winddir'].attrs.update(units=unit, name=v_name)
-
-        
         
 
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(crujra.NAME, 'dict_r')
         )
- 
-
         verified, reasons = new.verify()
         if not verified:
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
