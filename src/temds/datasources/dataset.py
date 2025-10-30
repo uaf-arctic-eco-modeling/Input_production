@@ -124,28 +124,33 @@ class TEMDataset(object):
     @property
     def transform(self):
         """Property for Quick access to geo transform"""
+        # print('transform')
         return self.dataset.rio.transform()
 
     @property
     def resolution(self):
         """Property for Quick access to resolution"""
+        # print('res')
         return self.dataset.rio.resolution()
     
     @property
     def extent(self):
         """Property for Quick access to resolution"""
+        # print('extent')
         return self.dataset.rio.bounds()
 
     @property
     def vars(self):
         """Property for quick access to variables in dataset
         """
+        # print('vars')
         return list(self.dataset.data_vars)
     
     @property
     def units(self):
         """Property for quick access to units for variables in dataset
         """
+        # print('units')
         return {var: Unit(self.dataset[var].units) for var in self.vars}
    
     @property
@@ -623,6 +628,11 @@ class TEMDataset(object):
                 "Cannot operate on Uninitialized TEMDataset"
         )
 
+        file_location = None
+        if isinstance(self._dataset, Path):
+            file_location = self._dataset
+            self._dataset = self.dataset
+            self.in_memory = True
 
         lookup = lambda key, default: kwargs[key] if key in kwargs else default
         update_kw = lambda key, default: kwargs.update({key: lookup(key, default)})
@@ -652,6 +662,13 @@ class TEMDataset(object):
             tile = self.get_by_extent_xr(minx, miny, maxx, maxy, extent_crs, **kwargs) 
         else:
             raise TypeError("get_by_extent: 'clip_with' must be 'gdal', or 'xarray'")
+        
+        if not file_location is None:
+            del(self._dataset)
+            self._dataset = file_location
+            self.in_memory = False
+        
+
         gc.collect()
         malloc_trim(0)
 
@@ -671,9 +688,9 @@ class TEMDataset(object):
             at `resolution`
 
         """
-        # print('gdal')
+        # print('clipping gdal loading dataset')
         working_dataset = self.dataset
-
+        
         resolution = kwargs['resolution']
         nd_as_array = kwargs['warp_no_data_as_array']
         gdal_type = kwargs['gdal_type']
@@ -818,6 +835,9 @@ class TEMDataset(object):
             inplace=True
         )
         tile.rio.write_transform(Affine.from_gdal(*c_gt), inplace=True)
+
+        
+        
         del(source)
         del(dest)
         gc.collect()
