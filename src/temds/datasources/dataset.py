@@ -1124,13 +1124,15 @@ class TEMDataset(object):
             in_dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
                  rio.write_coordinate_system(inplace=True) 
-        
+        self.logger.debug(f'{func_name}: ...collecting garbage at end of load...')
         gc.collect()
         malloc_trim(0)
         if self.in_memory :
+            self.logger.debug(f'{func_name}: loading data into memory...')
             self._dataset=in_dataset
             self.logger.debug(f'{func_name}: dataset initialized')
         else:
+            self.logger.debug(f'{func_name}: dataset not loaded into memory, returning lazy loaded dataset...')
             return in_dataset
     
     def verify(self):
