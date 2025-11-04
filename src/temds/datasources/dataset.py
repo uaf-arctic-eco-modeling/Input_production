@@ -20,6 +20,7 @@ from dapper.met import cmip_utils
 
 from . import errors
 from . import worldclim, crujra, cmip6, topo
+from . import soil_texture
 from temds import file_tools
 from temds import climate_variables 
 from temds.logger import Logger
@@ -296,6 +297,36 @@ class TEMDataset(object):
 
         return TEMDataset(dataset, logger=logger)
 
+    @staticmethod
+    def from_soil_texture(data_path, extent_raster=None, download=False,
+                          overwrite=False, logger=Logger(), buffer=0,
+                          resample_alg='average'):
+        func_name = "TEMdataset.from_soil_texture"
+        logger.info(f'{func_name}: Processing soil texture data in {data_path}')
+
+        if download:
+            logger.info(f'{func_name}: Downloading data.')
+            file_tools.download_all_files(soil_texture.urlsand, data_path, overwrite)
+            file_tools.download_all_files(soil_texture.urlsilt, data_path, overwrite)
+            file_tools.download_all_files(soil_texture.urlclay, data_path, overwrite)
+
+        # ???if not Path(data_path, soil_texture..
+
+        if not extent_raster:
+            raise ValueError(f'{func_name}: extent_raster is required!')
+
+        logger.info(f'{func_name}: Using extent from {extent_raster}')
+        er = gdal.Open(extent_raster)
+
+        # Get the extent from the extent raster
+        er_gt = er.GetGeoTransform()
+        er_minx = er_gt[0]
+        er_miny = er_gt[3]
+        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
+        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
+
+
+        from IPython import embed; embed()
     @staticmethod
     def from_topo(data_path, download=False, extent_raster=None,
                   overwrite=False, logger=Logger(), buffer=0, 
