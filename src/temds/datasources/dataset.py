@@ -8,6 +8,7 @@ Objects to manage data for TEMDS project
 from pathlib import Path
 from copy import deepcopy
 import gc
+import pathlib
 
 import xarray as xr
 import numpy as np
@@ -318,6 +319,19 @@ class TEMDataset(object):
         logger.info(f'{func_name}: Using extent from {extent_raster}')
         er = gdal.Open(extent_raster)
 
+        # Original method seemed to have some extra steps...
+        # also the original method didn't seem to process the sand file??
+        # starts at 1km in some strange projection
+        # crop to just high latitude
+        # average across depths
+        # reproject to 6931 and put at 4km rez
+        # resample to 50km rez
+        # resample to 4km rez
+        # run thru extra python script : 
+        #   where the fine rez file is -9999, 
+        #   take the coarse value, 
+        #   otherwise take the fine value.
+
         # Get the extent from the extent raster
         er_gt = er.GetGeoTransform()
         er_minx = er_gt[0]
@@ -325,8 +339,54 @@ class TEMDataset(object):
         er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
         er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
 
+        logger.info(f'{func_name}: Creating empty xarray dataset')
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
+                                              in_vars='pct_clay pct_sand pct_silt'.split(), 
+                                              ds_time_dim=[], buffer_px=0)
 
-        from IPython import embed; embed()
+        for X in ['clay','sand','silt']:
+            logger.info(f'{func_name}: Processing {X} data')
+
+            ds_15_30 = gdal.Open(pathlib.Path(data_path, f'{X}_15-30cm_mean_1000.tif'))
+            ds_30_60 = gdal.Open(pathlib.Path(data_path, f'{X}_30-60cm_mean_1000.tif'))
+            ds_60_100 = gdal.Open(pathlib.Path(data_path, f'{X}_60-100cm_mean_1000.tif'))
+
+            assert ds_15_30.GetSpatialRef().IsSame(ds_30_60.GetSpatialRef()), "CRS mismatch"
+            assert ds_15_30.GetSpatialRef().IsSame(ds_60_100.GetSpatialRef()), "CRS mismatch"
+
+            warpOpts = gdal.WarpOptions(
+                        format='MEM',
+                        srcSRS=ds_15_30.GetSpatialRef(), 
+                        dstSRS=er.GetSpatialRef(), 
+                        xRes=er.GetGeoTransform()[1], 
+                        yRes=er.GetGeoTransform()[5], 
+                        resampleAlg='average', 
+                        outputType=gdal.GDT_Float32, 
+                        outputBounds=[er_minx, er_miny, er_maxx, er_maxy])
+
+            # crop them all down to the AOI
+            dst_1530 = gdal.Warp("", ds_15_30, options=warpOpts)
+            dst_3060 = gdal.Warp("", ds_30_60, options=warpOpts)
+            dst_60100 = gdal.Warp("", ds_60_100, options=warpOpts)
+
+            # Find the average over the 3 depth ranges
+            avg = (dst_1530.ReadAsArray() * 15 + dst_3060.ReadAsArray() * 30 + dst_60100.ReadAsArray() * 40) / (150 + 300 + 400)
+
+
+            logger.info(f'{func_name}: Assigning data to the new dataset')
+            newDS.dataset[f'pct_{X}'] = (['y','x'], avg)
+
+
+        newDS.dataset['pct_clay'].attrs.update(units='percent')
+        newDS.dataset['pct_sand'].attrs.update(units='percent')
+        newDS.dataset['pct_silt'].attrs.update(units='percent')
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+        return newDS
+
+
     @staticmethod
     def from_topo(data_path, download=False, extent_raster=None,
                   overwrite=False, logger=Logger(), buffer=0, 

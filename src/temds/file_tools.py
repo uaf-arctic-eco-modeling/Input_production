@@ -34,6 +34,8 @@ def download_all_files(url: str, output_dir: Path):
     # Note that this doesn't handle the checksum verification. Each page
     # comes with a checksum.sha266.txt file that could be used. The name of the 
     # file is the same for sand/silt/clay, so it is overwritten or ignored.
+    # Also could cut down on the downloads by only getting the 3 files needed 
+    # (15-30, 30-60, 60-100cm)
     print(f'{file_links=}')
     for filename in file_links:
         if filename not in ['..', '../']:
