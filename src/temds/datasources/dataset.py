@@ -386,6 +386,53 @@ class TEMDataset(object):
 
         return newDS
 
+    @staticmethod
+    def from_fri(synthetic=True, extent_raster_path=None, logger=Logger()):
+        func_name = "TEMdataset.from_fri"
+        logger.info(f'{func_name}: Processing fire return interval data')   
+
+        if extent_raster_path is None:
+            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        
+        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
+        extent_raster = gdal.Open(extent_raster_path)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset...')
+        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+                                      in_vars=['fri','fri_severity','fri_jday_of_burn','fri_area_of_burn',],
+                                      ds_time_dim=[], buffer_px=0)
+
+        if synthetic:
+            logger.info(f'{func_name}: Generating synthetic data arrays...')
+            fri = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*2000
+            fri_severity = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*2
+            fri_jday_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))+160
+            fri_area_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*1
+        else:
+            raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
+
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['fri'] = (['y','x'], fri)
+        newDS.dataset['fri_severity'] = (['y','x'], fri_severity)
+        newDS.dataset['fri_jday_of_burn'] = (['y','x'], fri_jday_of_burn)
+        newDS.dataset['fri_area_of_burn'] = (['y','x'], fri_area_of_burn)
+
+        logger.info(f'{func_name}: Setting attributes for data variables')
+        newDS.dataset['fri'].attrs.update(units='', name='Fire Return Interval')
+        newDS.dataset['fri_severity'].attrs.update(units='', name='Fire Severity')
+        newDS.dataset['fri_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
+        newDS.dataset['fri_area_of_burn'].attrs.update(units='', name='Area of Burn (km2)')
+
+        logger.info(f'{func_name}: Setting spatial properties for dataset from {extent_raster_path}')
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(extent_raster.GetProjection(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+
+        return newDS
+    
+
 
     @staticmethod
     def from_topo(data_path, download=False, extent_raster=None,
