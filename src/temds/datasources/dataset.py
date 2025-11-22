@@ -1449,7 +1449,7 @@ class YearlyDataset(TEMDataset):
                 
 
     @staticmethod
-    def from_TEMDataset(inds, year):
+    def from_TEMDataset(inds, year, logger=Logger()):
         """converts an existing TEMDataset to YearlyDataset
 
         Parameters
@@ -1625,6 +1625,51 @@ class YearlyDataset(TEMDataset):
         return new
 
         
+    @staticmethod
+    def from_explicit_fire(year, data_path=None, synthetic=True, 
+                           extent_raster_path=None, 
+                           logger=Logger()):
+        func_name = "TEMdataset.from_explicit_fire"
+        logger.info(f'{func_name}: Processing explicit fire data')   
+
+        if extent_raster_path is None:
+            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        
+        if data_path is not None:
+            raise NotImplementedError(f'{func_name}: data_path not yet implemented!')
+        if not synthetic:
+            raise NotImplementedError(f'{func_name}: non-synthetic data not yet implemented!')
+
+        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
+        extent_raster = gdal.Open(extent_raster_path)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset...')
+        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+                                      in_vars='exp_burn_mask exp_jday_of_burn exp_severity exp_area_of_burn'.split(' '),
+                                      ds_time_dim=['time'], buffer_px=0)
+
+        new = YearlyDataset.from_TEMDataset(newDS, year)
+
+        from IPython import embed; embed()
+
+        # ### Monthly information
+        # month = list(range(1, 13, 1))
+        # monthlength=[31,28,31,30,31,30,31,31,30,31,30,31]
+        # first_day_of_month_noleap=[1,32,60,91,121,152,182,213,244,274,305,335]
+        # first_day_of_month_leap=[1,33,61,92,122,153,183,214,245,275,306,336]
+        # #data = {'month': month, 'doy_noleap': first_day_of_month_noleap, 'doy_leap': first_day_of_month_leap, 'length': monthlength}
+        # data = {'month': month, 'doy_noleap': first_day_of_month_noleap, 'length': monthlength}
+        # month_info = pd.DataFrame(data)
+
+
+        # if synthetic:
+        #     logger.info(f'{func_name}: Generating synthetic data arrays...')
+        #     fire_occurrence = np.zeros(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))
+        #     fire_severity = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*2
+        #     fire_jday_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))+160
+        #     fire_area_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*1
+        # else:
+        #     raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
 
 
 
