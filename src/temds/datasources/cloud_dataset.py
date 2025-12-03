@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 from . import era5
+from . import errors
 
 from temds.constants import SECONDS_PER_DAY, ZERO_C_IN_K
 
@@ -142,7 +143,7 @@ class CloudDataset(object):
                 dataset = xr.Dataset(
                     data_vars = { var : xr.DataArray(deepcopy(temp.values), dims=['time','y','x'])},
                     coords = {
-                        'time': [datetime(2000,1,1) + timedelta(d) for d in range(temp.band.size)], 
+                        'time': [datetime(self.year,1,1) + timedelta(d) for d in range(temp.band.size)], 
                         'x':deepcopy(temp.x.values), 
                         'y':deepcopy(temp.y.values)
                     }
@@ -253,10 +254,11 @@ class CloudDataset(object):
             crs=extent_crs
         ).to_crs(4326).bounds
         print(bounds)
+        # return
 
         where = kwargs['download_location'] if 'download_location' in kwargs else "temp-gdrive-downloads"
         gdrive_location = kwargs['gdrive_location'] if 'gdrive_location' in kwargs else "ee-exports-temds"
-        name = kwargs['name']
+        name = kwargs['task_name']
         cached_id = kwargs['gcloud_cached_id'] if 'cached_id' in kwargs else None
         local_cache = kwargs['local_cache'] if 'local_cache' in kwargs else False
         where = Path(where)
@@ -279,3 +281,17 @@ class CloudDataset(object):
             dataset = YearlyDataset.from_TEMDataset(dataset, self.year)
 
         return dataset 
+    
+    def __repr__(self):
+        """string represnetation
+        """
+        return(f"{type(self).__module__}.{type(self).__name__}: {self.year}")
+
+    def __lt__(self, other):
+        """less than for sort
+        """
+        if self.year is None or other.year is None:
+            raise errors.YearUnknownError(
+                "An item in comparison is missing 'year' attribute"
+            )
+        return self.year < other.year
