@@ -88,7 +88,7 @@ class CloudDataset(object):
         return new
 
 
-    def download(self, where, bounds, credentials, filter_func=lambda x: x, name='temp-data', gdrive_location='colud_dataset_temp', gdrive_cached_id=None, local_cache=False):
+    def download(self, where, bounds, credentials, filter_func=lambda x: x, name='temp-data', gdrive_location='colud_dataset_temp', gdrive_cached_id=None, local_cache=False, clean_up_gdrive=True):
         """
         """
         minx, maxx, miny, maxy = bounds[['minx','maxx','miny','maxy']].iloc[0]
@@ -127,6 +127,9 @@ class CloudDataset(object):
                 gcloud_tools.download_file(
                     credentials, file['id'], Path(where).joinpath(file['name'])
                 )
+                if clean_up_gdrive:
+                    gcloud_tools.trash_file(credentials, file['id'])
+
 
         dataset = None
         for var in self.bands:
