@@ -1,3 +1,9 @@
+"""
+Cloud Dataset
+-------------
+
+Earth Engine cloud based dataset object
+"""
 from .dataset import TEMDataset, YearlyDataset
 from temds.logger import Logger
 from temds import gcloud_tools
@@ -23,7 +29,22 @@ from . import errors
 from temds.constants import SECONDS_PER_DAY, ZERO_C_IN_K
 
 class CloudDataset(object):
-
+    """
+    Attributes
+    ----------
+    dataset: ee.ImageCollection
+        EE image collection for dataset
+    bands: list or str
+        bands in dataset
+    vars: list or str 
+        alias of bands
+    logger: Logger
+        Logger to use for printing or saving messages
+    year: int or None
+        int if year is associated with data
+        None Otherwise
+    _cached_load_kwarg: dict
+    """
     def __init__(self, dataset, bands, logger=Logger(), **kwargs):
         """
         Parameters
@@ -50,7 +71,26 @@ class CloudDataset(object):
 
     @staticmethod
     def from_era5_hourly(year, ic=era5.IMAGE_COLLECTION_HOURLY, bands=era5.BANDS, logger=Logger()):
-        """
+        """Create CloudDataset with daily data for a given year from ear5 
+        Hourly data
+
+        Parameters
+        ----------
+        year: int
+            year of data
+        ic: str
+            use "ECMWF/ERA5/HOURLY", others not tested, but may work
+        bands: list
+            list of bands in `ic`
+        logger: logger.Logger, defaults to new object
+            Logger to use for printing or saving messages
+            The default Logger will not print any messages, but a 
+            text file may be created from it by calling `logger.save`
+
+        Returns
+        -------
+        CloudDataset:
+            with `dataset` initialized to supply daily data for `ic`
         """
     
         new = CloudDataset(ic, ['tair_avg', 'prec', 'nirr', 'vapo'], year=year)
@@ -88,8 +128,39 @@ class CloudDataset(object):
         return new
 
 
-    def download(self, where, bounds, credentials, filter_func=lambda x: x, name='temp-data', gdrive_location='colud_dataset_temp', gdrive_cached_id=None, local_cache=False, clean_up_gdrive=True):
-        """
+    def download(self, where, bounds, credentials, filter_func=lambda x: x, name='temp-data', gdrive_location='colud_dataset_temp', gdrive_cached_id=None, local_cache=False, clean_up_gdrive=False):
+        """Download for provided bounds data to TEMDataset
+
+        Parameters
+        ----------
+        where: path
+            path to download temp data to
+        bounds: GeoDataFrame
+            Bounds from first row are used
+        credentials: Credentials
+            Google cloud credentials
+        filter_func: Lambda Function, Optional
+            function to filter ee.ImageCollection objects
+            Default function is a passthrough function
+        name: str, Optional
+            Name to use for files
+        gdrive_location: str
+            name of folder to use on gdrive
+        gdrive_cached_id: str, or None, Defaults None
+            id of folder on drive with pre-calculated data
+            if provided data is downloaded from drive folder
+        local_cache: bool, default False
+            When True, skip EE and Drive protions of code and use 
+            data in `where`
+        clean_up_gdrive: bool, Default False
+            Option to clean up files in gdrive after download by
+            moving them to gdrive trash
+
+        Returns
+        -------
+        xr.dataset
+
+
         """
         minx, maxx, miny, maxy = bounds[['minx','maxx','miny','maxy']].iloc[0]
         gee_aoi = ee.Geometry.BBox(minx, miny, maxx, maxy)
@@ -163,6 +234,28 @@ class CloudDataset(object):
     
     
     def export_image_collection(self, name, gdrive_location, gee_aoi, filter_func=lambda x: x ):
+        """
+        export from ee if `dataset` is ee.ImageCollection
+        
+        Parameters
+        ----------
+            name: str
+                name for files
+            gdrive_location: str
+                folder on Google Drive
+            gee_aoi: ee.Geometry.BBox
+                AOI formatted for EE
+            filter_func: Lambda Function, Optional
+                function to filter ee.ImageCollection objects
+                Default is passthrough function
+
+        Returns
+        -------
+        tasks: list
+            list of ee tasks
+        files: list
+            names of files generated
+        """
         tasks = []
         files = []
         task_time = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -186,6 +279,28 @@ class CloudDataset(object):
         return tasks, files
 
     def export_dict(self, name, gdrive_location, gee_aoi, filter_func=lambda x: x ):
+        """
+        export from ee if `dataset` is  Dict of ee.ImageCollections with datetime keys
+        
+        Parameters
+        ----------
+            name: str
+                name for files
+            gdrive_location: str
+                folder on Google Drive
+            gee_aoi: ee.Geometry.BBox
+                AOI formatted for EE
+            filter_func: Lambda Function, Optional
+                function to filter ee.ImageCollection objects
+                Default is passthrough function
+
+        Returns
+        -------
+        tasks: list
+            list of ee tasks
+        files: list
+            names of files generated
+        """
         tasks = []
         files = []
         task_time = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -228,26 +343,24 @@ class CloudDataset(object):
         extent_crs: crs.CRS
             crs of extent values
         **kwargs:
-            'clip_with: str, defaults Gdal,
-                flag to choose which clipping function to use
-                'xarray' or 'gdal'
-            'resolution': defaults, `resolution`
-                resolution to use instead of `resolution`
-            'resample_alg': defaults bilinear
-                the resampling algorithm used by gdal
-            'warp_no_data_as_array': bool, defaults False
-                If true, the no data values are set 
-                as an array, length of the number of bands, in gdal.Warp
-            'gdal_type', int defaults gdal.GDT_Float32 
-                gdal datatype
-            'prime_warp': bool, defaults True
-                When True primes gdal warp
-        
+            'credentials': Credentials, required
+                Google cloud Credentials 
+            'task_name': str, required
+                task name for ee task
+            'download_location': Path, Defaults "ee-exports-temds"
+            'gdrive_location': str, defaults "ee-exports-temds"
+                To avoid Errors make sure this directory exists in gdrive before 
+                running function
+            'gcloud_cached_id': str, Optional
+                id of cached directory in gdrive
+            'local_cache': Path, Optional
+                local cache of downloaded data        
 
         Returns
         -------
-        TEMDataset
+        TEMDataset or YearlyDataset
             subset of data from extent (`minx`,`miny`)(`maxx`,`maxy`)
+            YearlyDataset is returned when `year` is not None
 
         """
         creds = kwargs['credentials']
