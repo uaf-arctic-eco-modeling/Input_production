@@ -13,6 +13,7 @@ datasource objects and then calls this methods to populate/run the tile object
 from pathlib import Path
 import shutil
 
+
 import xarray as xr
 import pandas as pd
 import yaml
@@ -29,6 +30,7 @@ from .logger import Logger
 from .datasources import dataset, timeseries
 
 from joblib import Parallel, delayed
+from cmethods import adjust
 
 
 
@@ -304,6 +306,10 @@ class Tile(object):
             elif isinstance(ds, dataset.TEMDataset): 
                 out_file = Path(where).joinpath(f'H{H:02d}_V{V:02d}', f'{name}.nc') 
                 out_file.parent.mkdir(exist_ok=True, parents=True)
+                if 'time' in ds.dataset.dims:
+                    kwargs['unlimited_dims'] = ['time']
+                else:   
+                    kwargs['unlimited_dims'] = None
                 ds.save(out_file, **kwargs)
                 manifest['data'][name] = str( f'{name}.nc')
             else:
@@ -470,7 +476,6 @@ class Tile(object):
 
         return dataset.YearlyDataset(year, downscaled)
 
-
     def downscale_timeseries(self, downscaled_id, source_id, correction_id, variables, parallel=False):
         """
         Add downscaled to self.data dict as xarray dataset. 
@@ -488,6 +493,31 @@ class Tile(object):
                 results.append(data)
         
         self.data[downscaled_id] = timeseries.YearlyTimeSeries(results)
+
+    def general_downscale(self, method, variables, hist_period, proj_period, obs_key, sim_key, kind='+', **kwargs ):
+
+        print('building obsh')
+        obsh = self.data[obs_key].convert_range_to_single_dataset(variables, hist_period[0], hist_period[1])
+        print('building simh')
+        simh = self.data[sim_key].convert_range_to_single_dataset(variables, hist_period[0], hist_period[1])
+        print('building simp')
+        simp = self.data[sim_key].convert_range_to_single_dataset(variables, proj_period[0], proj_period[1])
+        results = []
+        
+        for var in variables:
+            print('downscaling', var)
+            temp = adjust(
+                method=method,
+                obs=obsh[var],
+                simh=simh[var],
+                simp=simp[var],
+                kind="+",
+                **kwargs
+            )[var].transpose('time', 'y','x')
+            results.append(temp)
+        return xr.merge(results)
+
+
 
     def to_TEM(self, downscaled_id):
         '''
