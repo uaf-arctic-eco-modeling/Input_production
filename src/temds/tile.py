@@ -28,6 +28,7 @@ from . import climate_variables
 
 from .logger import Logger
 from .datasources import dataset, timeseries
+from .datasources.cloud_dataset import CloudDataset
 
 from joblib import Parallel, delayed
 from cmethods import adjust
@@ -217,6 +218,19 @@ class Tile(object):
         self.logger.info(
             f'importing {name} from {datasource} for the extent: {extent}'
         )
+
+
+        if isinstance( datasource, CloudDataset) or \
+                (isinstance(datasource, timeseries.YearlyTimeSeries) and \
+                 isinstance( datasource.data[0], CloudDataset)
+            ):
+            self.logger.debug(
+                f'Setting crs and resolution in kwargs for CloudDataset types'
+            )
+
+            kwargs['resolution'] = self.resolution
+            kwargs['crs'] = self.crs
+
         self.data[name] = datasource.get_by_extent(
             minx, miny, maxx, maxy, self.crs, **kwargs
         )
@@ -247,6 +261,7 @@ class Tile(object):
             update_manifest: bool, default False
             clear_existing: bool, default False
         """
+        crs = None
         if isinstance(self.crs, str):
             crs = pyproj.crs.CRS.from_wkt(self.crs)
         elif isinstance(self.crs, pyproj.crs.crs.CRS):

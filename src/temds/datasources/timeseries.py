@@ -140,7 +140,7 @@ class YearlyTimeSeries(UserList):
                         raise errors.ContinuityError(f'{type(self).__name__}: expected {yr} but found {d_yr} off by {d_yr - yr}')
                     # break
         msg = 'Data is continuous'
-        if continuous:
+        if not continuous:
             msg = 'Data not is continuous'
         self.logger.info(msg)
 
