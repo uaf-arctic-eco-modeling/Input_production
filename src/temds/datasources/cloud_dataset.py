@@ -10,6 +10,8 @@ from temds import gcloud_tools
 import numpy as np
 import time
 from pathlib import Path
+from threading import Thread
+
 
 import xarray as xr
 import rioxarray
@@ -20,6 +22,7 @@ from glob import glob
 import shapely
 import geopandas as gpd
 from affine import Affine
+from pyproj import CRS
 
 import ee
 from datetime import datetime, timedelta
@@ -130,7 +133,7 @@ class CloudDataset(object):
         return new
 
 
-    def download(self, where, bounds, credentials, filter_func=lambda x: x, name='temp-data', gdrive_location='colud_dataset_temp', gdrive_cached_id=None, local_cache=False, clean_up_gdrive=False):
+    def download(self, where, bounds, credentials, **kwargs):
         """Download for provided bounds data to TEMDataset
 
         Parameters
@@ -141,11 +144,12 @@ class CloudDataset(object):
             Bounds from first row are used
         credentials: Credentials
             Google cloud credentials
+        name: str, Optional
+            Name to use for files
         filter_func: Lambda Function, Optional
             function to filter ee.ImageCollection objects
             Default function is a passthrough function
-        name: str, Optional
-            Name to use for files
+        
         gdrive_location: str
             name of folder to use on gdrive
         gdrive_cached_id: str, or None, Defaults None
@@ -161,60 +165,120 @@ class CloudDataset(object):
         Returns
         -------
         xr.dataset
-
-
         """
+        parameters = {
+            'filter_func': lambda x: x, 
+            'name': 'CloudDataset-temp', 
+            'gdrive_location': 'CloudDataset-temp', 
+            'gdrive_cached_id': None, 
+            'local_cache': False, 
+            'clean_up_gdrive': False,
+            'crs': CRS('EPSG:4326'),
+            'resolution': None, #.5degree for wgs84
+        }
+        parameters.update(kwargs)
+        parameters['crs'] = CRS(parameters['crs'])
+        # print(parameters)
+
+        name = parameters['name']
+
         minx, maxx, miny, maxy = bounds[['minx','maxx','miny','maxy']].iloc[0]
-        # gee_aoi = ee.Geometry.BBox(minx, miny, maxx, maxy)
         geojson_object = {
             "type": "Polygon", 
             "coordinates": [
                 list(shapely.box(minx,miny, maxx,maxy).exterior.coords)
             ],
-                # "crs": 'EPSG:6931'
-            
-
         }
-        gee_aoi=ee.Geometry(geojson_object, ee.Projection('EPSG:6931'), True, False)
-        # transform = [minx, 0, 4000, miny, 4000, 0]
-        transform = None
-        print(minx,  miny, maxx, maxy)
+        resolution = parameters['resolution']
+        crs = parameters['crs']
+        ## if not provided assume wgs84 which is ee defaut
+        if parameters['crs'] == CRS('EPSG:4326'):
+            gee_aoi=ee.Geometry(geojson_object)
+            if resolution  is None:
+                resolution = .5
+        else:
+            # crs = parameters['crs'].to_espg()
+            gee_aoi=ee.Geometry(geojson_object, ee.Projection(f'EPSG:{crs.to_epsg()}'), False, True)
+            if resolution  is None:
+                resolution = 4000
+
+
+        transform = [resolution, 0, minx, 0,  -resolution, maxy]
+        # print(transform)
+
         len_files = 50
         # return
+        gdrive_location = parameters['gdrive_location']
+        filter_func = parameters['filter_func']
+        gdrive_cached_id = parameters['gdrive_cached_id']
+        local_cache = parameters['local_cache']
+        clean_up_gdrive = parameters['clean_up_gdrive']
+        
+        threads = []
         if gdrive_cached_id is None and local_cache == False:
-            if isinstance(self.dataset, ee.ImageCollection):
-                tasks, files = self.export_image_collection(name, gdrive_location, gee_aoi, transform, filter_func)
-            else:
-                tasks, files = self.export_dict(
-                    name, gdrive_location, gee_aoi, transform, filter_func
-                )
-            len_files = len(files)
-            while np.array([task.status()['state'] != 'COMPLETED' for task in tasks]).any():
+            print('CloudDataset: Submitting task to GEE')
+            tasks, files = self.export_gee(
+                name, gdrive_location, gee_aoi, crs, transform, filter_func
+            )
+            downloaded = [False for i in tasks]
+            tasks_statuses = [task.status()['state'] != 'COMPLETED' for task in tasks]
+            print('CloudDataset: Waiting for GEE to complete')
+            while np.array(tasks_statuses).any() or (~np.array(downloaded)).any():
                 if np.array([task.status()['state'] == 'FAILED' for task in tasks]).any():
                     raise ValueError('Check the cloud console for errors')
                 status = [task.status()['state'] == 'COMPLETED' for task in tasks]
                 n_tasks = len(status)
                 n_complete = status.count(True)    
-                print(f'waiting: {n_complete} of {n_tasks}')
-                # print(status)
-                time.sleep(100)
+                print(f'CloudDataset: waiting - {n_complete} of {n_tasks}')
+                for tn in range(n_tasks):
+                    ct = tasks[tn].status()
+                    if ct['state'] == 'COMPLETED' and not downloaded[tn]:
+                        print(f'CloudDataset: downloading item:{tn+1}')
+                        parent_id = Path(ct['destination_uris'][0]).name
+                        f_name = ct['description'] + '.tif'
+                        results = gcloud_tools.search(credentials, f"'{parent_id}' in parents and name = '{f_name}'")['files']
+                        results = [r for r in results if not r['trashed']]
+                        if len(results) > 1:
+                            self.logger.warn(f'Multiple files named {f_name}, using first, could produce incorrect results')
+                        gc_id = results[0]['id']
 
-
+                        t = Thread(
+                            target=gcloud_tools.download_file, 
+                            args=[credentials, gc_id, Path(where).joinpath(f_name)]
+                        )
+                        t.start()
+                        threads.append(t)
+                        downloaded[tn] = True
+                        if clean_up_gdrive:
+                            gcloud_tools.trash_file(credentials, gc_id)
+            
+                if (n_tasks - n_complete) > 5:
+                    time.sleep(60)
+                else:
+                    time.sleep(10)
+                tasks_statuses = [task.status()['state'] != 'COMPLETED' for task in tasks]
             parent_id = Path(tasks[0].status()['destination_uris'][0]).name
-        else: 
+        elif local_cache == False: 
+            ## NOT TESTED
             parent_id = gdrive_cached_id
-        
-        if local_cache == False:
             gdrive_files = gcloud_tools.list_files(credentials, parent_id, len_files*2)
             for file in gdrive_files:
                 if not name in file['name']:
                     continue
-                gcloud_tools.download_file(
-                    credentials, file['id'], Path(where).joinpath(file['name'])
+                t = Thread(
+                    target=gcloud_tools.download_file, 
+                    args=[credentials, file['id'], Path(where).joinpath(file['name'])]
                 )
+                t.start()
+                threads.append(t)
+                # gcloud_tools.download_file(
+                #     credentials, file['id'], Path(where).joinpath(file['name'])
+                # )
                 if clean_up_gdrive:
                     gcloud_tools.trash_file(credentials, file['id'])
 
+        ## wait for downloads to complete
+        [t.join() for t in threads]
 
         dataset = None
         for var in self.bands:
@@ -243,47 +307,32 @@ class CloudDataset(object):
         dataset = dataset.rio.write_crs(temp.rio.crs,inplace=True)\
                     .rio.set_spatial_dims(x_dim='x', y_dim='y', inplace=True)\
                     .rio.write_coordinate_system(inplace=True)\
-                    .rio.write_transform(temp.rio.transform(), inplace=True)
-        # transform = dataset.rio.transform()
-        # s_minx,s_miny,s_maxx,s_maxy =dataset.rio.bounds()
-        # print(s_minx,s_miny,s_maxx,s_maxy)
-        # # if s_maxx < s_minx: s_minx, s_maxx = s_maxx, s_minx
-        # # if s_maxy < s_miny: s_miny, s_maxy = s_maxy, s_miny
-        # # print(s_minx,s_miny,s_maxx,s_maxy)
-
-        # transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
-        # dataset = dataset.reindex(y=dataset.y[::-1])
-        # print(transform)
-        # dataset = dataset.rio.write_transform(transform, inplace=True)
-
-        # trickery to ensure all data uses our standard min coords
-
-        # x_dim = 'x'
-        # y_dim = 'y'
-
-        # s_minx, s_miny, s_maxx, s_maxy = dataset.rio.bounds()
-        # transform = dataset.rio.transform()
-        # if transform.c > s_minx:
-        #     transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
-        #     if x_dim == 'x':
-        #         dataset = dataset.reindex(x=dataset.x[::-1])
-        #     else:
-        #         dataset = dataset.reindex(lon=dataset.lon[::-1])
-        #     dataset = dataset.rio.write_transform(transform, inplace=True)
-                
-        # if transform.f > s_miny:
-        #     transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
-        #     if y_dim == 'y':
-        #         dataset = dataset.reindex(y=dataset.y[::-1])
-        #     else:
-        #         dataset = dataset.reindex(lat=dataset.lat[::-1])
-        #     dataset = dataset.rio.write_transform(transform, inplace=True)
-            
-        
+                    .rio.write_transform(temp.rio.transform(), inplace=True)    
         return dataset
     
-    
-    def export_image_collection(self, name, gdrive_location, gee_aoi, transform, filter_func=lambda x: x ):
+    def export_gee(self, name, gdrive_location, gee_aoi, 
+                   crs, transform, filter_func=lambda x: x
+                   ):
+        if isinstance(self.dataset, ee.ImageCollection):
+            tasks, files = CloudDataset.export_image_collection(
+                self.dataset, self.bands, 
+                name, gdrive_location, gee_aoi, crs, transform, filter_func
+            )
+        else:
+            tasks, files = [], []
+            for month, ic in self.dataset.items():
+                loop_name = f'{name}-{month.strftime("%Y-%m")}'
+                t_temp, f_temp = CloudDataset.export_image_collection(
+                    ic, self.bands, 
+                    loop_name, gdrive_location, gee_aoi, crs, transform, filter_func
+                )
+                tasks += t_temp
+                files += f_temp
+        return tasks, files
+
+
+    @staticmethod
+    def export_image_collection(ic, gee_bands, name, gdrive_location, gee_aoi, crs, transform, filter_func=lambda x: x ):
         """
         export from ee if `dataset` is ee.ImageCollection
         
@@ -309,8 +358,8 @@ class CloudDataset(object):
         tasks = []
         files = []
         task_time = datetime.now().strftime("%Y%m%dT%H%M%S")
-        for band in self.bands:
-            daily = filter_func(self.dataset).select(band)
+        for band in gee_bands:
+            daily = filter_func(ic).select(band)
             merged = daily.toBands()
             merged.bandNames().size().getInfo()
             file_name = f'{task_time}-{name}-{band}'
@@ -319,62 +368,62 @@ class CloudDataset(object):
                 description=file_name,
                 folder= gdrive_location,
                 region=gee_aoi,
-                scale=4000,
-                # crsTransform=transform,#[30, 0, -2493045, 0, -30, 3310005],
-                crs='EPSG:6931'
+                # scale=4000,
+                crsTransform=transform,#[30, 0, -2493045, 0, -30, 3310005],
+                crs=f'EPSG:{crs.to_epsg()}',
             )
             task.start()
             tasks.append(task)
             files.append(f'{file_name}.tif')
         return tasks, files
 
-    def export_dict(self, name, gdrive_location, gee_aoi, transform, filter_func=lambda x: x ):
-        """
-        export from ee if `dataset` is  Dict of ee.ImageCollections with datetime keys
+    # def export_dict(self, name, gdrive_location, gee_aoi, transform, filter_func=lambda x: x ):
+    #     """
+    #     export from ee if `dataset` is  Dict of ee.ImageCollections with datetime keys
         
-        Parameters
-        ----------
-            name: str
-                name for files
-            gdrive_location: str
-                folder on Google Drive
-            gee_aoi: ee.Geometry.BBox
-                AOI formatted for EE
-            filter_func: Lambda Function, Optional
-                function to filter ee.ImageCollection objects
-                Default is passthrough function
+    #     Parameters
+    #     ----------
+    #         name: str
+    #             name for files
+    #         gdrive_location: str
+    #             folder on Google Drive
+    #         gee_aoi: ee.Geometry.BBox
+    #             AOI formatted for EE
+    #         filter_func: Lambda Function, Optional
+    #             function to filter ee.ImageCollection objects
+    #             Default is passthrough function
 
-        Returns
-        -------
-        tasks: list
-            list of ee tasks
-        files: list
-            names of files generated
-        """
-        tasks = []
-        files = []
-        task_time = datetime.now().strftime("%Y%m%dT%H%M%S")
-        for month, ic in self.dataset.items():
-            for band in self.bands:
-                # print(month, band)
-                daily = filter_func(ic).select(band)
-                merged = daily.toBands()
+    #     Returns
+    #     -------
+    #     tasks: list
+    #         list of ee tasks
+    #     files: list
+    #         names of files generated
+    #     """
+    #     tasks = []
+    #     files = []
+    #     task_time = datetime.now().strftime("%Y%m%dT%H%M%S")
+    #     for month, ic in self.dataset.items():
+    #         for band in self.bands:
+    #             # print(month, band)
+    #             daily = filter_func(ic).select(band)
+    #             merged = daily.toBands()
 
-                file_name = f'{task_time}-{name}-{month.strftime("%Y-%m")}-{band}'
-                task = ee.batch.Export.image.toDrive(
-                    image=merged,
-                    description=file_name,
-                    folder= gdrive_location,
-                    region=gee_aoi,
-                    scale=4000,
-                    # crsTransform=transform,#[30, 0, -2493045, 0, -30, 3310005],
-                    crs='EPSG:6931'
-                )
-                task.start()
-                tasks.append(task)
-                files.append(f'{file_name}.tif')
+    #             file_name = f'{task_time}-{name}-{month.strftime("%Y-%m")}-{band}'
+    #             task = ee.batch.Export.image.toDrive(
+    #                 image=merged,
+    #                 description=file_name,
+    #                 folder= gdrive_location,
+    #                 region=gee_aoi,
+    #                 # scale=4000,
+    #                 crsTransform=transform,#[30, 0, -2493045, 0, -30, 3310005],
+    #                 crs='EPSG:6931'
+    #             )
+    #             task.start()
+    #             tasks.append(task)
+    #             files.append(f'{file_name}.tif')
 
-        return tasks, files
+    #     return tasks, files
     
     
     def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
@@ -414,6 +463,7 @@ class CloudDataset(object):
 
         """
         creds = kwargs['credentials']
+        del(kwargs['credentials'])
         bounds = gpd.GeoDataFrame(
             {'geometry': shapely.box(minx, miny,  maxx, maxy)}, 
             index=['aoi'],
@@ -423,22 +473,25 @@ class CloudDataset(object):
         # return
         
         where = kwargs['download_location'] if 'download_location' in kwargs else "temp-gdrive-downloads"
-        gdrive_location = kwargs['gdrive_location'] if 'gdrive_location' in kwargs else "ee-exports-temds"
-        name = kwargs['task_name']
-        cached_id = kwargs['gcloud_cached_id'] if 'cached_id' in kwargs else None
-        local_cache = kwargs['local_cache'] if 'local_cache' in kwargs else False
         where = Path(where)
         where.mkdir(exist_ok=True, parents=True)
+
+        if 'task_name' in kwargs:
+            kwargs['name'] = kwargs['task_name']
+
 
         tile = self.download(
             where, 
             bounds, 
             creds, 
-            # filter_date, 
-            name=name,
-            gdrive_location = gdrive_location,
-            gdrive_cached_id = cached_id,
-            local_cache=local_cache
+            **kwargs
+
+
+            # name=name,
+            # gdrive_location = gdrive_location,
+            # gdrive_cached_id = cached_id,
+            # local_cache=local_cache,
+            
         )
         # return tile
         dataset = TEMDataset(tile)
