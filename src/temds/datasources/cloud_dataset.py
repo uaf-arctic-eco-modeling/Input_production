@@ -16,8 +16,10 @@ import rioxarray
 from copy import deepcopy
 from glob import glob
 
+
 import shapely
 import geopandas as gpd
+from affine import Affine
 
 import ee
 from datetime import datetime, timedelta
@@ -163,16 +165,28 @@ class CloudDataset(object):
 
         """
         minx, maxx, miny, maxy = bounds[['minx','maxx','miny','maxy']].iloc[0]
-        gee_aoi = ee.Geometry.BBox(minx, miny, maxx, maxy)
-        print(minx, maxx, miny, maxy)
+        # gee_aoi = ee.Geometry.BBox(minx, miny, maxx, maxy)
+        geojson_object = {
+            "type": "Polygon", 
+            "coordinates": [
+                list(shapely.box(minx,miny, maxx,maxy).exterior.coords)
+            ],
+                # "crs": 'EPSG:6931'
+            
+
+        }
+        gee_aoi=ee.Geometry(geojson_object, ee.Projection('EPSG:6931'), True, False)
+        # transform = [minx, 0, 4000, miny, 4000, 0]
+        transform = None
+        print(minx,  miny, maxx, maxy)
         len_files = 50
         # return
         if gdrive_cached_id is None and local_cache == False:
             if isinstance(self.dataset, ee.ImageCollection):
-                tasks, files = self.export_image_collection(name, gdrive_location, gee_aoi, filter_func)
+                tasks, files = self.export_image_collection(name, gdrive_location, gee_aoi, transform, filter_func)
             else:
                 tasks, files = self.export_dict(
-                    name, gdrive_location, gee_aoi, filter_func
+                    name, gdrive_location, gee_aoi, transform, filter_func
                 )
             len_files = len(files)
             while np.array([task.status()['state'] != 'COMPLETED' for task in tasks]).any():
@@ -218,22 +232,58 @@ class CloudDataset(object):
                     data_vars = { var : xr.DataArray(deepcopy(temp.values), dims=['time','y','x'])},
                     coords = {
                         'time': [datetime(self.year,1,1) + timedelta(d) for d in range(temp.band.size)], 
-                        'x':deepcopy(temp.x.values), 
-                        'y':deepcopy(temp.y.values)
+                        'y':deepcopy(temp.y.values),
+                        'x':deepcopy(temp.x.values) 
+                        
                     }
                 )
             else:
                 dataset[var] = xr.DataArray(deepcopy(temp.values), dims=['time','y','x'])
 
         dataset = dataset.rio.write_crs(temp.rio.crs,inplace=True)\
-                    .rio.set_spatial_dims(x_dim='x', y_dim='x', inplace=True)\
+                    .rio.set_spatial_dims(x_dim='x', y_dim='y', inplace=True)\
                     .rio.write_coordinate_system(inplace=True)\
                     .rio.write_transform(temp.rio.transform(), inplace=True)
+        # transform = dataset.rio.transform()
+        # s_minx,s_miny,s_maxx,s_maxy =dataset.rio.bounds()
+        # print(s_minx,s_miny,s_maxx,s_maxy)
+        # # if s_maxx < s_minx: s_minx, s_maxx = s_maxx, s_minx
+        # # if s_maxy < s_miny: s_miny, s_maxy = s_maxy, s_miny
+        # # print(s_minx,s_miny,s_maxx,s_maxy)
+
+        # transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+        # dataset = dataset.reindex(y=dataset.y[::-1])
+        # print(transform)
+        # dataset = dataset.rio.write_transform(transform, inplace=True)
+
+        # trickery to ensure all data uses our standard min coords
+
+        # x_dim = 'x'
+        # y_dim = 'y'
+
+        # s_minx, s_miny, s_maxx, s_maxy = dataset.rio.bounds()
+        # transform = dataset.rio.transform()
+        # if transform.c > s_minx:
+        #     transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+        #     if x_dim == 'x':
+        #         dataset = dataset.reindex(x=dataset.x[::-1])
+        #     else:
+        #         dataset = dataset.reindex(lon=dataset.lon[::-1])
+        #     dataset = dataset.rio.write_transform(transform, inplace=True)
+                
+        # if transform.f > s_miny:
+        #     transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+        #     if y_dim == 'y':
+        #         dataset = dataset.reindex(y=dataset.y[::-1])
+        #     else:
+        #         dataset = dataset.reindex(lat=dataset.lat[::-1])
+        #     dataset = dataset.rio.write_transform(transform, inplace=True)
+            
         
         return dataset
     
     
-    def export_image_collection(self, name, gdrive_location, gee_aoi, filter_func=lambda x: x ):
+    def export_image_collection(self, name, gdrive_location, gee_aoi, transform, filter_func=lambda x: x ):
         """
         export from ee if `dataset` is ee.ImageCollection
         
@@ -270,7 +320,7 @@ class CloudDataset(object):
                 folder= gdrive_location,
                 region=gee_aoi,
                 scale=4000,
-                # crsTransform=[30, 0, -2493045, 0, -30, 3310005],
+                # crsTransform=transform,#[30, 0, -2493045, 0, -30, 3310005],
                 crs='EPSG:6931'
             )
             task.start()
@@ -278,7 +328,7 @@ class CloudDataset(object):
             files.append(f'{file_name}.tif')
         return tasks, files
 
-    def export_dict(self, name, gdrive_location, gee_aoi, filter_func=lambda x: x ):
+    def export_dict(self, name, gdrive_location, gee_aoi, transform, filter_func=lambda x: x ):
         """
         export from ee if `dataset` is  Dict of ee.ImageCollections with datetime keys
         
@@ -317,7 +367,7 @@ class CloudDataset(object):
                     folder= gdrive_location,
                     region=gee_aoi,
                     scale=4000,
-                    # crsTransform=[30, 0, -2493045, 0, -30, 3310005],
+                    # crsTransform=transform,#[30, 0, -2493045, 0, -30, 3310005],
                     crs='EPSG:6931'
                 )
                 task.start()
@@ -368,10 +418,10 @@ class CloudDataset(object):
             {'geometry': shapely.box(minx, miny,  maxx, maxy)}, 
             index=['aoi'],
             crs=extent_crs
-        ).to_crs(4326).bounds
+        ).bounds
         print(bounds)
         # return
-
+        
         where = kwargs['download_location'] if 'download_location' in kwargs else "temp-gdrive-downloads"
         gdrive_location = kwargs['gdrive_location'] if 'gdrive_location' in kwargs else "ee-exports-temds"
         name = kwargs['task_name']
@@ -395,6 +445,8 @@ class CloudDataset(object):
 
         if self.year:
             dataset = YearlyDataset.from_TEMDataset(dataset, self.year)
+
+        dataset=dataset.get_by_extent(minx, maxy, maxx, miny, extent_crs, **kwargs)
 
         return dataset 
     

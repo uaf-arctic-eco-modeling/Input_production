@@ -8,6 +8,7 @@ Objects to manage data for TEMDS project
 import os
 from pathlib import Path
 from copy import deepcopy
+import operator
 import gc
 import pathlib
 import shapely.geometry # for .box function
@@ -1326,8 +1327,12 @@ class TEMDataset(object):
         driver = gdal.GetDriverByName("MEM")
 
         ## clipped shape, and geotransform
+        
         c_x, c_y = int((maxx-minx)/resolution), int((maxy-miny)/resolution)
+<<<<<<< HEAD
         #c_gt = minx, resolution, 0.0, miny, 0.0, resolution
+=======
+>>>>>>> a2f8a50 (working qdm prototype)
         print(c_x, c_y)
         x_sign, y_sign = 1, 1
         if c_x<0:
@@ -1336,7 +1341,10 @@ class TEMDataset(object):
             y_sign = -1
 
         c_gt = minx, x_sign*resolution, 0.0, miny, 0.0, x_sign*resolution
+<<<<<<< HEAD
 
+=======
+>>>>>>> a2f8a50 (working qdm prototype)
 
         if hasattr(working_dataset, 'lat') and hasattr(working_dataset, 'lon'):
             s_x = working_dataset.lon.shape[0]
@@ -1349,10 +1357,14 @@ class TEMDataset(object):
         ## which may not be needed on all datasets, so be wary in in future
         s_gt = working_dataset.rio.transform()
         s_gt = s_gt.c, abs(s_gt.a), s_gt.b, s_gt.f, s_gt.d, abs(s_gt.e)
+        
 
         # gdal wants things in order, x, y, band count
         source_dim_sizes = [s_x, s_y]
+<<<<<<< HEAD
         #dest_dim_sizes = [c_x, c_y]
+=======
+>>>>>>> a2f8a50 (working qdm prototype)
         dest_dim_sizes = [abs(c_x), abs(c_y)]
 
         # N time steps
@@ -1436,8 +1448,11 @@ class TEMDataset(object):
         ## we want these to be the center of the pixels so for x and y the range
         self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
         x_coords = np.arange(minx+resolution/2, minx + c_x * resolution, resolution) 
+<<<<<<< HEAD
         #y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
 
+=======
+>>>>>>> a2f8a50 (working qdm prototype)
         print(miny,maxy, resolution)
         if miny < maxy:
             # print('a')
@@ -1446,8 +1461,11 @@ class TEMDataset(object):
             # print('b')
             y_coords = np.arange(maxy+resolution/2, maxy + abs(c_y) * resolution, resolution)
         # print(y_coords)
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> a2f8a50 (working qdm prototype)
         coords={
             'x': x_coords,
             'y': y_coords
@@ -1650,7 +1668,9 @@ class TEMDataset(object):
         self.dataset.attrs.update(TEMDS_version = Version())
         self.dataset.attrs.update(extra_attrs)
 
-            
+        unlimited_dims = None    
+        if 'unlimited_dims' in kwargs:
+            unlimited_dims = kwargs['unlimited_dims']
 
         if  not Path(out_file).exists() or overwrite:
             
@@ -1660,7 +1680,7 @@ class TEMDataset(object):
                     out_file, 
                     # encoding=encoding, 
                     engine="netcdf4",
-                    # unlimited_dims={'time':True}
+                    unlimited_dims=unlimited_dims
                 )
         else:
             raise FileExistsError(
@@ -1740,7 +1760,10 @@ class TEMDataset(object):
         else:
             self.logger.info("Dataset is missing lon/lat dimensions. Using default x, y spatial dimensions.")
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> a2f8a50 (working qdm prototype)
         # # trickery to ensure all data uses our standard min coords
         s_minx, s_miny, s_maxx, s_maxy = in_dataset.rio.bounds()
         transform = in_dataset.rio.transform()
@@ -1751,7 +1774,11 @@ class TEMDataset(object):
             else:
                 in_dataset = in_dataset.reindex(lon=in_dataset.lon[::-1])
             in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+<<<<<<< HEAD
 
+=======
+                
+>>>>>>> a2f8a50 (working qdm prototype)
         if transform.f > s_miny:
             transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
             if y_dim == 'y':
@@ -1759,6 +1786,10 @@ class TEMDataset(object):
             else:
                 in_dataset = in_dataset.reindex(lat=in_dataset.lat[::-1])
             in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+<<<<<<< HEAD
+=======
+        
+>>>>>>> a2f8a50 (working qdm prototype)
 
 
         in_dataset = \
@@ -1806,7 +1837,43 @@ class TEMDataset(object):
                 reasons.append(f'{var} has units {units} but needs {std_units}')
 
         return verified, reasons
+    
+    def check_dataset_with_nan_mask(self, mask):
+        matches = {}
+        for var in self.dataset.data_vars:
+            matches[var] = bool((np.isnan(self.dataset[var].sum(axis=0, skipna=False)) == mask).all().values)
+        return bool(np.array([v for k, v in matches.items()]).all()), matches
+    
+    def check_number_timesteps(self, expected=365):
+        correct = self.dataset.time.shape[0] == expected
+        missing = []
+        if not correct:
+            missing = [] # TODO
+        return correct, missing
 
+    def fill_outliers(self, var, mean, std, n_std):
+        in_range_ix = ~(
+            (self.dataset[var] > mean + n_std * std) | \
+            (self.dataset[var] < mean - n_std * std)
+        )
+        # keeps values were idx is true, replaces others with mean
+        updated = self.dataset[var].where(in_range_ix, mean) 
+        self.dataset[var] = updated
+
+    def fill_out_of_bounds(self, var, value, which, fill):
+        if which == 'lower':
+            op = operator.lt
+        else:
+            op = operator.gt
+        ix = op(self.dataset[var], value) 
+        # return ix
+        if ix.any():
+            # print('filling')
+            updated = self.dataset[var].where(
+                ix | np.isnan(self.dataset[var]), # don't fill nans
+                fill 
+            ) 
+            self.dataset[var] = updated
 
 class YearlyDataset(TEMDataset):
     """This sub class of TEMDataset represents daily data
@@ -2243,6 +2310,8 @@ class YearlyDataset(TEMDataset):
         else:
             kwargs['extra_attrs'] = {'data_year': self.year}
 
+        kwargs['unlimited_dims'] = ['time']
+
         super().save(out_file, **kwargs)
 
 
@@ -2346,3 +2415,8 @@ class YearlyDataset(TEMDataset):
             super().get_by_extent(minx, miny, maxx, maxy, extent_crs, **kwargs),
             self.year
         ) 
+    
+    def drop_leap_days(self):
+        idx = ~((self.dataset.time.dt.month == 2) & (self.dataset.time.dt.day == 29))
+        temp = self.dataset.sel(time=idx)
+        self.dataset = temp
