@@ -410,6 +410,10 @@ class TEMDataset(object):
         political_shp = gpd.read_file("working/00-download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp", bbox=(-180, 40, 180, 90))
         eco_shp = gpd.read_file("working/00-download/mask/Ecoregions2017/Ecoregions2017.shp", bbox=(-180, 40, 180, 90))
 
+        ER = rio.open(extent_raster)
+        sp = gpd.read_file("working/00-download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp", bbox=(rio.warp.transform_bounds(6931, 4326, *ER.bounds)))
+        se = gpd.read_file("working/00-download/mask/Ecoregions2017/Ecoregions2017.shp", bbox=(rio.warp.transform_bounds(6931, 4326, *ER.bounds)))
+
         logger.info(f'{func_name}: Reprojecting shapefiles to EPSG:6931')
         political_shp = political_shp.to_crs(6931)
         eco_shp = eco_shp.to_crs(6931)
@@ -431,37 +435,38 @@ class TEMDataset(object):
 
             return geo_df
 
-        country_geo_df = get_gdf(political_shp,  'shapeGroup', 'ctry_idx',)
+        # country_geo_df = get_gdf(political_shp,  'shapeGroup', 'ctry_idx',)
         state_geo_df = get_gdf(political_shp,  'shapeName', 'state_idx',)
         eco_geo_df = get_gdf(eco_shp,  'ECO_NAME', 'eco_idx',)
-        biome_geo_df = get_gdf(eco_shp,  'BIOME_NAME', 'biome_idx',)
-        ecobiome_geo_df = get_gdf(eco_shp,  'ECO_BIOME_', 'ecobiome_idx',)
-        realm_geo_df = get_gdf(eco_shp,  'REALM', 'realm_idx',)
+        # biome_geo_df = get_gdf(eco_shp,  'BIOME_NAME', 'biome_idx',)
+        # ecobiome_geo_df = get_gdf(eco_shp,  'ECO_BIOME_', 'ecobiome_idx',)
+        # realm_geo_df = get_gdf(eco_shp,  'REALM', 'realm_idx',)
+
         #landcover_geo_df = get_gdf(??, '??', 'landcover_idx',)
         # drainage
         
-        def burn_gdf(raster_fpath, gdf, idx_col, meta):
-            func_name = "burn_gdf"
-            with rio.open(raster_fpath, 'w+', **meta) as out:
-                out_arr = out.read(1)
-                shapes = ((geom,value) for geom, value in zip(gdf.geometry, gdf[idx_col]))
-                burned = rio.features.rasterize(shapes=shapes, fill=-9999, out=out_arr, transform=out.transform)
-                logger.info(f'{func_name}: Writing {raster_fpath}')
-                out.write_band(1, burned)
+        # def burn_gdf(raster_fpath, gdf, idx_col, meta):
+        #     func_name = "burn_gdf"
+        #     with rio.open(raster_fpath, 'w+', **meta) as out:
+        #         out_arr = out.read(1)
+        #         shapes = ((geom,value) for geom, value in zip(gdf.geometry, gdf[idx_col]))
+        #         burned = rio.features.rasterize(shapes=shapes, fill=-9999, out=out_arr, transform=out.transform)
+        #         logger.info(f'{func_name}: Writing {raster_fpath}')
+        #         out.write_band(1, burned)
 
 
-        full_arctic_aoi = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
-        meta = full_arctic_aoi.meta.copy()
-        meta.update(compress='lzw')
-
-        burn_gdf('/tmp/country_raster_6931_4000m.tiff', country_geo_df, 'ctry_idx', meta)
-        burn_gdf('/tmp/state_raster_6931_4000m.tiff', state_geo_df, 'state_idx', meta)
-        burn_gdf('/tmp/eco_raster_6931_4000m.tiff', eco_geo_df, 'eco_idx', meta)
-        burn_gdf('/tmp/biome_raster_6931_4000m.tiff', biome_geo_df, 'biome_idx', meta)
-        burn_gdf('/tmp/ecobiome_raster_6931_4000m.tiff', ecobiome_geo_df, 'ecobiome_idx', meta)
-        burn_gdf('/tmp/realm_raster_6931_4000m.tiff', realm_geo_df, 'realm_idx', meta)
+        # full_arctic_aoi = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
+        # meta = full_arctic_aoi.meta.copy()
+        # meta.update(compress='lzw')
+        # burn_gdf('/tmp/country_raster_6931_4000m.tiff', country_geo_df, 'ctry_idx', meta)
+        # burn_gdf('/tmp/state_raster_6931_4000m.tiff', state_geo_df, 'state_idx', meta)
+        # burn_gdf('/tmp/eco_raster_6931_4000m.tiff', eco_geo_df, 'eco_idx', meta)
+        # burn_gdf('/tmp/biome_raster_6931_4000m.tiff', biome_geo_df, 'biome_idx', meta)
+        # burn_gdf('/tmp/ecobiome_raster_6931_4000m.tiff', ecobiome_geo_df, 'ecobiome_idx', meta)
+        # burn_gdf('/tmp/realm_raster_6931_4000m.tiff', realm_geo_df, 'realm_idx', meta)
 
         # These two are different....not sure how to handle them...
+        # Slow..
         logger.info(f"{func_name}: Convert the TEM_Landcover_V4 to match the full arctic AOI raster in extents and resolution")
         full_arctic_aoi = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
         X = gdal.Warp("/tmp/TEM_Landcover_V4_6931_4000m.tiff", 'working/00-download/vegetation/Jan2025_TEM_Landcover2/TEM_Landcover_V4.tif',
@@ -475,6 +480,8 @@ class TEMDataset(object):
                 resampleAlg='mode',
             ))
         X.FlushCache()
+
+        # Resahpe at the end to this thing, the LC_4k.tif    
 
         topo = TEMDataset.from_topo(
             data_path='working/00-download/topo/',
@@ -500,7 +507,7 @@ class TEMDataset(object):
         
         def generate_indices(files, index_names):
             # Reads in each raster, flattens it and creates a data frame 
-            # with and index set
+            # with an index set
             import rasterio as rio
             import pandas as pd
             for f, idx_name in zip(files, index_names):
@@ -509,19 +516,304 @@ class TEMDataset(object):
                     df = pd.DataFrame(arr.flatten())
                     df = df.set_axis([idx_name], axis=1)
                     yield df
-
-        ecotype = pd.concat(list(generate_indices(files, index_names)), axis=1)
         
-        #eco_geo_df = get_gdf('eco_idx', 'ECO_NAME')
-        from IPython import embed; embed()
+        # This is a table with one row per pixel and columns for each index.
+        ecotype = pd.concat(list(generate_indices(files, index_names)), axis=1)
         
         classif = pd.read_csv("working/00-download/vegetation/TEMLandcoverClassDictionary.csv")
         classif = classif.rename(columns={"value": "lc_idx"})
-        ecotype = pd.merge(ecotype, classif.drop(['groupname'], axis=1), how="left", on=["lc_idx"])
-        ecotype = pd.merge(ecotype, eco_geo_df, how="left", on=["eco_idx"])
-        ecotype = pd.merge(ecotype, biome_geo_df, how="left", on=["biome_idx"])
-        ecotype = pd.merge(ecotype, ecobiome_geo_df, how="left", on=["ecobiome_idx"])
-        ecotype = pd.merge(ecotype, realm_geo_df, how="left", on=["realm_idx"])
+        classif = classif.rename(columns={"classname ": "classname"}) # there is a trailing space in the csv column name
+
+        
+        ecotype['classname'] = 'N/A'
+        for row in classif.T: 
+            lc_idx = classif.loc[row,'lc_idx']
+            cn = classif.loc[row,'classname']
+            idx = (ecotype['lc_idx'] == lc_idx)
+            ecotype.loc[idx, 'classname'] = cn
+
+
+        # Put back in the text based lables for country and state (shapeName and shapeGroup)
+        ecotype = pd.merge(ecotype, state_geo_df.drop(['geometry', 'shapeType', 'shapeID'], axis=1), on=['state_idx'], how='left')
+
+        # put back in the text based labels for biome, realm, etc
+        ecotype = pd.merge(ecotype, eco_geo_df.drop(['OBJECTID','BIOME_NUM','ECO_BIOME_','NNH','ECO_ID','SHAPE_LENG','SHAPE_AREA','NNH_NAME','COLOR', 'COLOR_BIO', 'COLOR_NNH', 'LICENSE', 'geometry',], axis=1), on=['eco_idx'], how='left')
+
+        # Add subregion column
+        ecotype['subregion'] = "N/A"
+
+        idx = ( (ecotype['shapeName'] == 'Alaska') | \
+                    (ecotype['ECO_NAME'] == 'Pacific Coastal Mountain icefields and tundra') | \
+                    (ecotype['ECO_NAME'] == 'Alaska-St. Elias Range tundra') | \
+                    (ecotype['ECO_NAME'] == 'Interior Yukon-Alaska alpine tundra') | \
+                    (ecotype['ECO_NAME'] == 'Brooks-British Range tundra') | \
+                    (ecotype['ECO_NAME'] == 'Arctic foothills tundra') | \
+                    (ecotype['ECO_NAME'] == 'Interior Yukon-Alaska alpine tundra') )
+        ecotype['subregion'] = np.where(idx, 'Western North America', ecotype['subregion'])
+
+        idx = ( (ecotype['shapeGroup'] == 'CAN') & (ecotype['ECO_NAME'] == 'Ogilvie-MacKenzie alpine tundra') )
+        ecotype['subregion'] = np.where(idx, 'Central North America', ecotype['subregion'])
+
+        idx = ( ((ecotype['shapeGroup'] == 'CAN') | (ecotype['shapeGroup'] == 'GRL')) & \
+                    (ecotype['shapeName'] == 'Quebec') |  \
+                    (ecotype['shapeName'] == 'Ontario') | \
+                    (ecotype['shapeName'] == 'Newfoundland and Labrador') | \
+                    (ecotype['ECO_NAME'] == 'Southern Hudson Bay taiga') | \
+                    (ecotype['ECO_NAME'] == 'Central Canadian Shield forests') | \
+                    (ecotype['ECO_NAME'] == 'Eastern Canadian Forest-Boreal transition') )
+        ecotype['subregion'] = np.where(idx, 'Eastern North America', ecotype['subregion'])
+
+
+        idx = ( (ecotype['shapeGroup'] == 'RUS') )
+        ecotype['subregion'] = np.where(idx, 'Eastern Eurasia', ecotype['subregion'])
+
+        idx = ( (ecotype['ECO_NAME'] == 'Yamal-Gydan tundra') | \
+                   (ecotype['ECO_NAME'] == 'Russian Arctic desert') | \
+                   (ecotype['ECO_NAME'] == 'West Siberian taiga') | \
+                   (ecotype['ECO_NAME'] == 'Western Siberian hemiboreal forests') | \
+                   (ecotype['ECO_NAME'] == 'South Siberian forest steppe') | \
+                   (ecotype['ECO_NAME'] == 'Northwest Russian-Novaya Zemlya tundra') | \
+                   (ecotype['ECO_NAME'] == 'Trans-Baikal conifer forests') | \
+                   (ecotype['ECO_NAME'] == 'Kazakh forest steppe') ) 
+        ecotype['subregion'] = np.where(idx, 'Central Eurasia', ecotype['subregion'])
+
+        idx = ( (ecotype['shapeGroup'] == 'NOR') | \
+                   (ecotype['shapeGroup'] == 'SWE') | \
+                   (ecotype['shapeGroup'] == 'FIN') | \
+                   (ecotype['shapeGroup'] == 'ISL') | \
+                   (ecotype['ECO_NAME'] == 'Kola Peninsula tundra') | \
+                   (ecotype['ECO_NAME'] == 'Scandinavian and Russian taiga') | \
+                   (ecotype['ECO_NAME'] == 'Temperate Broadleaf & Mixed Forests') | \
+                   (ecotype['ECO_NAME'] == 'Urals montane forest and taiga') )
+        ecotype['subregion'] = np.where(idx, 'Western Eurasia', ecotype['subregion']) 
+
+        # Add an alpine column
+        ecotype['alpine'] = 'N/A'
+        alpine_idx = ( ecotype['ECO_NAME'].str.contains('alpine', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('montane', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('mountain', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('mountains', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('range', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('rockies', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('cordillera', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('rock', case=False) )
+        ecotype['alpine'] = np.where(alpine_idx, 1, 0)
+
+        # add a community column
+        ecotype['community '] = 'N/A'
+
+        idx = ( (ecotype['classname'] == 'White Spruce forest') )
+        ecotype['community'] = np.where(idx, 'white spruce forest', ecotype['community '])
+
+        idx = ( (ecotype['classname'] == 'Black Spruce forest') | \
+                (ecotype['classname'] == 'Spruce forest') | \
+                (ecotype['classname'] == 'Fir forest') | \
+                (ecotype['classname'] == 'Hemlock forest') )
+        ecotype['community'] = np.where(idx, 'black spruce forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Aspen forest') )
+        ecotype['community'] = np.where(idx, 'aspen forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Birch forest') | \
+                (ecotype['classname'] == 'Poplar forest') | \
+                (ecotype['classname'] == 'Maple') | \
+                (ecotype['classname'] == 'Oak forest') | \
+                (ecotype['classname'] == 'Linden') )
+        ecotype['community'] = np.where(idx, 'birch forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Mixed forest') )
+        ecotype['community'] = np.where(idx, 'mixed forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Larch forest') )
+        ecotype['community'] = np.where(idx, 'larch forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Scotts Pine forest') | \
+                (ecotype['classname'] == 'Siberian Pine') )
+        ecotype['community'] = np.where(idx, 'scots pine forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Jack Pine forest') | \
+                (ecotype['classname'] == 'Pine forest') )
+        ecotype['community'] = np.where(idx, 'jack pine forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Pine forest') & (ecotype['REALM'] == 'Palearctic') )
+        ecotype['community'] = np.where(idx, 'scots pine forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Herbaceous') | \
+                (ecotype['classname'] == 'Graminoid tundra') )
+        ecotype['community'] = np.where(idx, 'tussock tundra', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Other shrublands') | \
+                (ecotype['classname'] == 'Cedar Elfin Wood') | \
+                (ecotype['classname'] == 'Erect-shrub tundra') | \
+                (ecotype['classname'] == 'Shrub tundra') | \
+                (ecotype['classname'] == 'Alpine shrubland') | \
+                (ecotype['classname'] == 'Prostrate-shrub tundra') | \
+                (ecotype['classname'] == 'Riparian shrubland') )
+        ecotype['community'] = np.where(idx, 'shrub tundra', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Barren tundra') | \
+                (ecotype['classname'] == 'Sparsely Vegetated') )
+        ecotype['community'] = np.where(idx, 'heath tundra', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Fen') )
+        ecotype['community'] = np.where(idx, 'fen', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Bog') )
+        ecotype['community'] = np.where(idx, 'bog', ecotype['community'])
+        
+        idx = ( (ecotype['classname'] == 'Wet-sedge tundra') | \
+                (ecotype['classname'] == 'Marsh') )
+        ecotype['community'] = np.where(idx, 'wetsedge tundra', ecotype['community'])
+
+        ecotype['CMT'] = 'CMT00'
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest'),'CMT01',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'white spruce forest'),'CMT02',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'jack pine forest'),'CMT66',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'scots pine forest'),'CMT74',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'larch forest'),'CMT71',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'mixed forest'),'CMT67',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'birch forest'),'CMT03',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'aspen forest'),'CMT65',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra'),'CMT04',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra'),'CMT05',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra'),'CMT07',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'wetsedge tundra'),'CMT06',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog'),'CMT31',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'fen'),'CMT55',ecotype['CMT'])
+
+        # drain_idx: 1 --> poorly drained, 0 --> well drained
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest') & (ecotype['subregion'] == 'Western North America') & (ecotype['drain_idx'] == 1), 'CMT13', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')) & (ecotype['drain_idx'] == 1), 'CMT60', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')) & (ecotype['drain_idx'] == 0), 'CMT69', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')), 'CMT61', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & ((ecotype['subregion'] == 'Eastern Eurasia') | (ecotype['subregion'] == 'Central Eurasia')), 'CMT75', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & (ecotype['subregion'] == 'Western Eurasia'), 'CMT80', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & ((ecotype['ECO_NAME'] == 'Russian Arctic desert') | (ecotype['ECO_NAME'] == 'Kola Peninsula tundra') | (ecotype['ECO_NAME'] == 'Scandinavian coastal conifer forests') | (ecotype['ECO_NAME'] == 'Scandinavian Montane Birch forest and grasslands')) , 'CMT92', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'fen') & (ecotype['REALM'] == 'Palearctic') , 'CMT91', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra') & (ecotype['subregion'] == 'Central North America'), 'CMT52', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra') & (ecotype['subregion'] == 'Eastern North America'), 'CMT90', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT90', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'larch forest') & ((ecotype['subregion'] == 'Central Eurasia') | (ecotype['subregion'] == 'Western Eurasia')),'CMT72',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'mixed forest') & (ecotype['REALM'] == 'Palearctic'),'CMT77',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'scots pine forest') & (ecotype['subregion'] == 'Western Eurasia'),'CMT82',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')), 'CMT50', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & (ecotype['subregion'] == 'Eastern Eurasia'), 'CMT70', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & ((ecotype['subregion'] == 'Western Eurasia') | (ecotype['subregion'] == 'Central Eurasia')), 'CMT76', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & (ecotype['alpine'] == 'alpine'),'CMT20',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')), 'CMT51', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT73', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & (ecotype['alpine'] == 'alpine'),'CMT21',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'wetsedge tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT77', ecotype['CMT'])
+
+        from IPython import embed; embed()
+
+        ecotype['CMT_num'] = pd.to_numeric(ecotype['CMT'].str.extract('(\d+)', expand=False)).fillna(-9999).astype(int)
+
+
+
+        logger.info(f'{func_name}: Creating empty xarray dataset')
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
+                                              in_vars=['veg_class'], 
+                                              ds_time_dim=[], buffer_px=0)
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['veg_class'] = (['y','x'], np.reshape(ecotype['CMT_num'], ()))
+
+
+        newDS.dataset['veg_class'].attrs.update(units='', name='Community Type Classification')
+        
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+
+
+
+        # for row in state_geo_df.T:
+        #     state_idx = state_geo_df.loc[row, 'state_idx']
+        #     state_name = state_geo_df.loc[row, 'shapeName']
+        #     idx = (ecotype['state_idx'] == state_idx)
+        #     ecotype.loc[idx, 'shapeName'] = state_name
+
+
+        # # ecotype['subregion'] = 'N/A'
+        # # for row in 
+
+
+
+
+
+
+        # #eco_geo_df = get_gdf('eco_idx', 'ECO_NAME')
+        
+        # classif = pd.read_csv("working/00-download/vegetation/TEMLandcoverClassDictionary.csv")
+        # classif = classif.rename(columns={"value": "lc_idx"})
+
+
+        # keep_list = ['REALM', 'subreg', 'ECO_NAME', 'shapeName', 'shapeGroup',
+        #              'classname', 'BIOME_NAME', 'drain_name', 'alpine',
+        #              'community', 
+        #              'lc_idx', 'eco_idx', 'biome_idx','ecobiome_idx', 'realm_idx',]
+
+        # drop_list = [c for c in classif.columns if c not in keep_list]
+        # ecotype = pd.merge(ecotype, classif.drop(drop_list, axis=1), how="left", on=["lc_idx"])
+
+        # drop_list = [c for c in eco_geo_df.columns if c not in keep_list]
+        # ecotype = pd.merge(ecotype, eco_geo_df.drop(drop_list, axis=1), how='left', on=['eco_idx'])
+
+        # drop_list = [c for c in biome_geo_df.columns if c not in keep_list]
+        # drop_list.append('ECO_NAME')
+        # drop_list.append('REALM')
+        # ecotype = pd.merge(ecotype, biome_geo_df.drop(drop_list, axis=1), how="left", on=["biome_idx"])
+
+        # drop_list = [c for c in ecobiome_geo_df.columns if c not in keep_list]
+        # drop_list.append('ECO_NAME')
+        # drop_list.append('REALM')
+        # ecotype = pd.merge(ecotype, ecobiome_geo_df.drop(drop_list, axis=1), how="left", on=["ecobiome_idx"])
+
+        # drop_list = [c for c in realm_geo_df.columns if c not in keep_list]
+        # ecotype = pd.merge(ecotype, realm_geo_df.drop(drop_list, axis=1), how="left", on=["realm_idx"])
+
+
+
+        # import pandas as pd
+        # from io import StringIO
+
+        # vegetation_lookup = '''value,name
+        # 0,missing
+        # 1,Black Spruce Forest
+        # 2,White Spruce Forest
+        # 3,Deciduous Forest
+        # 4,Shrub Tundra
+        # 5,Graminoid Tundra
+        # 6,Wetland Tundra
+        # 7,Barren lichen-moss
+        # 8,Heath
+        # 9,Maritime Upland Forest
+        # 10,Maritime Forested Wetland
+        # 11,Maritime Fen
+        # 12,Maritime Alder Shrubland
+        # 13,Other'''
+
+        # veg_df = pd.read_csv(io.StringIO(vegetation_lookup))
+
+        # import rasterio as rio
+        # full_arctic_aoi_mask = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
+        # meta = full_arctic_aoi_mask.meta.copy()
+        # meta.update(compress='lzw')
+
+        # with rio.open('/tmp/country_raster_6931_4000m.tiff', 'w+', **meta) as out:
+        #     out_arr = out.read(1)
+        #     shapes = ((geom,value) for geom, value in zip(country_geo_df.geometry, country_geo_df.ctry_idx))
+        #     burned = rio.features.rasterize(shapes=shapes, fill=-9999, out=out_arr, transform=out.transform)
+        #     out.write_band(1, burned)
+
+
+
+
+        
+        # mask and mskpath are: '/Volumes/5TIV/PROCESSED/MASK/aoi_5k_buff_6931.tiff'
+
 
     @staticmethod
     def from_fri(synthetic=True, extent_raster_path=None, logger=Logger()):
@@ -698,7 +990,6 @@ class TEMDataset(object):
 
         return newDS
     
-
 
     @staticmethod
     def from_worldclim(
