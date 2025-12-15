@@ -51,7 +51,7 @@ class Logger(UserList):
 
         with path.open(mode) as fd:
             for item in self:
-                fd.write(f'{item.msg_type.name.upper()} [{item.time}]: {item.text}\n')
+                fd.write(f'{item.msg_type.name.upper():>7} [{item.time.strftime("%Y-%m-%d %H:%M:%S")}]: {item.text}\n')
 
         if clear: self.clear()
 
@@ -60,7 +60,7 @@ class Logger(UserList):
             raise MalformedLogMsgError('Only LogMsg Items may be appended')
         else:
             if item.msg_type in self.verbose_levels:
-                print(f'{item.msg_type.name.upper()} [{item.time}]: {item.text}')
+                print(f'{item.msg_type.name.upper():>5} [{item.time.strftime("%Y-%m-%d %H:%M:%S")}]: {item.text}')
             super().append(item)
 
     def log(self, text, msg_type=MsgType.info):

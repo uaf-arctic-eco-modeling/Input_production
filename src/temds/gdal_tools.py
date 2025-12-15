@@ -58,13 +58,13 @@ def clip_opt_2 (dest, source, vars_dict, resample_alg, run_primer, nd_as_array):
         # missing in result
         # dest = clip_gdal_opt(dest, source, resample_alg, run_primer, no_data)
         if run_primer:
-            gdal.Warp(dest, source, multithread=True)
+            gdal.Warp(dest, source, multithread=False) # Multithread causes issues on MacOS
         gdal.Warp(
             dest, source,
             srcNodata=no_data,
             dstNodata=no_data,
             resampleAlg=resample_alg,
-            multithread=True
+            multithread=False, # Multithread causes issues on MacOS
         )
         dest.FlushCache()
         
