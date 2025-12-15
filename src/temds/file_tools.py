@@ -4,6 +4,7 @@ file tools
 
 Tools for downloading, and opening various file types
 """
+import re
 import zipfile
 import gzip
 import shutil
@@ -12,7 +13,45 @@ from pathlib import Path
 
 import requests
 
+def download_all_files(url: str, output_dir: Path):
+    """Download all files from a directory listing"""
 
+    response = requests.get(url)
+    response.raise_for_status()
+
+    # Find all href links that look like files (not directories)
+    file_links = re.findall(r'href="([^"]+\.[a-zA-Z0-9]+)"', response.text)
+
+    # Filter out dir_browser files
+    # This is sort of specific to the soil texture files...not sure how to
+    # best generalize for other use cases...
+    file_links = [f for f in file_links if not f.startswith('/:dir_browser/')]
+    file_links = [f for f in file_links if not f.startswith('https://')]
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Note that this doesn't handle the checksum verification. Each page
+    # comes with a checksum.sha266.txt file that could be used. The name of the 
+    # file is the same for sand/silt/clay, so it is overwritten or ignored.
+    # Also could cut down on the downloads by only getting the 3 files needed 
+    # (15-30, 30-60, 60-100cm)
+    print(f'{file_links=}')
+    for filename in file_links:
+        if filename not in ['..', '../']:
+            file_url = url.rstrip('/') + '/' + filename
+            local_file = output_path / filename
+
+            if local_file.exists():
+                print(f"Skipped (exists): {filename}")
+                continue
+
+            print(f"Downloading: {filename}")
+            file_response = requests.get(file_url)
+            file_response.raise_for_status()
+
+            with open(local_file, 'wb') as f:
+                f.write(file_response.content)
 
 def download(url: str, location: Path, overwrite: bool=False):
     """Download file at url to location
