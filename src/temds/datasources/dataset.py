@@ -456,6 +456,8 @@ class TEMDataset(object):
             '''Opens a shapefile, creates in index based on the unique values found
             in the specified key column. Adds this index to a data frame. Make the
              index 1 based. Then turn it into a geodataframe and return it.'''
+            f2 = func_name + ".get_gdf"
+            logger.debug(f"{f2}: Creating index ({idx_name}) for {key} in shape object..")
             if key not in shape_obj.columns:
                 raise ValueError(f'Key {key} not found in shapefile columns')
             df = pd.DataFrame(shape_obj[key].unique())
@@ -474,16 +476,13 @@ class TEMDataset(object):
         ecobiome_geo_df = get_gdf(eco_shp,  'ECO_BIOME_', 'ecobiome_idx',)
         realm_geo_df = get_gdf(eco_shp,  'REALM', 'realm_idx',)
 
-        #landcover_geo_df = get_gdf(??, '??', 'landcover_idx',)
-        # drainage
-        
         def burn_gdf(raster_fpath, gdf, idx_col, meta):
-            func_name = "burn_gdf"
+            f2 = func_name + ".burn_gdf"
             with rio.open(raster_fpath, 'w+', **meta) as out:
                 out_arr = out.read(1)
                 shapes = ((geom,value) for geom, value in zip(gdf.geometry, gdf[idx_col]))
                 burned = rio.features.rasterize(shapes=shapes, fill=-9999, out=out_arr, transform=out.transform)
-                logger.info(f'{func_name}: Writing {raster_fpath}')
+                logger.info(f'{f2}: Writing {raster_fpath}')
                 out.write_band(1, burned)
 
         files = [
@@ -498,8 +497,6 @@ class TEMDataset(object):
         ]
         [os.unlink(f) for f in files if os.path.exists(f)]
 
-
-        #full_arctic_aoi = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
         meta = ER.meta.copy()
         meta.update(compress='lzw')
         burn_gdf('/tmp/country_raster_6931_4000m.tiff', country_geo_df, 'ctry_idx', meta)
@@ -509,12 +506,7 @@ class TEMDataset(object):
         burn_gdf('/tmp/ecobiome_raster_6931_4000m.tiff', ecobiome_geo_df, 'ecobiome_idx', meta)
         burn_gdf('/tmp/realm_raster_6931_4000m.tiff', realm_geo_df, 'realm_idx', meta)
 
-
-
-        # These two are different....not sure how to handle them...
-        # Slow..
-        logger.info(f"{func_name}: Convert the TEM_Landcover_V4 to match the full arctic AOI raster in extents and resolution")
-        #full_arctic_aoi = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
+        logger.info(f"{func_name}: Convert the TEM_Landcover_V4 to match the  AOI raster in extents and resolution")
         X = gdal.Warp(
             "/tmp/TEM_Landcover_V4_6931_4000m.tiff",
             temds.datasources.vegetation.land_cover_path,
@@ -529,38 +521,37 @@ class TEMDataset(object):
             ))
         X.FlushCache()
 
-        # Resahpe at the end to this thing, the LC_4k.tif    
-
+        # slow....
         topo = TEMDataset.from_topo(
             data_path='working/00-download/topo/',
-            extent_raster=extent_raster,  #'working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff',
+            extent_raster=extent_raster,
             download=False,
             logger=logger,
         )
 
-        # BUG HERE: Need to write out only the 4th band...
+        # Make sure we only write out the variable we are interested in.
         topo.dataset['drainage_class'].rio.to_raster("/tmp/drainage_raster_6931_4000m.tiff")
 
         index_names = ['ctry_idx', 'state_idx', 'eco_idx', 'biome_idx', 'ecobiome_idx', 'realm_idx', 'lc_idx', 'drain_idx']
         
         def generate_indices(files, index_names):
             # Reads in each raster, flattens it and creates a data frame 
-            # with an index set
-            import rasterio as rio
-            import pandas as pd
+            # with an index set on the dataframe...
+            f2 = func_name + "generate_indices"
             for f, idx_name in zip(files, index_names):
                 with rio.open(f) as src:
-                    print(f"... Reading {f}")
-                    print(f"...   Shape: {src.shape}")
+                    logger.debug(f"{f2} reading {f} with shape {src.shape}")
                     arr = src.read(1)
                     df = pd.DataFrame(arr.flatten())
                     df = df.set_axis([idx_name], axis=1)
                     yield df
         
         # This is a table with one row per pixel and columns for each index.
+        logger.info(f"{func_name}: Creating the ecotype table by concatening all the indices...")
         ecotype = pd.concat(list(generate_indices(files, index_names)), axis=1)
         
-        classif = pd.read_csv("working/00-download/vegetation/TEMLandcoverClassDictionary.csv")
+        logger.info(f"{func_name}: Loading the land cover classification...")
+        classif = pd.read_csv(temds.datasources.vegetation.land_cover_classification)
         classif = classif.rename(columns={"value": "lc_idx"})
         classif = classif.rename(columns={"classname ": "classname"}) # there is a trailing space in the csv column name
 
@@ -746,8 +737,6 @@ class TEMDataset(object):
         ecotype['CMT'] = np.where((ecotype['community'] == 'wetsedge tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT77', ecotype['CMT'])
 
         ecotype['CMT_num'] = pd.to_numeric(ecotype['CMT'].str.extract('(\d+)', expand=False)).fillna(np.int32(-9999)).astype(np.int32)
-
-        #from IPython import embed; embed()
 
         logger.info(f'{func_name}: Creating empty xarray dataset')
         newDS = TEMDataset.from_raster_extent(extent_raster, 
