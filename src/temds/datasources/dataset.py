@@ -5,22 +5,27 @@ dataset
 Objects to manage data for TEMDS project
 
 """
+import os
 from pathlib import Path
 from copy import deepcopy
 import gc
 import pathlib
+import shapely.geometry # for .box function
 
 import xarray as xr
 import numpy as np
 import rioxarray  # activate 
+import geopandas as gpd
+import pandas as pd
+import rasterio as rio
 from osgeo import gdal
 from affine import Affine
 from pyproj import CRS
 from cf_units import Unit
 from dapper.met import cmip_utils
 
-from temds.datasources import vegetation
 
+import temds.datasources.vegetation
 from . import errors
 from . import worldclim, crujra, cmip6, topo
 from . import soil_texture
@@ -399,24 +404,51 @@ class TEMDataset(object):
             #logger.info(f'{func_name}: Downloading data.')
             #file_tools.download_all_files(vegetation.url_iem_veg, data_path, overwrite)
         
-        import geopandas as gpd
-        import pandas as pd
-        import rasterio as rio
-
-        # TODO: set bbox to extent raster bounds...
-        # MIght need to re-project the extent raster first...
+        # Extent raster is likely something small(ish) and in projection 6931.
+        # need to reproject it to wgs84 before using it as a bbox.
 
         logger.info(f'{func_name}: Reading shapefiles')
-        political_shp = gpd.read_file("working/00-download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp", bbox=(-180, 40, 180, 90))
-        eco_shp = gpd.read_file("working/00-download/mask/Ecoregions2017/Ecoregions2017.shp", bbox=(-180, 40, 180, 90))
+
+        # naieve hardcoded full extents, wgs84
+        #political_shp = gpd.read_file("working/00-download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp", bbox=(-180, 40, 180, 90))
+        #eco_shp = gpd.read_file("working/00-download/mask/Ecoregions2017/Ecoregions2017.shp", bbox=(-180, 40, 180, 90))
 
         ER = rio.open(extent_raster)
-        sp = gpd.read_file("working/00-download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp", bbox=(rio.warp.transform_bounds(6931, 4326, *ER.bounds)))
-        se = gpd.read_file("working/00-download/mask/Ecoregions2017/Ecoregions2017.shp", bbox=(rio.warp.transform_bounds(6931, 4326, *ER.bounds)))
 
-        logger.info(f'{func_name}: Reprojecting shapefiles to EPSG:6931')
-        political_shp = political_shp.to_crs(6931)
-        eco_shp = eco_shp.to_crs(6931)
+        assert ER.crs.to_epsg() == 6931, "Extent raster must be in EPSG:6931"
+
+        ext_bnds_wgs84 = rio.warp.transform_bounds(ER.crs.to_epsg(), 4326, *ER.bounds)
+
+        political_shp = gpd.read_file(temds.datasources.vegetation.political_shp_path, 
+                                      bbox=ext_bnds_wgs84)
+        eco_shp = gpd.read_file(temds.datasources.vegetation.eco_shp_path, 
+                                bbox=ext_bnds_wgs84)
+        
+        # Using bbox to read the file doesn't clip the polygons, so we need to clip them.
+        # To do this we need the extent raster as a vector
+        # and then use that to clip the shapefiles.
+
+        def raster_extent_to_geoseries(raster_path):
+            """Convert raster extent to GeoSeries for use in from_vegetation"""
+            with rio.open(raster_path) as src:
+                bounds = src.bounds
+                polygon = shapely.geometry.box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+                
+                # Create GeoSeries with proper CRS
+                geoseries = gpd.GeoSeries([polygon], crs=src.crs)
+                
+            return geoseries
+        
+        extent_geoseries = raster_extent_to_geoseries(extent_raster)
+        extent_geoseries_wgs84 = extent_geoseries.to_crs(4326)
+
+        # Use for clipping
+        political_shp = political_shp.clip(extent_geoseries_wgs84)
+        eco_shp = eco_shp.clip(extent_geoseries_wgs84)
+
+        logger.info(f'{func_name}: Reprojecting shapefiles to extent raster CRS: {ER.crs.to_epsg()}')
+        political_shp = political_shp.to_crs(ER.crs.to_epsg())
+        eco_shp = eco_shp.to_crs(ER.crs.to_epsg())
 
         logger.info(f'{func_name}: Processing political shapefile')
 
@@ -435,64 +467,25 @@ class TEMDataset(object):
 
             return geo_df
 
-        # country_geo_df = get_gdf(political_shp,  'shapeGroup', 'ctry_idx',)
+        country_geo_df = get_gdf(political_shp,  'shapeGroup', 'ctry_idx',)
         state_geo_df = get_gdf(political_shp,  'shapeName', 'state_idx',)
         eco_geo_df = get_gdf(eco_shp,  'ECO_NAME', 'eco_idx',)
-        # biome_geo_df = get_gdf(eco_shp,  'BIOME_NAME', 'biome_idx',)
-        # ecobiome_geo_df = get_gdf(eco_shp,  'ECO_BIOME_', 'ecobiome_idx',)
-        # realm_geo_df = get_gdf(eco_shp,  'REALM', 'realm_idx',)
+        biome_geo_df = get_gdf(eco_shp,  'BIOME_NAME', 'biome_idx',)
+        ecobiome_geo_df = get_gdf(eco_shp,  'ECO_BIOME_', 'ecobiome_idx',)
+        realm_geo_df = get_gdf(eco_shp,  'REALM', 'realm_idx',)
 
         #landcover_geo_df = get_gdf(??, '??', 'landcover_idx',)
         # drainage
         
-        # def burn_gdf(raster_fpath, gdf, idx_col, meta):
-        #     func_name = "burn_gdf"
-        #     with rio.open(raster_fpath, 'w+', **meta) as out:
-        #         out_arr = out.read(1)
-        #         shapes = ((geom,value) for geom, value in zip(gdf.geometry, gdf[idx_col]))
-        #         burned = rio.features.rasterize(shapes=shapes, fill=-9999, out=out_arr, transform=out.transform)
-        #         logger.info(f'{func_name}: Writing {raster_fpath}')
-        #         out.write_band(1, burned)
+        def burn_gdf(raster_fpath, gdf, idx_col, meta):
+            func_name = "burn_gdf"
+            with rio.open(raster_fpath, 'w+', **meta) as out:
+                out_arr = out.read(1)
+                shapes = ((geom,value) for geom, value in zip(gdf.geometry, gdf[idx_col]))
+                burned = rio.features.rasterize(shapes=shapes, fill=-9999, out=out_arr, transform=out.transform)
+                logger.info(f'{func_name}: Writing {raster_fpath}')
+                out.write_band(1, burned)
 
-
-        # full_arctic_aoi = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
-        # meta = full_arctic_aoi.meta.copy()
-        # meta.update(compress='lzw')
-        # burn_gdf('/tmp/country_raster_6931_4000m.tiff', country_geo_df, 'ctry_idx', meta)
-        # burn_gdf('/tmp/state_raster_6931_4000m.tiff', state_geo_df, 'state_idx', meta)
-        # burn_gdf('/tmp/eco_raster_6931_4000m.tiff', eco_geo_df, 'eco_idx', meta)
-        # burn_gdf('/tmp/biome_raster_6931_4000m.tiff', biome_geo_df, 'biome_idx', meta)
-        # burn_gdf('/tmp/ecobiome_raster_6931_4000m.tiff', ecobiome_geo_df, 'ecobiome_idx', meta)
-        # burn_gdf('/tmp/realm_raster_6931_4000m.tiff', realm_geo_df, 'realm_idx', meta)
-
-        # These two are different....not sure how to handle them...
-        # Slow..
-        logger.info(f"{func_name}: Convert the TEM_Landcover_V4 to match the full arctic AOI raster in extents and resolution")
-        full_arctic_aoi = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
-        X = gdal.Warp("/tmp/TEM_Landcover_V4_6931_4000m.tiff", 'working/00-download/vegetation/Jan2025_TEM_Landcover2/TEM_Landcover_V4.tif',
-            options=gdal.WarpOptions(
-                format='GTiff',
-                srcSRS='EPSG:6931',
-                dstSRS='EPSG:6931',
-                xRes=full_arctic_aoi.res[0],
-                yRes=full_arctic_aoi.res[1],
-                outputBounds=full_arctic_aoi.bounds,
-                resampleAlg='mode',
-            ))
-        X.FlushCache()
-
-        # Resahpe at the end to this thing, the LC_4k.tif    
-
-        topo = TEMDataset.from_topo(
-            data_path='working/00-download/topo/',
-            extent_raster='working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff',
-            download=False,
-            logger=logger,
-        )
-
-        topo.dataset.rio.to_raster("/tmp/drainage_raster_6931_4000m.tiff")
-
-    
         files = [
             '/tmp/country_raster_6931_4000m.tiff',
             '/tmp/state_raster_6931_4000m.tiff',
@@ -503,6 +496,51 @@ class TEMDataset(object):
             '/tmp/TEM_Landcover_V4_6931_4000m.tiff',
             '/tmp/drainage_raster_6931_4000m.tiff',
         ]
+        [os.unlink(f) for f in files if os.path.exists(f)]
+
+
+        #full_arctic_aoi = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
+        meta = ER.meta.copy()
+        meta.update(compress='lzw')
+        burn_gdf('/tmp/country_raster_6931_4000m.tiff', country_geo_df, 'ctry_idx', meta)
+        burn_gdf('/tmp/state_raster_6931_4000m.tiff', state_geo_df, 'state_idx', meta)
+        burn_gdf('/tmp/eco_raster_6931_4000m.tiff', eco_geo_df, 'eco_idx', meta)
+        burn_gdf('/tmp/biome_raster_6931_4000m.tiff', biome_geo_df, 'biome_idx', meta)
+        burn_gdf('/tmp/ecobiome_raster_6931_4000m.tiff', ecobiome_geo_df, 'ecobiome_idx', meta)
+        burn_gdf('/tmp/realm_raster_6931_4000m.tiff', realm_geo_df, 'realm_idx', meta)
+
+
+
+        # These two are different....not sure how to handle them...
+        # Slow..
+        logger.info(f"{func_name}: Convert the TEM_Landcover_V4 to match the full arctic AOI raster in extents and resolution")
+        #full_arctic_aoi = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
+        X = gdal.Warp(
+            "/tmp/TEM_Landcover_V4_6931_4000m.tiff",
+            temds.datasources.vegetation.land_cover_path,
+            options=gdal.WarpOptions(
+                format='GTiff',
+                srcSRS='EPSG:6931',
+                dstSRS='EPSG:6931',
+                xRes=ER.res[0],
+                yRes=ER.res[1],
+                outputBounds=ER.bounds,
+                resampleAlg='mode',
+            ))
+        X.FlushCache()
+
+        # Resahpe at the end to this thing, the LC_4k.tif    
+
+        topo = TEMDataset.from_topo(
+            data_path='working/00-download/topo/',
+            extent_raster=extent_raster,  #'working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff',
+            download=False,
+            logger=logger,
+        )
+
+        # BUG HERE: Need to write out only the 4th band...
+        topo.dataset['drainage_class'].rio.to_raster("/tmp/drainage_raster_6931_4000m.tiff")
+
         index_names = ['ctry_idx', 'state_idx', 'eco_idx', 'biome_idx', 'ecobiome_idx', 'realm_idx', 'lc_idx', 'drain_idx']
         
         def generate_indices(files, index_names):
@@ -512,6 +550,8 @@ class TEMDataset(object):
             import pandas as pd
             for f, idx_name in zip(files, index_names):
                 with rio.open(f) as src:
+                    print(f"... Reading {f}")
+                    print(f"...   Shape: {src.shape}")
                     arr = src.read(1)
                     df = pd.DataFrame(arr.flatten())
                     df = df.set_axis([idx_name], axis=1)
@@ -705,11 +745,9 @@ class TEMDataset(object):
         ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & (ecotype['alpine'] == 'alpine'),'CMT21',ecotype['CMT'])
         ecotype['CMT'] = np.where((ecotype['community'] == 'wetsedge tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT77', ecotype['CMT'])
 
-        from IPython import embed; embed()
+        ecotype['CMT_num'] = pd.to_numeric(ecotype['CMT'].str.extract('(\d+)', expand=False)).fillna(np.int32(-9999)).astype(np.int32)
 
-        ecotype['CMT_num'] = pd.to_numeric(ecotype['CMT'].str.extract('(\d+)', expand=False)).fillna(-9999).astype(int)
-
-
+        #from IPython import embed; embed()
 
         logger.info(f'{func_name}: Creating empty xarray dataset')
         newDS = TEMDataset.from_raster_extent(extent_raster, 
@@ -717,16 +755,17 @@ class TEMDataset(object):
                                               ds_time_dim=[], buffer_px=0)
 
         logger.info(f'{func_name}: Assigning data to the new dataset')
-        newDS.dataset['veg_class'] = (['y','x'], np.reshape(ecotype['CMT_num'], ()))
+        newDS.dataset['veg_class'] = (['y','x'], np.reshape(ecotype['CMT_num'], (ER.shape[0],ER.shape[1])))
 
 
         newDS.dataset['veg_class'].attrs.update(units='', name='Community Type Classification')
         
         newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
-                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_crs(ER.crs.to_wkt(), inplace=True)\
                     .rio.write_coordinate_system(inplace=True) 
 
 
+        return newDS
 
 
         # for row in state_geo_df.T:
