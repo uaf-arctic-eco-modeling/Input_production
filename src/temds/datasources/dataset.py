@@ -142,18 +142,22 @@ class TEMDataset(object):
     
     @property
     def extent(self):
-        """Property for Quick access to resolution"""
+        """
+        Returns (left,bottom,right,top), outer most coords (bounds) of the data.
+        """
         return self.dataset.rio.bounds()
 
     @property
     def vars(self):
-        """Property for quick access to variables in dataset
+        """
+        Property for quick access to variables in dataset
         """
         return list(self.dataset.data_vars)
     
     @property
     def units(self):
-        """Property for quick access to units for variables in dataset
+        """
+        Property for quick access to units for variables in dataset
         """
         return {var: Unit(self.dataset[var].units) for var in self.vars}
    
@@ -181,7 +185,7 @@ class TEMDataset(object):
 
     @staticmethod
     def from_raster_extent(
-            raster, in_vars = [], ds_time_dim=[], buffer_px=30, logger=Logger()
+            raster, in_vars = [], ds_time_dim=[], buffer_px=0, logger=Logger()
         ):
         """
         Creates new xr.Dataset for `dataset` using the extent, transform, and 
@@ -196,7 +200,7 @@ class TEMDataset(object):
             List of variables to create `Dataset.data_vars` for
         ds_time_dim: list, defaults []
             The time dimension for the `Dataset`
-        buffer_px: int, default 30
+        buffer_px: int, default 0
             Buffer in pixels to add to extent. When `raster` crs is EPSG:4326
             This argument is ignored
         logger: logger.Logger, defaults to new object
@@ -937,6 +941,9 @@ class TEMDataset(object):
         ds = gdal.Translate("", srcDS=srcDS, format="MEM")
         ds.FlushCache()
 
+        # ^---consider replacing with plain gdal open, read only.
+        # refactor to  "src" and "dest" or "aoi" and "topo" rather than ds, ds2, etc
+
         logger.info(f'{func_name}: Reprojecting and cropping topography data.')
         ds2 = gdal.Warp("", ds, 
                         options=gdal.WarpOptions(format="MEM", 
@@ -1111,7 +1118,8 @@ class TEMDataset(object):
             extent_raster, 
             in_vars=in_vars, 
             ds_time_dim=MONTH_START_DAYS, 
-            logger=logger
+            logger=logger,
+            buffer_px=0
         )
 
         x_dim = 'x'
@@ -1150,13 +1158,15 @@ class TEMDataset(object):
                     f'month {month} at index {idx}'
                 ))
                 
-                # load result to memory so we don't have temp files
-                result = gdal.Warp(
-                    '', data_raster, 
-                    xRes=abs(gt[1]), yRes=abs(gt[5]),
-                    outputBounds=extent,
-                    dstSRS=new.crs.to_wkt(),
-                    format='mem',
+                # Explicitly create destination dataset of the correct size and 
+                # with the geo ref info assigned.
+                result = gdal_tools.empty_dataset(new.dataset[x_dim].size, 
+                                                  new.dataset[y_dim].size, 
+                                                  new.crs.to_wkt(), gt)
+
+                # Now warp into this empty dataset...
+                _ = gdal.Warp(
+                    result, data_raster, 
                     resampleAlg=resample_alg,
                     dstNodata=-3.4e+38,
                     outputType=gdal.GDT_Float32,
@@ -1354,7 +1364,7 @@ class TEMDataset(object):
                             # the interpreter, you often have to call it 
                             # multiple times.
 
-        ## opption 2
+        ## option 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         del(vars_dict)

@@ -10,7 +10,7 @@ import multiprocessing
 import yaml
 
 from . import crujra
-from . import AOIMask
+from . import aoitools
 from . import util
 from .worldclim import WORLDCLIM_VARS, WORLDCLIM_URL_PATTERN, WorldClim
 
@@ -161,7 +161,7 @@ def spatial_crop_cru():
           Small pool number because I think each process takes several GB of 
           memory.""")
 
-    aoi_extent = AOIMask.AOIMask(root = 'working/')
+    aoi_extent = aoitools.AOIMask(root = 'working/')
     aoi_extent.load_from_vector('working/aoi_4326/aoi_4326.shp')
 
     minx, miny, maxx, maxy = aoi_extent.aoi_vector.bounds.values[0]
