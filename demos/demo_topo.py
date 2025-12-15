@@ -35,6 +35,8 @@ parser.add_argument('extent_raster', nargs=1, type=existing_path, metavar=('EXTE
 parser.add_argument('--download', action='store_true', 
     help=textwrap.dedent('''Flag for whether to download data if not found locally'''))
 
+parser.add_argument('--save', type=str, default=None, metavar=('SAVE PATH'),
+    help=textwrap.dedent('''Path to save the resulting dataset (optional). If not provided, the data will not be saved.'''))
 
 args = parser.parse_args()
 
@@ -52,7 +54,9 @@ topo = TEMDataset.from_topo(
     logger=log
 )
 
-topo.save("/tmp/topo.nc", overwrite=True)
+if args.save:
+    log.info(f'Saving data to {args.save} ...')
+    topo.save(args.save, overwrite=True)
 
 log.info('TEMDataset.verify returns tuple (True, []) when data is TEMDS ready')
 log.info(f'Results of TEMDataset.verify: {topo.verify()}')

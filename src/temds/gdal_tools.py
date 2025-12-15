@@ -30,6 +30,18 @@ def clip_gdal_opt(dest, source, resample_alg, run_primer, nd_as_array):
     dest.FlushCache()
     return dest
 
+def empty_dataset(x_dim, y_dim, projection_wkt, geotransform_tuple, 
+                  bands=1, gdal_type=gdal.GDT_Float32):
+    '''Explicitly create and return a new, geo-referenced, in memory, Gdal Dataset.'''
+
+    driver = gdal.GetDriverByName('MEM')
+    dest = driver.Create("", x_dim, y_dim, bands, gdal_type)
+    dest.SetProjection(projection_wkt)
+    dest.SetGeoTransform(geotransform_tuple)
+    dest.FlushCache()
+
+    return dest
+
 #cant cache dict
 def clip_opt_2 (dest, source, vars_dict, resample_alg, run_primer, nd_as_array):
     data_arrays = {}

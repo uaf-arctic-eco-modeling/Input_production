@@ -5,21 +5,30 @@ dataset
 Objects to manage data for TEMDS project
 
 """
+import os
 from pathlib import Path
 from copy import deepcopy
 import gc
+import pathlib
+import shapely.geometry # for .box function
 
 import xarray as xr
 import numpy as np
 import rioxarray  # activate 
+import geopandas as gpd
+import pandas as pd
+import rasterio as rio
 from osgeo import gdal
 from affine import Affine
 from pyproj import CRS
 from cf_units import Unit
 from dapper.met import cmip_utils
 
+
+import temds.datasources.vegetation
 from . import errors
 from . import worldclim, crujra, cmip6, topo
+from . import soil_texture
 from temds import file_tools
 from temds import climate_variables 
 from temds.logger import Logger
@@ -135,20 +144,23 @@ class TEMDataset(object):
     
     @property
     def extent(self):
-        """Property for Quick access to resolution"""
-        # print('extent')
+        """
+        Returns (left,bottom,right,top), outer most coords (bounds) of the data.
+        """
         return self.dataset.rio.bounds()
 
     @property
     def vars(self):
-        """Property for quick access to variables in dataset
+        """
+        Property for quick access to variables in dataset
         """
         # print('vars')
         return list(self.dataset.data_vars)
     
     @property
     def units(self):
-        """Property for quick access to units for variables in dataset
+        """
+        Property for quick access to units for variables in dataset
         """
         # print('units')
         return {var: Unit(self.dataset[var].units) for var in self.vars}
@@ -177,7 +189,7 @@ class TEMDataset(object):
 
     @staticmethod
     def from_raster_extent(
-            raster, in_vars = [], ds_time_dim=[], buffer_px=30, logger=Logger()
+            raster, in_vars = [], ds_time_dim=[], buffer_px=0, logger=Logger()
         ):
         """
         Creates new xr.Dataset for `dataset` using the extent, transform, and 
@@ -192,7 +204,7 @@ class TEMDataset(object):
             List of variables to create `Dataset.data_vars` for
         ds_time_dim: list, defaults []
             The time dimension for the `Dataset`
-        buffer_px: int, default 30
+        buffer_px: int, default 0
             Buffer in pixels to add to extent. When `raster` crs is EPSG:4326
             This argument is ignored
         logger: logger.Logger, defaults to new object
@@ -302,6 +314,592 @@ class TEMDataset(object):
         return TEMDataset(dataset, logger=logger)
 
     @staticmethod
+    def from_soil_texture(data_path, extent_raster=None, download=False,
+                          overwrite=False, logger=Logger(), buffer=0,
+                          resample_alg='average'):
+        func_name = "TEMdataset.from_soil_texture"
+        logger.info(f'{func_name}: Processing soil texture data in {data_path}')
+
+        if download:
+            logger.info(f'{func_name}: Downloading data.')
+            file_tools.download_all_files(soil_texture.urlsand, data_path, overwrite)
+            file_tools.download_all_files(soil_texture.urlsilt, data_path, overwrite)
+            file_tools.download_all_files(soil_texture.urlclay, data_path, overwrite)
+
+        # ???if not Path(data_path, soil_texture..
+
+        if not extent_raster:
+            raise ValueError(f'{func_name}: extent_raster is required!')
+
+        logger.info(f'{func_name}: Using extent from {extent_raster}')
+        er = gdal.Open(extent_raster)
+
+        # Original method seemed to have some extra steps...
+        # also the original method didn't seem to process the sand file??
+        # starts at 1km in some strange projection
+        # crop to just high latitude
+        # average across depths
+        # reproject to 6931 and put at 4km rez
+        # resample to 50km rez
+        # resample to 4km rez
+        # run thru extra python script : 
+        #   where the fine rez file is -9999, 
+        #   take the coarse value, 
+        #   otherwise take the fine value.
+
+        # Get the extent from the extent raster
+        er_gt = er.GetGeoTransform()
+        er_minx = er_gt[0]
+        er_miny = er_gt[3]
+        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
+        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset')
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
+                                              in_vars='pct_clay pct_sand pct_silt'.split(), 
+                                              ds_time_dim=[], buffer_px=0)
+
+        for X in ['clay','sand','silt']:
+            logger.info(f'{func_name}: Processing {X} data')
+
+            ds_15_30 = gdal.Open(pathlib.Path(data_path, f'{X}_15-30cm_mean_1000.tif'))
+            ds_30_60 = gdal.Open(pathlib.Path(data_path, f'{X}_30-60cm_mean_1000.tif'))
+            ds_60_100 = gdal.Open(pathlib.Path(data_path, f'{X}_60-100cm_mean_1000.tif'))
+
+            assert ds_15_30.GetSpatialRef().IsSame(ds_30_60.GetSpatialRef()), "CRS mismatch"
+            assert ds_15_30.GetSpatialRef().IsSame(ds_60_100.GetSpatialRef()), "CRS mismatch"
+
+            warpOpts = gdal.WarpOptions(
+                        format='MEM',
+                        srcSRS=ds_15_30.GetSpatialRef(), 
+                        dstSRS=er.GetSpatialRef(), 
+                        xRes=er.GetGeoTransform()[1], 
+                        yRes=er.GetGeoTransform()[5], 
+                        resampleAlg='average', 
+                        outputType=gdal.GDT_Float32, 
+                        outputBounds=[er_minx, er_miny, er_maxx, er_maxy])
+
+            # crop them all down to the AOI
+            dst_1530 = gdal.Warp("", ds_15_30, options=warpOpts)
+            dst_3060 = gdal.Warp("", ds_30_60, options=warpOpts)
+            dst_60100 = gdal.Warp("", ds_60_100, options=warpOpts)
+
+            # Find the average over the 3 depth ranges
+            avg = (dst_1530.ReadAsArray() * 15 + dst_3060.ReadAsArray() * 30 + dst_60100.ReadAsArray() * 40) / (150 + 300 + 400)
+
+
+            logger.info(f'{func_name}: Assigning data to the new dataset')
+            newDS.dataset[f'pct_{X}'] = (['y','x'], avg)
+
+        newDS.dataset['pct_clay'].attrs.update(units='percent')
+        newDS.dataset['pct_sand'].attrs.update(units='percent')
+        newDS.dataset['pct_silt'].attrs.update(units='percent')
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+        return newDS
+
+    @staticmethod
+    def from_vegetation(data_path, extent_raster=None, download=False,
+                          overwrite=False, logger=Logger(), buffer=0):
+        func_name = "TEMdataset.from_vegetation"
+
+        logger.info(f'{func_name}: Processing vegetation data in {data_path}')
+
+        if download:
+            raise NotImplementedError('Vegetation download not implemented yet!')
+            #logger.info(f'{func_name}: Downloading data.')
+            #file_tools.download_all_files(vegetation.url_iem_veg, data_path, overwrite)
+        
+        # Extent raster is likely something small(ish) and in projection 6931.
+        # need to reproject it to wgs84 before using it as a bbox.
+
+        logger.info(f'{func_name}: Reading shapefiles')
+
+        # naieve hardcoded full extents, wgs84
+        #political_shp = gpd.read_file("working/00-download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp", bbox=(-180, 40, 180, 90))
+        #eco_shp = gpd.read_file("working/00-download/mask/Ecoregions2017/Ecoregions2017.shp", bbox=(-180, 40, 180, 90))
+
+        ER = rio.open(extent_raster)
+
+        assert ER.crs.to_epsg() == 6931, "Extent raster must be in EPSG:6931"
+
+        ext_bnds_wgs84 = rio.warp.transform_bounds(ER.crs.to_epsg(), 4326, *ER.bounds)
+
+        political_shp = gpd.read_file(temds.datasources.vegetation.political_shp_path, 
+                                      bbox=ext_bnds_wgs84)
+        eco_shp = gpd.read_file(temds.datasources.vegetation.eco_shp_path, 
+                                bbox=ext_bnds_wgs84)
+        
+        # Using bbox to read the file doesn't clip the polygons, so we need to clip them.
+        # To do this we need the extent raster as a vector
+        # and then use that to clip the shapefiles.
+
+        def raster_extent_to_geoseries(raster_path):
+            """Convert raster extent to GeoSeries for use in from_vegetation"""
+            with rio.open(raster_path) as src:
+                bounds = src.bounds
+                polygon = shapely.geometry.box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+                
+                # Create GeoSeries with proper CRS
+                geoseries = gpd.GeoSeries([polygon], crs=src.crs)
+                
+            return geoseries
+        
+        extent_geoseries = raster_extent_to_geoseries(extent_raster)
+        extent_geoseries_wgs84 = extent_geoseries.to_crs(4326)
+
+        # Use for clipping
+        political_shp = political_shp.clip(extent_geoseries_wgs84)
+        eco_shp = eco_shp.clip(extent_geoseries_wgs84)
+
+        logger.info(f'{func_name}: Reprojecting shapefiles to extent raster CRS: {ER.crs.to_epsg()}')
+        political_shp = political_shp.to_crs(ER.crs.to_epsg())
+        eco_shp = eco_shp.to_crs(ER.crs.to_epsg())
+
+        logger.info(f'{func_name}: Processing political shapefile')
+
+        def get_gdf(shape_obj, key = 'shapeName', idx_name = 'state_idx'):
+            '''Opens a shapefile, creates in index based on the unique values found
+            in the specified key column. Adds this index to a data frame. Make the
+             index 1 based. Then turn it into a geodataframe and return it.'''
+            f2 = func_name + ".get_gdf"
+            logger.debug(f"{f2}: Creating index ({idx_name}) for {key} in shape object..")
+            if key not in shape_obj.columns:
+                raise ValueError(f'Key {key} not found in shapefile columns')
+            df = pd.DataFrame(shape_obj[key].unique())
+            df.reset_index(inplace=True)
+            df = df.set_axis([idx_name,key], axis=1)
+            df[idx_name] += 1 # make it 1 based
+            df_f  = shape_obj.merge(df, on=key, how='left')
+            geo_df = gpd.GeoDataFrame(df_f)
+
+            return geo_df
+
+        country_geo_df = get_gdf(political_shp,  'shapeGroup', 'ctry_idx',)
+        state_geo_df = get_gdf(political_shp,  'shapeName', 'state_idx',)
+        eco_geo_df = get_gdf(eco_shp,  'ECO_NAME', 'eco_idx',)
+        biome_geo_df = get_gdf(eco_shp,  'BIOME_NAME', 'biome_idx',)
+        ecobiome_geo_df = get_gdf(eco_shp,  'ECO_BIOME_', 'ecobiome_idx',)
+        realm_geo_df = get_gdf(eco_shp,  'REALM', 'realm_idx',)
+
+        def burn_gdf(raster_fpath, gdf, idx_col, meta):
+            f2 = func_name + ".burn_gdf"
+            with rio.open(raster_fpath, 'w+', **meta) as out:
+                out_arr = out.read(1)
+                shapes = ((geom,value) for geom, value in zip(gdf.geometry, gdf[idx_col]))
+                burned = rio.features.rasterize(shapes=shapes, fill=-9999, out=out_arr, transform=out.transform)
+                logger.info(f'{f2}: Writing {raster_fpath}')
+                out.write_band(1, burned)
+
+        files = [
+            '/tmp/country_raster_6931_4000m.tiff',
+            '/tmp/state_raster_6931_4000m.tiff',
+            '/tmp/eco_raster_6931_4000m.tiff',
+            '/tmp/biome_raster_6931_4000m.tiff',
+            '/tmp/ecobiome_raster_6931_4000m.tiff',
+            '/tmp/realm_raster_6931_4000m.tiff',
+            '/tmp/TEM_Landcover_V4_6931_4000m.tiff',
+            '/tmp/drainage_raster_6931_4000m.tiff',
+        ]
+        [os.unlink(f) for f in files if os.path.exists(f)]
+
+        meta = ER.meta.copy()
+        meta.update(compress='lzw')
+        burn_gdf('/tmp/country_raster_6931_4000m.tiff', country_geo_df, 'ctry_idx', meta)
+        burn_gdf('/tmp/state_raster_6931_4000m.tiff', state_geo_df, 'state_idx', meta)
+        burn_gdf('/tmp/eco_raster_6931_4000m.tiff', eco_geo_df, 'eco_idx', meta)
+        burn_gdf('/tmp/biome_raster_6931_4000m.tiff', biome_geo_df, 'biome_idx', meta)
+        burn_gdf('/tmp/ecobiome_raster_6931_4000m.tiff', ecobiome_geo_df, 'ecobiome_idx', meta)
+        burn_gdf('/tmp/realm_raster_6931_4000m.tiff', realm_geo_df, 'realm_idx', meta)
+
+        logger.info(f"{func_name}: Convert the TEM_Landcover_V4 to match the  AOI raster in extents and resolution")
+        X = gdal.Warp(
+            "/tmp/TEM_Landcover_V4_6931_4000m.tiff",
+            temds.datasources.vegetation.land_cover_path,
+            options=gdal.WarpOptions(
+                format='GTiff',
+                srcSRS='EPSG:6931',
+                dstSRS='EPSG:6931',
+                xRes=ER.res[0],
+                yRes=ER.res[1],
+                outputBounds=ER.bounds,
+                resampleAlg='mode',
+            ))
+        X.FlushCache()
+
+        # slow....
+        topo = TEMDataset.from_topo(
+            data_path='working/00-download/topo/',
+            extent_raster=extent_raster,
+            download=False,
+            logger=logger,
+        )
+
+        # Make sure we only write out the variable we are interested in.
+        topo.dataset['drainage_class'].rio.to_raster("/tmp/drainage_raster_6931_4000m.tiff")
+
+        index_names = ['ctry_idx', 'state_idx', 'eco_idx', 'biome_idx', 'ecobiome_idx', 'realm_idx', 'lc_idx', 'drain_idx']
+        
+        def generate_indices(files, index_names):
+            # Reads in each raster, flattens it and creates a data frame 
+            # with an index set on the dataframe...
+            f2 = func_name + "generate_indices"
+            for f, idx_name in zip(files, index_names):
+                with rio.open(f) as src:
+                    logger.debug(f"{f2} reading {f} with shape {src.shape}")
+                    arr = src.read(1)
+                    df = pd.DataFrame(arr.flatten())
+                    df = df.set_axis([idx_name], axis=1)
+                    yield df
+        
+        # This is a table with one row per pixel and columns for each index.
+        logger.info(f"{func_name}: Creating the ecotype table by concatening all the indices...")
+        ecotype = pd.concat(list(generate_indices(files, index_names)), axis=1)
+        
+        logger.info(f"{func_name}: Loading the land cover classification...")
+        classif = pd.read_csv(temds.datasources.vegetation.land_cover_classification)
+        classif = classif.rename(columns={"value": "lc_idx"})
+        classif = classif.rename(columns={"classname ": "classname"}) # there is a trailing space in the csv column name
+
+        
+        ecotype['classname'] = 'N/A'
+        for row in classif.T: 
+            lc_idx = classif.loc[row,'lc_idx']
+            cn = classif.loc[row,'classname']
+            idx = (ecotype['lc_idx'] == lc_idx)
+            ecotype.loc[idx, 'classname'] = cn
+
+
+        # Put back in the text based lables for country and state (shapeName and shapeGroup)
+        ecotype = pd.merge(ecotype, state_geo_df.drop(['geometry', 'shapeType', 'shapeID'], axis=1), on=['state_idx'], how='left')
+
+        # put back in the text based labels for biome, realm, etc
+        ecotype = pd.merge(ecotype, eco_geo_df.drop(['OBJECTID','BIOME_NUM','ECO_BIOME_','NNH','ECO_ID','SHAPE_LENG','SHAPE_AREA','NNH_NAME','COLOR', 'COLOR_BIO', 'COLOR_NNH', 'LICENSE', 'geometry',], axis=1), on=['eco_idx'], how='left')
+
+        # Add subregion column
+        ecotype['subregion'] = "N/A"
+
+        idx = ( (ecotype['shapeName'] == 'Alaska') | \
+                    (ecotype['ECO_NAME'] == 'Pacific Coastal Mountain icefields and tundra') | \
+                    (ecotype['ECO_NAME'] == 'Alaska-St. Elias Range tundra') | \
+                    (ecotype['ECO_NAME'] == 'Interior Yukon-Alaska alpine tundra') | \
+                    (ecotype['ECO_NAME'] == 'Brooks-British Range tundra') | \
+                    (ecotype['ECO_NAME'] == 'Arctic foothills tundra') | \
+                    (ecotype['ECO_NAME'] == 'Interior Yukon-Alaska alpine tundra') )
+        ecotype['subregion'] = np.where(idx, 'Western North America', ecotype['subregion'])
+
+        idx = ( (ecotype['shapeGroup'] == 'CAN') & (ecotype['ECO_NAME'] == 'Ogilvie-MacKenzie alpine tundra') )
+        ecotype['subregion'] = np.where(idx, 'Central North America', ecotype['subregion'])
+
+        idx = ( ((ecotype['shapeGroup'] == 'CAN') | (ecotype['shapeGroup'] == 'GRL')) & \
+                    (ecotype['shapeName'] == 'Quebec') |  \
+                    (ecotype['shapeName'] == 'Ontario') | \
+                    (ecotype['shapeName'] == 'Newfoundland and Labrador') | \
+                    (ecotype['ECO_NAME'] == 'Southern Hudson Bay taiga') | \
+                    (ecotype['ECO_NAME'] == 'Central Canadian Shield forests') | \
+                    (ecotype['ECO_NAME'] == 'Eastern Canadian Forest-Boreal transition') )
+        ecotype['subregion'] = np.where(idx, 'Eastern North America', ecotype['subregion'])
+
+
+        idx = ( (ecotype['shapeGroup'] == 'RUS') )
+        ecotype['subregion'] = np.where(idx, 'Eastern Eurasia', ecotype['subregion'])
+
+        idx = ( (ecotype['ECO_NAME'] == 'Yamal-Gydan tundra') | \
+                   (ecotype['ECO_NAME'] == 'Russian Arctic desert') | \
+                   (ecotype['ECO_NAME'] == 'West Siberian taiga') | \
+                   (ecotype['ECO_NAME'] == 'Western Siberian hemiboreal forests') | \
+                   (ecotype['ECO_NAME'] == 'South Siberian forest steppe') | \
+                   (ecotype['ECO_NAME'] == 'Northwest Russian-Novaya Zemlya tundra') | \
+                   (ecotype['ECO_NAME'] == 'Trans-Baikal conifer forests') | \
+                   (ecotype['ECO_NAME'] == 'Kazakh forest steppe') ) 
+        ecotype['subregion'] = np.where(idx, 'Central Eurasia', ecotype['subregion'])
+
+        idx = ( (ecotype['shapeGroup'] == 'NOR') | \
+                   (ecotype['shapeGroup'] == 'SWE') | \
+                   (ecotype['shapeGroup'] == 'FIN') | \
+                   (ecotype['shapeGroup'] == 'ISL') | \
+                   (ecotype['ECO_NAME'] == 'Kola Peninsula tundra') | \
+                   (ecotype['ECO_NAME'] == 'Scandinavian and Russian taiga') | \
+                   (ecotype['ECO_NAME'] == 'Temperate Broadleaf & Mixed Forests') | \
+                   (ecotype['ECO_NAME'] == 'Urals montane forest and taiga') )
+        ecotype['subregion'] = np.where(idx, 'Western Eurasia', ecotype['subregion']) 
+
+        # Add an alpine column
+        ecotype['alpine'] = 'N/A'
+        alpine_idx = ( ecotype['ECO_NAME'].str.contains('alpine', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('montane', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('mountain', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('mountains', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('range', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('rockies', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('cordillera', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('rock', case=False) )
+        ecotype['alpine'] = np.where(alpine_idx, 1, 0)
+
+        # add a community column
+        ecotype['community '] = 'N/A'
+
+        idx = ( (ecotype['classname'] == 'White Spruce forest') )
+        ecotype['community'] = np.where(idx, 'white spruce forest', ecotype['community '])
+
+        idx = ( (ecotype['classname'] == 'Black Spruce forest') | \
+                (ecotype['classname'] == 'Spruce forest') | \
+                (ecotype['classname'] == 'Fir forest') | \
+                (ecotype['classname'] == 'Hemlock forest') )
+        ecotype['community'] = np.where(idx, 'black spruce forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Aspen forest') )
+        ecotype['community'] = np.where(idx, 'aspen forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Birch forest') | \
+                (ecotype['classname'] == 'Poplar forest') | \
+                (ecotype['classname'] == 'Maple') | \
+                (ecotype['classname'] == 'Oak forest') | \
+                (ecotype['classname'] == 'Linden') )
+        ecotype['community'] = np.where(idx, 'birch forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Mixed forest') )
+        ecotype['community'] = np.where(idx, 'mixed forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Larch forest') )
+        ecotype['community'] = np.where(idx, 'larch forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Scotts Pine forest') | \
+                (ecotype['classname'] == 'Siberian Pine') )
+        ecotype['community'] = np.where(idx, 'scots pine forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Jack Pine forest') | \
+                (ecotype['classname'] == 'Pine forest') )
+        ecotype['community'] = np.where(idx, 'jack pine forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Pine forest') & (ecotype['REALM'] == 'Palearctic') )
+        ecotype['community'] = np.where(idx, 'scots pine forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Herbaceous') | \
+                (ecotype['classname'] == 'Graminoid tundra') )
+        ecotype['community'] = np.where(idx, 'tussock tundra', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Other shrublands') | \
+                (ecotype['classname'] == 'Cedar Elfin Wood') | \
+                (ecotype['classname'] == 'Erect-shrub tundra') | \
+                (ecotype['classname'] == 'Shrub tundra') | \
+                (ecotype['classname'] == 'Alpine shrubland') | \
+                (ecotype['classname'] == 'Prostrate-shrub tundra') | \
+                (ecotype['classname'] == 'Riparian shrubland') )
+        ecotype['community'] = np.where(idx, 'shrub tundra', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Barren tundra') | \
+                (ecotype['classname'] == 'Sparsely Vegetated') )
+        ecotype['community'] = np.where(idx, 'heath tundra', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Fen') )
+        ecotype['community'] = np.where(idx, 'fen', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Bog') )
+        ecotype['community'] = np.where(idx, 'bog', ecotype['community'])
+        
+        idx = ( (ecotype['classname'] == 'Wet-sedge tundra') | \
+                (ecotype['classname'] == 'Marsh') )
+        ecotype['community'] = np.where(idx, 'wetsedge tundra', ecotype['community'])
+
+        ecotype['CMT'] = 'CMT00'
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest'),'CMT01',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'white spruce forest'),'CMT02',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'jack pine forest'),'CMT66',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'scots pine forest'),'CMT74',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'larch forest'),'CMT71',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'mixed forest'),'CMT67',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'birch forest'),'CMT03',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'aspen forest'),'CMT65',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra'),'CMT04',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra'),'CMT05',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra'),'CMT07',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'wetsedge tundra'),'CMT06',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog'),'CMT31',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'fen'),'CMT55',ecotype['CMT'])
+
+        # drain_idx: 1 --> poorly drained, 0 --> well drained
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest') & (ecotype['subregion'] == 'Western North America') & (ecotype['drain_idx'] == 1), 'CMT13', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')) & (ecotype['drain_idx'] == 1), 'CMT60', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')) & (ecotype['drain_idx'] == 0), 'CMT69', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')), 'CMT61', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & ((ecotype['subregion'] == 'Eastern Eurasia') | (ecotype['subregion'] == 'Central Eurasia')), 'CMT75', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & (ecotype['subregion'] == 'Western Eurasia'), 'CMT80', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & ((ecotype['ECO_NAME'] == 'Russian Arctic desert') | (ecotype['ECO_NAME'] == 'Kola Peninsula tundra') | (ecotype['ECO_NAME'] == 'Scandinavian coastal conifer forests') | (ecotype['ECO_NAME'] == 'Scandinavian Montane Birch forest and grasslands')) , 'CMT92', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'fen') & (ecotype['REALM'] == 'Palearctic') , 'CMT91', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra') & (ecotype['subregion'] == 'Central North America'), 'CMT52', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra') & (ecotype['subregion'] == 'Eastern North America'), 'CMT90', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT90', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'larch forest') & ((ecotype['subregion'] == 'Central Eurasia') | (ecotype['subregion'] == 'Western Eurasia')),'CMT72',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'mixed forest') & (ecotype['REALM'] == 'Palearctic'),'CMT77',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'scots pine forest') & (ecotype['subregion'] == 'Western Eurasia'),'CMT82',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')), 'CMT50', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & (ecotype['subregion'] == 'Eastern Eurasia'), 'CMT70', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & ((ecotype['subregion'] == 'Western Eurasia') | (ecotype['subregion'] == 'Central Eurasia')), 'CMT76', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & (ecotype['alpine'] == 'alpine'),'CMT20',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')), 'CMT51', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT73', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & (ecotype['alpine'] == 'alpine'),'CMT21',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'wetsedge tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT77', ecotype['CMT'])
+
+        ecotype['CMT_num'] = pd.to_numeric(ecotype['CMT'].str.extract('(\d+)', expand=False)).fillna(np.int32(-9999)).astype(np.int32)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset')
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
+                                              in_vars=['veg_class'], 
+                                              ds_time_dim=[], buffer_px=0)
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['veg_class'] = (['y','x'], np.reshape(ecotype['CMT_num'], (ER.shape[0],ER.shape[1])))
+
+
+        newDS.dataset['veg_class'].attrs.update(units='', name='Community Type Classification')
+        
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(ER.crs.to_wkt(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+
+        return newDS
+
+
+        # for row in state_geo_df.T:
+        #     state_idx = state_geo_df.loc[row, 'state_idx']
+        #     state_name = state_geo_df.loc[row, 'shapeName']
+        #     idx = (ecotype['state_idx'] == state_idx)
+        #     ecotype.loc[idx, 'shapeName'] = state_name
+
+
+        # # ecotype['subregion'] = 'N/A'
+        # # for row in 
+
+
+
+
+
+
+        # #eco_geo_df = get_gdf('eco_idx', 'ECO_NAME')
+        
+        # classif = pd.read_csv("working/00-download/vegetation/TEMLandcoverClassDictionary.csv")
+        # classif = classif.rename(columns={"value": "lc_idx"})
+
+
+        # keep_list = ['REALM', 'subreg', 'ECO_NAME', 'shapeName', 'shapeGroup',
+        #              'classname', 'BIOME_NAME', 'drain_name', 'alpine',
+        #              'community', 
+        #              'lc_idx', 'eco_idx', 'biome_idx','ecobiome_idx', 'realm_idx',]
+
+        # drop_list = [c for c in classif.columns if c not in keep_list]
+        # ecotype = pd.merge(ecotype, classif.drop(drop_list, axis=1), how="left", on=["lc_idx"])
+
+        # drop_list = [c for c in eco_geo_df.columns if c not in keep_list]
+        # ecotype = pd.merge(ecotype, eco_geo_df.drop(drop_list, axis=1), how='left', on=['eco_idx'])
+
+        # drop_list = [c for c in biome_geo_df.columns if c not in keep_list]
+        # drop_list.append('ECO_NAME')
+        # drop_list.append('REALM')
+        # ecotype = pd.merge(ecotype, biome_geo_df.drop(drop_list, axis=1), how="left", on=["biome_idx"])
+
+        # drop_list = [c for c in ecobiome_geo_df.columns if c not in keep_list]
+        # drop_list.append('ECO_NAME')
+        # drop_list.append('REALM')
+        # ecotype = pd.merge(ecotype, ecobiome_geo_df.drop(drop_list, axis=1), how="left", on=["ecobiome_idx"])
+
+        # drop_list = [c for c in realm_geo_df.columns if c not in keep_list]
+        # ecotype = pd.merge(ecotype, realm_geo_df.drop(drop_list, axis=1), how="left", on=["realm_idx"])
+
+
+
+        # import pandas as pd
+        # from io import StringIO
+
+        # vegetation_lookup = '''value,name
+        # 0,missing
+        # 1,Black Spruce Forest
+        # 2,White Spruce Forest
+        # 3,Deciduous Forest
+        # 4,Shrub Tundra
+        # 5,Graminoid Tundra
+        # 6,Wetland Tundra
+        # 7,Barren lichen-moss
+        # 8,Heath
+        # 9,Maritime Upland Forest
+        # 10,Maritime Forested Wetland
+        # 11,Maritime Fen
+        # 12,Maritime Alder Shrubland
+        # 13,Other'''
+
+        # veg_df = pd.read_csv(io.StringIO(vegetation_lookup))
+
+        # import rasterio as rio
+        # full_arctic_aoi_mask = rio.open('working/01-aoi/full-arctic/full-arctic_6931_4000m.tiff')
+        # meta = full_arctic_aoi_mask.meta.copy()
+        # meta.update(compress='lzw')
+
+        # with rio.open('/tmp/country_raster_6931_4000m.tiff', 'w+', **meta) as out:
+        #     out_arr = out.read(1)
+        #     shapes = ((geom,value) for geom, value in zip(country_geo_df.geometry, country_geo_df.ctry_idx))
+        #     burned = rio.features.rasterize(shapes=shapes, fill=-9999, out=out_arr, transform=out.transform)
+        #     out.write_band(1, burned)
+
+
+
+
+        
+        # mask and mskpath are: '/Volumes/5TIV/PROCESSED/MASK/aoi_5k_buff_6931.tiff'
+
+
+    @staticmethod
+    def from_fri(synthetic=True, extent_raster_path=None, logger=Logger()):
+        func_name = "TEMdataset.from_fri"
+        logger.info(f'{func_name}: Processing fire return interval data')   
+
+        if extent_raster_path is None:
+            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        
+        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
+        extent_raster = gdal.Open(extent_raster_path)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset...')
+        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+                                      in_vars=['fri','fri_severity','fri_jday_of_burn','fri_area_of_burn',],
+                                      ds_time_dim=[], buffer_px=0)
+
+        if synthetic:
+            logger.info(f'{func_name}: Generating synthetic data arrays...')
+            fri = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*2000
+            fri_severity = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*2
+            fri_jday_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))+160
+            fri_area_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*1
+        else:
+            raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
+
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['fri'] = (['y','x'], fri)
+        newDS.dataset['fri_severity'] = (['y','x'], fri_severity)
+        newDS.dataset['fri_jday_of_burn'] = (['y','x'], fri_jday_of_burn)
+        newDS.dataset['fri_area_of_burn'] = (['y','x'], fri_area_of_burn)
+
+        logger.info(f'{func_name}: Setting attributes for data variables')
+        newDS.dataset['fri'].attrs.update(units='', name='Fire Return Interval')
+        newDS.dataset['fri_severity'].attrs.update(units='', name='Fire Severity')
+        newDS.dataset['fri_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
+        newDS.dataset['fri_area_of_burn'].attrs.update(units='', name='Area of Burn (km2)')
+
+        logger.info(f'{func_name}: Setting spatial properties for dataset from {extent_raster_path}')
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(extent_raster.GetProjection(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+
+        return newDS
+    
+
+
+    @staticmethod
     def from_topo(data_path, download=False, extent_raster=None,
                   overwrite=False, logger=Logger(), buffer=0, 
                   resample_alg='average'):
@@ -346,6 +944,9 @@ class TEMDataset(object):
         srcDS = Path(data_path, topo.unzipped_raw, topo.unzipped_raw)
         ds = gdal.Translate("", srcDS=srcDS, format="MEM")
         ds.FlushCache()
+
+        # ^---consider replacing with plain gdal open, read only.
+        # refactor to  "src" and "dest" or "aoi" and "topo" rather than ds, ds2, etc
 
         logger.info(f'{func_name}: Reprojecting and cropping topography data.')
         ds2 = gdal.Warp("", ds, 
@@ -392,9 +993,21 @@ class TEMDataset(object):
                                             )) 
         TPI_ds2.FlushCache()
 
+        # Find the drainage class. Original method used gdal_calc.py and 
+        # also factored in the mask...
+        slope = slope_ds2.ReadAsArray()
+        drainage_class = np.where( ((slope >= -0.05) & (slope <= 0.05)), 1, 0 )   
+
+        # gdal_calc.py \
+        #     -A '/Volumes/5TIV/PROCESSED/TOPO/tpi_4k_6931_mask.tif' \
+        #     -B '/Volumes/5TIV/PROCESSED/TOPO/slope_4k_6931_mask.tif' \
+        #     --outfile='/Volumes/5TIV/PROCESSED/TOPO/drainage.tif' \
+        #     --calc="numpy.where(((A >= -0.05) & (A <= 0.05) & (B <= 1.0)), 1, 0)" --NoDataValue=-9999
+
+
         logger.info(f'{func_name}: Creating empty xarray dataset')
         newDS = TEMDataset.from_raster_extent(extent_raster, 
-                                              in_vars='elevation aspect slope TPI'.split(), 
+                                              in_vars='elevation aspect slope TPI drainage_class'.split(), 
                                               ds_time_dim=[], buffer_px=0)
 
         logger.info(f'{func_name}: Assigning data to the new dataset')
@@ -402,11 +1015,13 @@ class TEMDataset(object):
         newDS.dataset['aspect'] = (['y','x'], aspect_ds2.ReadAsArray())
         newDS.dataset['slope'] = (['y','x'], slope_ds2.ReadAsArray())
         newDS.dataset['TPI'] = (['y','x'], TPI_ds2.ReadAsArray())
+        newDS.dataset['drainage_class'] = (['y','x'], drainage_class)
 
         newDS.dataset['elevation'].attrs.update(units='m', name='Elevation')
         newDS.dataset['aspect'].attrs.update(units='degrees', name='Aspect')
         newDS.dataset['slope'].attrs.update(units='degrees', name='Slope')
         newDS.dataset['TPI'].attrs.update(units='', name='Topographic Position Index')
+        newDS.dataset['drainage_class'].attrs.update(units='', name='Drainage Class (1=poorly drained, 0=well drained)')
 
         newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
                     .rio.write_crs(er.GetProjection(), inplace=True)\
@@ -414,7 +1029,6 @@ class TEMDataset(object):
 
         return newDS
     
-
 
     @staticmethod
     def from_worldclim(
@@ -508,7 +1122,8 @@ class TEMDataset(object):
             extent_raster, 
             in_vars=in_vars, 
             ds_time_dim=MONTH_START_DAYS, 
-            logger=logger
+            logger=logger,
+            buffer_px=0
         )
         logger.info(f"{func_name}: Initialization complete")
         logger.info(f"{func_name}: {new.dataset.rio.transform()=}")
@@ -551,13 +1166,15 @@ class TEMDataset(object):
                     f'month {month} at index {idx}'
                 ))
                 
-                # load result to memory so we don't have temp files
-                result = gdal.Warp(
-                    '', data_raster, 
-                    xRes=abs(gt[1]), yRes=abs(gt[5]),
-                    outputBounds=extent,
-                    dstSRS=new.crs.to_wkt(),
-                    format='mem',
+                # Explicitly create destination dataset of the correct size and 
+                # with the geo ref info assigned.
+                result = gdal_tools.empty_dataset(new.dataset[x_dim].size, 
+                                                  new.dataset[y_dim].size, 
+                                                  new.crs.to_wkt(), gt)
+
+                # Now warp into this empty dataset...
+                _ = gdal.Warp(
+                    result, data_raster, 
                     resampleAlg=resample_alg,
                     dstNodata=-3.4e+38,
                     outputType=gdal.GDT_Float32,
@@ -774,7 +1391,7 @@ class TEMDataset(object):
                             # the interpreter, you often have to call it 
                             # multiple times.
 
-        ## opption 2
+        ## option 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         self.logger.debug(f"{funcname}: deleting vars_dict")
@@ -1203,7 +1820,7 @@ class YearlyDataset(TEMDataset):
                 
 
     @staticmethod
-    def from_TEMDataset(inds, year):
+    def from_TEMDataset(inds, year, logger=Logger()):
         """converts an existing TEMDataset to YearlyDataset
 
         Parameters
@@ -1379,6 +1996,51 @@ class YearlyDataset(TEMDataset):
         return new
 
         
+    @staticmethod
+    def from_explicit_fire(year, data_path=None, synthetic=True, 
+                           extent_raster_path=None, 
+                           logger=Logger()):
+        func_name = "TEMdataset.from_explicit_fire"
+        logger.info(f'{func_name}: Processing explicit fire data')   
+
+        if extent_raster_path is None:
+            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        
+        if data_path is not None:
+            raise NotImplementedError(f'{func_name}: data_path not yet implemented!')
+        if not synthetic:
+            raise NotImplementedError(f'{func_name}: non-synthetic data not yet implemented!')
+
+        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
+        extent_raster = gdal.Open(extent_raster_path)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset...')
+        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+                                      in_vars='exp_burn_mask exp_jday_of_burn exp_severity exp_area_of_burn'.split(' '),
+                                      ds_time_dim=['time'], buffer_px=0)
+
+        new = YearlyDataset.from_TEMDataset(newDS, year)
+
+        from IPython import embed; embed()
+
+        # ### Monthly information
+        # month = list(range(1, 13, 1))
+        # monthlength=[31,28,31,30,31,30,31,31,30,31,30,31]
+        # first_day_of_month_noleap=[1,32,60,91,121,152,182,213,244,274,305,335]
+        # first_day_of_month_leap=[1,33,61,92,122,153,183,214,245,275,306,336]
+        # #data = {'month': month, 'doy_noleap': first_day_of_month_noleap, 'doy_leap': first_day_of_month_leap, 'length': monthlength}
+        # data = {'month': month, 'doy_noleap': first_day_of_month_noleap, 'length': monthlength}
+        # month_info = pd.DataFrame(data)
+
+
+        # if synthetic:
+        #     logger.info(f'{func_name}: Generating synthetic data arrays...')
+        #     fire_occurrence = np.zeros(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))
+        #     fire_severity = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*2
+        #     fire_jday_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))+160
+        #     fire_area_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*1
+        # else:
+        #     raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
 
 
 
