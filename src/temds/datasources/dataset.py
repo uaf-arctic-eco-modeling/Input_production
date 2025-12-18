@@ -751,8 +751,11 @@ class TEMDataset(object):
                                               in_vars=['veg_class'], 
                                               ds_time_dim=[], buffer_px=0)
 
+
+        # dunno why, but this data comes out flipped, so we reverse the y axis here
         logger.info(f'{func_name}: Assigning data to the new dataset')
-        newDS.dataset['veg_class'] = (['y','x'], np.reshape(ecotype['CMT_num'], (ER.shape[0],ER.shape[1])))
+        newDS.dataset['veg_class'] = (['y','x'], 
+                                      np.flipud(np.reshape(ecotype['CMT_num'], (ER.shape[0],ER.shape[1]))))
 
 
         newDS.dataset['veg_class'].attrs.update(units='', name='Community Type Classification')
@@ -1033,7 +1036,6 @@ class TEMDataset(object):
         if extent_raster is None:
             key = list(completed.keys())[0]
             extent_raster = list(completed[key].glob('*.tif'))[0]
-        
         new = YearlyDataset.from_raster_extent(
             extent_raster, 
             in_vars=in_vars, 
