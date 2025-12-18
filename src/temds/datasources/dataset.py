@@ -1043,6 +1043,8 @@ class TEMDataset(object):
             logger=logger,
             buffer_px=0
         )
+        # new the TEMDataset object does not seem to be geo-refd at this point...
+        # but new.dataset is geo-refed...and it looks like the right spot too.
         logger.info(f"{func_name}: Initialization complete")
         logger.info(f"{func_name}: {new.dataset.rio.transform()=}")
         logger.info(f"{func_name}: {new.dataset.rio.transform().to_gdal()=}")
@@ -1056,9 +1058,17 @@ class TEMDataset(object):
 
         gt = new.transform.to_gdal()
         logger.debug(f"{func_name}: {gt=}")
+
         minx, miny = gt[0], gt[3]
         maxx = minx + abs(gt[1]) * new.dataset[x_dim].size
         maxy = miny + abs(gt[5]) * new.dataset[y_dim].size
+
+        # Problem was here: we calc maxy using the abs(), so it gets rid of 
+        # the negative sign, which is what we need for the y direction.
+        # and then we assign maxy to extent...BUT 
+        # when calling the gdal_tools.empty_dataset, we use the gt which is
+        # the original geotransform, which has the negative y direction!!
+
         extent = (minx, miny, maxx, maxy) #_warp_order
         logger.info(
             f'{func_name}: Running gdal.Warp to extent {extent} on all data'
@@ -1084,12 +1094,18 @@ class TEMDataset(object):
                     f'month {month} at index {idx}'
                 ))
                 
-                # Explicitly create destination dataset of the correct size and 
-                # with the geo ref info assigned.
+                # Explicitly create destination dataset of the correct size and
+                # with the geo ref info assigned. 
+                # 
+                # It is important here to use abs() on the pixel size in y
+                # direction because gdal_tools.empty_dataset uses that to create
+                # the geotransform and if it is negative, the data gets flipped
+                # upside down (and shifted south). Assume the issue would be
+                # happen in the x direction as well, but we don't seem to
+                # encounter any negative x resolutions.
                 result = gdal_tools.empty_dataset(new.dataset[x_dim].size, 
                                                   new.dataset[y_dim].size, 
-                                                  new.crs.to_wkt(), gt)
-
+                                                  new.crs.to_wkt(), (gt[0], abs(gt[1]), gt[2], gt[3], gt[4], abs(gt[5])))
                 # Now warp into this empty dataset...
                 _ = gdal.Warp(
                     result, data_raster, 
@@ -1097,10 +1113,16 @@ class TEMDataset(object):
                     dstNodata=-3.4e+38,
                     outputType=gdal.GDT_Float32,
                 )
+
+                # At this point if we plot the pixels, 
+                # it looks like it is grabbing the data to the south of what is
+                # requested unless we take the abs() above...
                 pixels = result.ReadAsArray()
-                if gt[5] < 0: # filp flop if res_y is negative
-                    pixels = pixels[::-1]
-                    
+
+                # This did not seem to be needed after fixing with abs() above.
+                #if gt[5] < 0: # filp flop if res_y is negative
+                #    pixels = pixels[::-1]
+
                 pixels[pixels <= -3e30] = np.nan # fix
                 
                 new.dataset[var][idx] = pixels # 0based index
