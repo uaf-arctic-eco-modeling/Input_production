@@ -538,7 +538,7 @@ class TEMDataset(object):
         )
 
         # Make sure we only write out the variable we are interested in.
-        topo.dataset['drainage_class'].rio.to_raster("/tmp/drainage_raster_6931_4000m.tiff")
+        topo.dataset['drainage_class'].astype(np.int32).rio.to_raster("/tmp/drainage_raster_6931_4000m.tiff")
 
         index_names = ['ctry_idx', 'state_idx', 'eco_idx', 'biome_idx', 'ecobiome_idx', 'realm_idx', 'lc_idx', 'drain_idx']
         
