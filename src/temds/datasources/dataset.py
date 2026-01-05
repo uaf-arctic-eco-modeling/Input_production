@@ -768,7 +768,47 @@ class TEMDataset(object):
         return newDS
 
 
+    @staticmethod
+    def from_historic_explicit_fire(synthetic=True, extent_raster_path=None, synthetic_time=None, logger=Logger()):
+        func_name = "TEMdataset.from_historic_explicit_fire"
+        logger.info(f'{func_name}: Processing explicit fire data')   
 
+        if extent_raster_path is None:
+            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        
+        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
+        extent_raster = gdal.Open(extent_raster_path)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset...')
+        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+                                      in_vars=['exp_burn_mask','exp_fire_severity','exp_jday_of_burn','exp_area_of_burn',],
+                                      ds_time_dim=[], buffer_px=0)
+        # if not isinstance(synthetic_time, xr.DataArray):
+        #     raise ValueError(f'{func_name}: synthetic_time must be an xarray DataArray!')   
+
+        if isinstance(synthetic, xr.DataArray):
+            logger.info(f'{func_name}: Generating synthetic data arrays...')
+            time_length = synthetic.sizes['time']
+            exp_burn_mask = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+            exp_fire_severity = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+            exp_jday_of_burn = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+            exp_area_of_burn = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+        else:
+            raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['exp_burn_mask'] = (['time','y','x'], exp_burn_mask)
+        newDS.dataset['exp_fire_severity'] = (['time','y','x'], exp_fire_severity)
+        newDS.dataset['exp_jday_of_burn'] = (['time','y','x'], exp_jday_of_burn)
+        newDS.dataset['exp_area_of_burn'] = (['time','y','x'], exp_area_of_burn)
+
+        logger.info(f'{func_name}: Setting attributes for data variables')
+        newDS.dataset['exp_burn_mask'].attrs.update(units='', name='Fire Occurrence')
+        newDS.dataset['exp_fire_severity'].attrs.update(units='', name='Fire Severity')
+        newDS.dataset['exp_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
+        newDS.dataset['exp_area_of_burn'].attrs.update(units='km-2', name='Area of Burn (km-2)')
+
+        return newDS
 
     @staticmethod
     def from_fri(synthetic=True, extent_raster_path=None, logger=Logger()):
@@ -1003,10 +1043,9 @@ class TEMDataset(object):
         """
         ## used in messages.
         func_name = "TEMdataset.from_worldclim"
-        
         if in_vars == 'all':
             in_vars = worldclim.VARS
-        if not type(in_vars) is list:
+        if type(in_vars) is not list:
             in_vars = [in_vars]
         completed = {}
         logger.info(f'{func_name}: Processing Worldclim data in {data_path}')
