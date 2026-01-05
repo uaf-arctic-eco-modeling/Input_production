@@ -218,8 +218,8 @@ class Tile(object):
         self.data[name] = datasource.get_by_extent(
             minx, miny, maxx, maxy, self.crs, **kwargs
         )
-        if not callback is None:
-            if isinstance(self.data[name],dataset.TEMDataset ):
+        if callback is not None:
+            if isinstance(self.data[name], dataset.TEMDataset ):
                 self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)
             else:
                 for year in self.data[name].range():
