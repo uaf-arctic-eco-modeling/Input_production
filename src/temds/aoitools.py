@@ -523,6 +523,21 @@ class TileIndex(object):
   def remove_tiles(self):
     shutil.rmtree(self.root + "/tiles")
 
+  def lookup_tile_resolution(self, hidx, vidx):
+       for i in self.calculate_tile_extents():
+         if i['hidx'] == hidx and i['vidx'] == vidx:
+           return ( i['xrez'], i['yrez'] )
+         else:
+           pass
+       return RuntimeError(f"Can't find {hidx},{vidx} in tile index!")
+
+  def lookup_tile_extents(self, hidx, vidx):
+       for i in self.calculate_tile_extents():
+         if i['hidx'] == hidx and i['vidx'] == vidx:
+           return ( i['xmin'], i['xmax'], i['ymin'], i['ymax'] )
+         else:
+           pass
+       return RuntimeError(f"Can't find {hidx},{vidx} in tile index!")
 
   def calculate_tile_gridsize(self):
 
