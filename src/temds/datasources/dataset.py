@@ -1179,9 +1179,13 @@ class TEMDataset(object):
 
         
 
+        logger.info(f'{func_name}: Renaming variables to standard names...')
+        logger.debug(f'{func_name}: Before rename: {list(new.dataset.data_vars)}')
+        logger.debug(f'{func_name}: Using aliases: {climate_variables.aliases_for(worldclim.NAME, "dict_r")}')        
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(worldclim.NAME, 'dict_r')
         )
+        logger.debug(f'{func_name}: After rename: {list(new.dataset.data_vars)}') 
 
         return new
     
@@ -2167,9 +2171,14 @@ class YearlyDataset(TEMDataset):
         new.dataset['winddir'].attrs.update(units=unit, name=v_name)
         
 
+        logger.info(f'{func_name}: Renaming variables to TEMDS standard names...')
+        logger.info(f'{func_name}: current names: {list(new.dataset.data_vars)}')
+        logger.info(f'{func_name}: {climate_variables.aliases_for(crujra.NAME, "dict_r")}')
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(crujra.NAME, 'dict_r')
         )
+        logger.info(f'{func_name}: new names: {list(new.dataset.data_vars)}')
+
         verified, reasons = new.verify()
         if not verified:
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
