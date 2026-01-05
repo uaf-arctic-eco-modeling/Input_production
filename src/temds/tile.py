@@ -501,7 +501,7 @@ class Tile(object):
         renamed to match TEM expectations.
 
         Ensure that the tile object (self) has a 'downscaled_cru' key in its
-        data dictionary. This key should correspond to an AnnualTimeSeries
+        data dictionary. This key should correspond to an YearlyTimeSeries
         object containing the downscaled climate data. Make sure that the key
         passed to this method matches the key used in downscale_timeseries
         method to store the downscaled data.
