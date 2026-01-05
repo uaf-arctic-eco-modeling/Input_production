@@ -1112,6 +1112,11 @@ class TEMDataset(object):
         logger.info(
             f'{func_name}: Running gdal.Warp to extent {extent} on all data'
         )
+
+        # TODO: verify names
+        # PROBLREMS SEEMS TO BE HERE...not sure if this is correct and the
+        # other ones (cru) need to be renamed like this, or if this is the one that is wrong
+
         for var in in_vars:
             cv = climate_variables.lookup_alias(worldclim.NAME, var)
             unit = cv.std_unit.name
@@ -1322,7 +1327,16 @@ class TEMDataset(object):
 
         ## clipped shape, and geotransform
         c_x, c_y = int((maxx-minx)/resolution), int((maxy-miny)/resolution)
-        c_gt = minx, resolution, 0.0, miny, 0.0, resolution
+        #c_gt = minx, resolution, 0.0, miny, 0.0, resolution
+        print(c_x, c_y)
+        x_sign, y_sign = 1, 1
+        if c_x<0:
+            x_sign = -1
+        if c_y < 0:
+            y_sign = -1
+
+        c_gt = minx, x_sign*resolution, 0.0, miny, 0.0, x_sign*resolution
+
 
         if hasattr(working_dataset, 'lat') and hasattr(working_dataset, 'lon'):
             s_x = working_dataset.lon.shape[0]
@@ -1338,7 +1352,8 @@ class TEMDataset(object):
 
         # gdal wants things in order, x, y, band count
         source_dim_sizes = [s_x, s_y]
-        dest_dim_sizes = [c_x, c_y]
+        #dest_dim_sizes = [c_x, c_y]
+        dest_dim_sizes = [abs(c_x), abs(c_y)]
 
         # N time steps
         if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
@@ -1418,10 +1433,20 @@ class TEMDataset(object):
             
         #     data_arrays[var] = dest.ReadAsArray()
             
-        ## we want these to be teh center of the pixels so for x and y the range
+        ## we want these to be the center of the pixels so for x and y the range
         self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
         x_coords = np.arange(minx+resolution/2, minx + c_x * resolution, resolution) 
-        y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
+        #y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
+
+        print(miny,maxy, resolution)
+        if miny < maxy:
+            # print('a')
+            y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution)
+        else: 
+            # print('b')
+            y_coords = np.arange(maxy+resolution/2, maxy + abs(c_y) * resolution, resolution)
+        # print(y_coords)
+
 
         coords={
             'x': x_coords,
@@ -1714,6 +1739,27 @@ class TEMDataset(object):
                 self.logger.info("Dataset has lon/lat dimensions but crs is not EPSG:4326. Using default x, y spatial dimensions.")
         else:
             self.logger.info("Dataset is missing lon/lat dimensions. Using default x, y spatial dimensions.")
+
+
+        # # trickery to ensure all data uses our standard min coords
+        s_minx, s_miny, s_maxx, s_maxy = in_dataset.rio.bounds()
+        transform = in_dataset.rio.transform()
+        if transform.c > s_minx:
+            transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+            if x_dim == 'x':
+                in_dataset = in_dataset.reindex(x=in_dataset.x[::-1])
+            else:
+                in_dataset = in_dataset.reindex(lon=in_dataset.lon[::-1])
+            in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+
+        if transform.f > s_miny:
+            transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+            if y_dim == 'y':
+                in_dataset = in_dataset.reindex(y=in_dataset.y[::-1])
+            else:
+                in_dataset = in_dataset.reindex(lat=in_dataset.lat[::-1])
+            in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+
 
         in_dataset = \
             in_dataset.rio.write_crs(crs, inplace=True).\
