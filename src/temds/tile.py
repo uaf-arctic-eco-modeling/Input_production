@@ -270,6 +270,11 @@ class Tile(object):
 
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
 
+        # BUG HERE:
+        # If user has specified items=['some_item'], it saves the items, but ra
+        # than update the manifext, it overwrites it, effectively hiding the
+        # existing saved tile data...
+
         # fill_value = lookup(kwargs, 'fill_value', 1.0e+20 )
         # missing_value = lookup(kwargs, 'missing_value', 1.0e+20 )
         # compress = lookup(kwargs, 'use_zlib', True)
