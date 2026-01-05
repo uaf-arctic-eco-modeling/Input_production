@@ -13,6 +13,7 @@ datasource objects and then calls this methods to populate/run the tile object
 from pathlib import Path
 import shutil
 
+import numpy as np
 import xarray as xr
 import pandas as pd
 import yaml
