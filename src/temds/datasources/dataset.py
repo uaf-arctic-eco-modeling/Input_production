@@ -768,7 +768,47 @@ class TEMDataset(object):
         return newDS
 
 
+    @staticmethod
+    def from_historic_explicit_fire(synthetic=True, extent_raster_path=None, synthetic_time=None, logger=Logger()):
+        func_name = "TEMdataset.from_historic_explicit_fire"
+        logger.info(f'{func_name}: Processing explicit fire data')   
 
+        if extent_raster_path is None:
+            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        
+        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
+        extent_raster = gdal.Open(extent_raster_path)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset...')
+        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+                                      in_vars=['exp_burn_mask','exp_fire_severity','exp_jday_of_burn','exp_area_of_burn',],
+                                      ds_time_dim=[], buffer_px=0)
+        # if not isinstance(synthetic_time, xr.DataArray):
+        #     raise ValueError(f'{func_name}: synthetic_time must be an xarray DataArray!')   
+
+        if isinstance(synthetic, xr.DataArray):
+            logger.info(f'{func_name}: Generating synthetic data arrays...')
+            time_length = synthetic.sizes['time']
+            exp_burn_mask = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+            exp_fire_severity = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+            exp_jday_of_burn = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+            exp_area_of_burn = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+        else:
+            raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['exp_burn_mask'] = (['time','y','x'], exp_burn_mask)
+        newDS.dataset['exp_fire_severity'] = (['time','y','x'], exp_fire_severity)
+        newDS.dataset['exp_jday_of_burn'] = (['time','y','x'], exp_jday_of_burn)
+        newDS.dataset['exp_area_of_burn'] = (['time','y','x'], exp_area_of_burn)
+
+        logger.info(f'{func_name}: Setting attributes for data variables')
+        newDS.dataset['exp_burn_mask'].attrs.update(units='', name='Fire Occurrence')
+        newDS.dataset['exp_fire_severity'].attrs.update(units='', name='Fire Severity')
+        newDS.dataset['exp_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
+        newDS.dataset['exp_area_of_burn'].attrs.update(units='km-2', name='Area of Burn (km-2)')
+
+        return newDS
 
     @staticmethod
     def from_fri(synthetic=True, extent_raster_path=None, logger=Logger()):
@@ -1003,10 +1043,9 @@ class TEMDataset(object):
         """
         ## used in messages.
         func_name = "TEMdataset.from_worldclim"
-        
         if in_vars == 'all':
             in_vars = worldclim.VARS
-        if not type(in_vars) is list:
+        if type(in_vars) is not list:
             in_vars = [in_vars]
         completed = {}
         logger.info(f'{func_name}: Processing Worldclim data in {data_path}')
@@ -1073,6 +1112,11 @@ class TEMDataset(object):
         logger.info(
             f'{func_name}: Running gdal.Warp to extent {extent} on all data'
         )
+
+        # TODO: verify names
+        # PROBLREMS SEEMS TO BE HERE...not sure if this is correct and the
+        # other ones (cru) need to be renamed like this, or if this is the one that is wrong
+
         for var in in_vars:
             cv = climate_variables.lookup_alias(worldclim.NAME, var)
             unit = cv.std_unit.name
@@ -1140,9 +1184,13 @@ class TEMDataset(object):
 
         
 
+        logger.info(f'{func_name}: Renaming variables to standard names...')
+        logger.debug(f'{func_name}: Before rename: {list(new.dataset.data_vars)}')
+        logger.debug(f'{func_name}: Using aliases: {climate_variables.aliases_for(worldclim.NAME, "dict_r")}')        
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(worldclim.NAME, 'dict_r')
         )
+        logger.debug(f'{func_name}: After rename: {list(new.dataset.data_vars)}') 
 
         return new
     
@@ -1279,7 +1327,16 @@ class TEMDataset(object):
 
         ## clipped shape, and geotransform
         c_x, c_y = int((maxx-minx)/resolution), int((maxy-miny)/resolution)
-        c_gt = minx, resolution, 0.0, miny, 0.0, resolution
+        #c_gt = minx, resolution, 0.0, miny, 0.0, resolution
+        print(c_x, c_y)
+        x_sign, y_sign = 1, 1
+        if c_x<0:
+            x_sign = -1
+        if c_y < 0:
+            y_sign = -1
+
+        c_gt = minx, x_sign*resolution, 0.0, miny, 0.0, x_sign*resolution
+
 
         if hasattr(working_dataset, 'lat') and hasattr(working_dataset, 'lon'):
             s_x = working_dataset.lon.shape[0]
@@ -1295,7 +1352,8 @@ class TEMDataset(object):
 
         # gdal wants things in order, x, y, band count
         source_dim_sizes = [s_x, s_y]
-        dest_dim_sizes = [c_x, c_y]
+        #dest_dim_sizes = [c_x, c_y]
+        dest_dim_sizes = [abs(c_x), abs(c_y)]
 
         # N time steps
         if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
@@ -1375,10 +1433,20 @@ class TEMDataset(object):
             
         #     data_arrays[var] = dest.ReadAsArray()
             
-        ## we want these to be teh center of the pixels so for x and y the range
+        ## we want these to be the center of the pixels so for x and y the range
         self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
         x_coords = np.arange(minx+resolution/2, minx + c_x * resolution, resolution) 
-        y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
+        #y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
+
+        print(miny,maxy, resolution)
+        if miny < maxy:
+            # print('a')
+            y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution)
+        else: 
+            # print('b')
+            y_coords = np.arange(maxy+resolution/2, maxy + abs(c_y) * resolution, resolution)
+        # print(y_coords)
+
 
         coords={
             'x': x_coords,
@@ -1671,6 +1739,27 @@ class TEMDataset(object):
                 self.logger.info("Dataset has lon/lat dimensions but crs is not EPSG:4326. Using default x, y spatial dimensions.")
         else:
             self.logger.info("Dataset is missing lon/lat dimensions. Using default x, y spatial dimensions.")
+
+
+        # # trickery to ensure all data uses our standard min coords
+        s_minx, s_miny, s_maxx, s_maxy = in_dataset.rio.bounds()
+        transform = in_dataset.rio.transform()
+        if transform.c > s_minx:
+            transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+            if x_dim == 'x':
+                in_dataset = in_dataset.reindex(x=in_dataset.x[::-1])
+            else:
+                in_dataset = in_dataset.reindex(lon=in_dataset.lon[::-1])
+            in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+
+        if transform.f > s_miny:
+            transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+            if y_dim == 'y':
+                in_dataset = in_dataset.reindex(y=in_dataset.y[::-1])
+            else:
+                in_dataset = in_dataset.reindex(lat=in_dataset.lat[::-1])
+            in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+
 
         in_dataset = \
             in_dataset.rio.write_crs(crs, inplace=True).\
@@ -2128,9 +2217,14 @@ class YearlyDataset(TEMDataset):
         new.dataset['winddir'].attrs.update(units=unit, name=v_name)
         
 
+        logger.info(f'{func_name}: Renaming variables to TEMDS standard names...')
+        logger.info(f'{func_name}: current names: {list(new.dataset.data_vars)}')
+        logger.info(f'{func_name}: {climate_variables.aliases_for(crujra.NAME, "dict_r")}')
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(crujra.NAME, 'dict_r')
         )
+        logger.info(f'{func_name}: new names: {list(new.dataset.data_vars)}')
+
         verified, reasons = new.verify()
         if not verified:
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
