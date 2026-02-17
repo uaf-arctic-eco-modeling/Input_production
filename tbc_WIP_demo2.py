@@ -166,7 +166,7 @@ def exercise_AOI( AOI_NAME, wc=True, veg=True, cru=False, topo=True, tile=False 
     tile = temds.tile.Tile( (hidx,vidx), tile_index.lookup_tile_extents(hidx,vidx), int(np.abs(rezx)), tile_index.aoimask.aoi.crs, buffer_px=0, logger=log)
 
     # load an existing directory....
-    tile.load_from_directory("working/03-vital-weevil-SE/tiles/H00_V00/")
+    #tile.load_from_directory("working/03-vital-weevil-SE/tiles/H00_V00/")
 
     # make from raw ingredients...  
     tile.import_and_normalize('worldclim', wc)
@@ -196,7 +196,34 @@ def exercise_AOI( AOI_NAME, wc=True, veg=True, cru=False, topo=True, tile=False 
     # The 
 
 
-    DIR = '../dvmdostem-input-catalog/sample-temds/{AOI_NAME}/H{hidx:02d}_V{vidx:02d}/'.format(AOI_NAME=AOI_NAME, hidx=hidx, vidx=vidx)
+    # First, go ahead and export the dataset (tile) to a TEM format. (Full size
+    # of the AOI). Put this in one of the locations (dvmdostem-dev container or
+    # Field-To-Model container)
+    #
+    # Then run the extract pixel function to get the single pixel netcdf....
+    # Put this in the Field-To-Model container and see if we can run it...
+    # Re: names, the 
+
+    #    The region used to make          the NGEE Site
+    #    a multi-pix dataset                 
+    #     AOI_NAME=modex26-TLK          SITE-ID=AK-TLK
+    
+
+    # At the end once it works:
+    #  1) put it in the ../field-to-model-inputdata/TEM/ directory.
+    #  2) new branch, commit the new files
+    #  3) push to github
+    #  4) make PR to merge to main repo, merge it.
+    #  5) run the docker run ... get_inputdata command 
+
+    # Use this for inserting to Model container
+    #DIR = f'../Field-to-Model/model_examples/TEM/{AOI_NAME}/'
+
+    # Use this for inserting into the field-to-model-inputdata repo
+    DIR = f'../field-to-model-inputdata/TEM/{AOI_NAME}/'
+
+    # use this for inserting to dvmdostem-dev container
+    #DIR = '../dvmdostem-input-catalog/sample-temds/{AOI_NAME}/H{hidx:02d}_V{vidx:02d}/'.format(AOI_NAME=AOI_NAME, hidx=hidx, vidx=vidx)
     !mkdir -p {DIR}
 
     co2 = tile.to_TEM('co2')
@@ -213,6 +240,8 @@ def exercise_AOI( AOI_NAME, wc=True, veg=True, cru=False, topo=True, tile=False 
     S.to_netcdf(Path(DIR, 'soil-texture.nc'))
 
     H = tile.to_TEM('cru-downscaled')
+    H.dataset['Y'] = np.arange(H.dataset.sizes['y'])
+    H.dataset['X'] = np.arange(H.dataset.sizes['x'])  
     H.save(Path(DIR, 'historic-climate.nc'), overwrite=True)
 
     F = tile.to_TEM('fri-fire')
@@ -231,12 +260,14 @@ def exercise_AOI( AOI_NAME, wc=True, veg=True, cru=False, topo=True, tile=False 
     PEF['time'] = HEF['time'] + pd.Timedelta(days=365)*(HEF['time'].size/12)
     PEF.to_netcdf(Path(DIR, 'projected-explicit-fire.nc'))
 
-    mask = np.ones( (tile.data['veg'].dataset.sizes['y'], 
-                    tile.data['veg'].dataset.sizes['x']), dtype=np.int64)
-    R = xr.Dataset( {'run': ( ('Y','X'), mask)} )
-    R.to_netcdf(Path(DIR, 'run-mask.nc'), 'w')
+    # DONT USE THIS, IT CAUSES PROBLEMS LATER
+    # mask = np.ones( (tile.data['veg'].dataset.sizes['y'], 
+    #                 tile.data['veg'].dataset.sizes['x']), dtype=np.int64)
+    # R = xr.Dataset( {'run': ( ('Y','X'), mask)} )
+    # R.to_netcdf(Path(DIR, 'run-mask.nc'), 'w')
 
-    
+
+
 
     # !pip install -e /Users/tobeycarman/Documents/SEL/dvm-dos-tem/pyddt
     # For some reason, can't import here, but the cmd line stuff works...
@@ -246,7 +277,6 @@ def exercise_AOI( AOI_NAME, wc=True, veg=True, cru=False, topo=True, tile=False 
     #!pyddt-runmask --conform-mask-to-inputs {DIR} {DIR}/run-mask.nc
 
 
-    !
 
     # This gets the wrong size...the AOI is bigger than the tile. We need to get the
     # actual tile size here, the ubuffered tile size...
@@ -257,101 +287,424 @@ def exercise_AOI( AOI_NAME, wc=True, veg=True, cru=False, topo=True, tile=False 
 
 
 
-
-
-
-
-
-
-
-X
-X.data
-X.dataset
-X.save("/tmp/forTEM.nc")
-X.save("/tmp/historic-climate.nc")
-tile
-pwd
-ls ../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/
-!ncdump -h ../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/
-!ncdump -h ../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/drainage.nc
-topo.
-temds.dataset.TEMDataset(tile.data['topo'])
-temds.datasources.dataset.TEMDataset(tile.data['topo'])
-tile.data['topo'].dataset
-V = tile.data['topo'].dataset
-V.drop('TPI')
-V.drop('TPI').drop('drainage_class')
-V = tile.to_TEM('topo')
-V = tile.to_TEM('topo')
-V
-tile.data['topo'].dataset['drainage_class']
-tile.data['topo'].dataset.drop('elevation', 'TPI', 'slope', 'aspect')
-tile.data['topo'].dataset.drop(['elevation', 'TPI', 'slope', 'aspect'])
-V = tile.to_TEM('topo')
-V
-tile.data['veg']
-tile.data['veg'].dataset
-tile.data['veg'].dataset
-!ncdump -h ../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/
-ls ../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/
-!ncdump -h ../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/co2.nc
-tile
-tile.data['soiltex']
-tile.data['soiltex'].data
-tile.data['soiltex'].dataset
-!ncdump -h ../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/co2.nc
-import matplotlib.pyplot as plt
 import xarray as xr
-xr.load_data('../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/co2.nc')
-xr.load_dataset('../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/co2.nc')
-co2 = xr.load_dataset('../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/co2.nc')
-co2.plot()
-co2.variables['co2'].plot()
-co2.variables['co2']
-plt.plot(co2.variables['co2'])
-plt.show()
-!ncview ../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/co2.nc
-!ncdump  ../dvm-dos-tem/demo-data/cru-ts40_ar5_rcp85_ncar-ccsm4_toolik_field_station_10x10/co2.nc
-xr.Dataset(data_vars={'co2':co2}, coords={'year':year})
-            year = [1901, 1902, 1903, 1904, 1905, 1906, 1907, 1908, 1909, 1910, 1911, 
-                1912, 1913, 1914, 1915, 1916, 1917, 1918, 1919, 1920, 1921, 1922, 1923, 
-                1924, 1925, 1926, 1927, 1928, 1929, 1930, 1931, 1932, 1933, 1934, 1935, 
-                1936, 1937, 1938, 1939, 1940, 1941, 1942, 1943, 1944, 1945, 1946, 1947, 
-                1948, 1949, 1950, 1951, 1952, 1953, 1954, 1955, 1956, 1957, 1958, 1959, 
-                1960, 1961, 1962, 1963, 1964, 1965, 1966, 1967, 1968, 1969, 1970, 1971, 
-                1972, 1973, 1974, 1975, 1976, 1977, 1978, 1979, 1980, 1981, 1982, 1983, 
-                1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 
-                1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 
-                2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 
-                2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
-            co2 = [296.311, 296.661, 297.04, 297.441, 297.86, 298.29, 298.726, 299.163, 
-                299.595, 300.016, 300.421, 300.804, 301.162, 301.501, 301.829, 302.154, 
-                302.48, 302.808, 303.142, 303.482, 303.833, 304.195, 304.573, 304.966, 
-                305.378, 305.806, 306.247, 306.698, 307.154, 307.614, 308.074, 308.531, 
-                308.979, 309.401, 309.781, 310.107, 310.369, 310.559, 310.667, 310.697, 
-                310.664, 310.594, 310.51, 310.438, 310.401, 310.41, 310.475, 310.605, 
-                310.807, 311.077, 311.41, 311.802, 312.245, 312.736, 313.27, 313.842, 
-                314.448, 315.084, 315.665, 316.535, 317.195, 317.885, 318.495, 318.935, 
-                319.58, 320.895, 321.56, 322.34, 323.7, 324.835, 325.555, 326.55, 
-                328.455, 329.215, 330.165, 331.215, 332.79, 334.44, 335.78, 337.655, 
-                338.925, 340.065, 341.79, 343.33, 344.67, 346.075, 347.845, 350.055, 
-                351.52, 352.785, 354.21, 355.225, 356.055, 357.55, 359.62, 361.69, 
-                363.76, 365.83, 367.9, 368, 370.1, 372.2, 373.6943, 375.3507, 377.0071, 
-                378.6636, 380.5236, 382.3536, 384.1336, 389.9, 391.65, 393.85, 396.52, 
-                398.65, 400.83,
-                404.41, 406.76, 408.72, 411.65, 414.21, 416.41, 418.53, 421.08, 424.61 ]
-xr.Dataset(data_vars={'co2':co2}, coords={'year':year})
-xr.Dataset(coords={'year':year})
-xr.Dataset(co2, coords={'year':year})
-xr.Dataset?
-xr.Dataset(data_vars={'co2':(year,co2)}, coords={'year':year})
-xr.Dataset(data_vars={'co2':((year),co2)}, coords={'year':year})
-xr.Dataset(data_vars={'co2':('year',co2)}, coords={'year':year})
-tile
-co2 = tile.to_TEM('co2')
-co2 = tile.to_TEM('co2')
-co2 = tile.to_TEM('co2')
-co2 = tile.to_TEM('co2')
-type(co2)
-co2.to_netcdf("../dvmdostem-workflows/test-temds/vital-weevil-SE/co2.nc")
-!mkdir -p /Users/tobeycarman/Documents/SEL/dvmdostem-workflows/test-temds/vital-weevil-SE/
+import numpy as np
+
+def extract_nearest_pixel_0(netcdf_file, target_lat, target_lon, output_file=None):
+    """
+    Extract a single pixel from NetCDF file nearest to given coordinates.
+    Preserves all original dimensions but with y,x dimensions of size 1.
+    
+    Parameters:
+    -----------
+    netcdf_file : str
+        Path to input NetCDF file
+    target_lat : float
+        Target latitude in degrees
+    target_lon : float  
+        Target longitude in degrees
+    output_file : str, optional
+        Path for output NetCDF file. If None, returns xarray Dataset
+        
+    Returns:
+    --------
+    xarray.Dataset or None
+        Dataset with single pixel if output_file is None, otherwise saves to file
+    """
+    # Open the dataset
+    ds = xr.open_dataset(netcdf_file)
+    
+    # Calculate distance from target coordinates to all grid points
+    lat_diff = ds['lat'] - target_lat  
+    lon_diff = ds['lon'] - target_lon
+    
+    # Simple Euclidean distance in lat/lon space
+    distances = np.sqrt(lat_diff**2 + lon_diff**2)
+    
+    # Find the indices of minimum distance
+    min_indices = np.unravel_index(np.argmin(distances.values), distances.shape)
+    y_idx, x_idx = min_indices
+    print(f"Nearest pixel indices: y={y_idx}, x={x_idx} with distance {distances.values[y_idx, x_idx]:.6f} degrees")
+    print(f"++++++++++++++++++++++")
+
+    # Extract the single pixel using isel but keep dimensions by using slice
+    # This preserves the dimension structure but makes y,x dimensions size 1
+    pixel_data = ds.isel(y=slice(y_idx, y_idx+1), x=slice(x_idx, x_idx+1))
+    
+    # Add metadata about the extraction
+    pixel_data.attrs['extracted_from'] = netcdf_file
+    pixel_data.attrs['target_lat'] = target_lat
+    pixel_data.attrs['target_lon'] = target_lon
+    pixel_data.attrs['actual_lat'] = float(ds['lat'].isel(y=y_idx, x=x_idx).values)
+    pixel_data.attrs['actual_lon'] = float(ds['lon'].isel(y=y_idx, x=x_idx).values)
+    pixel_data.attrs['pixel_indices'] = f"y={y_idx}, x={x_idx}"
+    
+    if output_file:
+        # Save to file
+        pixel_data.to_netcdf(output_file)
+        print(f"Pixel data saved to {output_file}")
+        print(f"Target coordinates: {target_lat}°N, {target_lon}°E")
+        print(f"Actual coordinates: {pixel_data.attrs['actual_lat']:.6f}°N, {pixel_data.attrs['actual_lon']:.6f}°E")
+        print(f"Output dimensions: y={pixel_data.dims['y']}, x={pixel_data.dims['x']}")
+        return None
+    else:
+        return pixel_data
+    
+
+
+
+def extract_nearest_pixel_1(netcdf_file, target_lat, target_lon, output_file=None):
+    """
+    Extract a single pixel from NetCDF file nearest to given coordinates.
+    Preserves all original dimensions but with y,x dimensions of size 1.
+    Maintains proper geo-referencing for GIS software.
+    
+    Parameters:
+    -----------
+    netcdf_file : str
+        Path to input NetCDF file
+    target_lat : float
+        Target latitude in degrees
+    target_lon : float  
+        Target longitude in degrees
+    output_file : str, optional
+        Path for output NetCDF file. If None, returns xarray Dataset
+        
+    Returns:
+    --------
+    xarray.Dataset or None
+        Dataset with single pixel if output_file is None, otherwise saves to file
+    """
+    # Open the dataset
+    ds = xr.open_dataset(netcdf_file)
+    
+    # Calculate distance from target coordinates to all grid points
+    lat_diff = ds['lat'] - target_lat  
+    lon_diff = ds['lon'] - target_lon
+    
+    # Simple Euclidean distance in lat/lon space
+    distances = np.sqrt(lat_diff**2 + lon_diff**2)
+    
+    # Find the indices of minimum distance
+    min_indices = np.unravel_index(np.argmin(distances.values), distances.shape)
+    y_idx, x_idx = min_indices
+    print(f"Nearest pixel indices: y={y_idx}, x={x_idx} with distance {distances.values[y_idx, x_idx]:.6f} degrees")
+    
+    # Extract the single pixel using isel but keep dimensions by using slice
+    # This preserves the dimension structure but makes y,x dimensions size 1
+    pixel_data = ds.isel(y=slice(y_idx, y_idx+1), x=slice(x_idx, x_idx+1))
+    
+    # Also reduce X and Y coordinate arrays to length 1 if they exist
+    if 'X' in pixel_data.coords and len(pixel_data['X']) > 1:
+        pixel_data = pixel_data.isel(X=slice(x_idx, x_idx+1))
+    if 'Y' in pixel_data.coords and len(pixel_data['Y']) > 1:
+        pixel_data = pixel_data.isel(Y=slice(y_idx, y_idx+1))
+    
+    # Ensure spatial_ref is preserved for geo-referencing
+    if 'spatial_ref' in ds.variables:
+        pixel_data['spatial_ref'] = ds['spatial_ref']
+        
+    # Update the GeoTransform attribute for the single pixel
+    if 'spatial_ref' in pixel_data.variables and hasattr(pixel_data['spatial_ref'], 'GeoTransform'):
+        # Parse the original GeoTransform
+        original_gt = pixel_data['spatial_ref'].attrs.get('GeoTransform', '')
+        if original_gt:
+            gt_parts = [float(x) for x in original_gt.split()]
+            if len(gt_parts) == 6:
+                # Update GeoTransform for the extracted pixel location
+                # gt_parts = [top_left_x, pixel_width, rotation1, top_left_y, rotation2, pixel_height]
+                pixel_x = float(pixel_data['x'].values[0])
+                pixel_y = float(pixel_data['y'].values[0])
+                
+                # Update top-left coordinates to the extracted pixel
+                gt_parts[0] = pixel_x - gt_parts[1]/2  # x - pixel_width/2
+                gt_parts[3] = pixel_y - gt_parts[5]/2  # y - pixel_height/2
+                
+                new_geotransform = ' '.join([str(x) for x in gt_parts])
+                pixel_data['spatial_ref'].attrs['GeoTransform'] = new_geotransform
+    
+    # Add metadata about the extraction
+    pixel_data.attrs['extracted_from'] = netcdf_file
+    pixel_data.attrs['target_lat'] = target_lat
+    pixel_data.attrs['target_lon'] = target_lon
+    pixel_data.attrs['actual_lat'] = float(ds['lat'].isel(y=y_idx, x=x_idx).values)
+    pixel_data.attrs['actual_lon'] = float(ds['lon'].isel(y=y_idx, x=x_idx).values)
+    pixel_data.attrs['pixel_indices'] = f"y={y_idx}, x={x_idx}"
+    
+    if output_file:
+        # Save to file with proper encoding for geo-referencing
+        encoding = {}
+        # Preserve important attributes for spatial_ref
+        if 'spatial_ref' in pixel_data.variables:
+            encoding['spatial_ref'] = {'_FillValue': None}
+            
+        pixel_data.to_netcdf(output_file, encoding=encoding)
+        print(f"Pixel data saved to {output_file}")
+        print(f"Target coordinates: {target_lat}°N, {target_lon}°E")
+        print(f"Actual coordinates: {pixel_data.attrs['actual_lat']:.6f}°N, {pixel_data.attrs['actual_lon']:.6f}°E")
+        #print(f"Output dimensions: y={pixel_data.dims['y']}, x={pixel_data.dims['x']}")
+        # if 'X' in pixel_data.dims:
+        #     print(f"X dimension: {pixel_data.dims['X']}")
+        # if 'Y' in pixel_data.dims:
+        #     print(f"Y dimension: {pixel_data.dims['Y']}")
+        return None
+    else:
+        return pixel_data
+    
+
+
+def extract_pixel_by_indices(netcdf_file, y_idx, x_idx, output_file=None):
+    """
+    Extract a single pixel from NetCDF file using known y,x indices.
+    Preserves all original dimensions but with y,x dimensions of size 1.
+    Maintains proper geo-referencing for GIS software.
+    
+    Parameters:
+    -----------
+    netcdf_file : str
+        Path to input NetCDF file
+    y_idx : int
+        Y index of the pixel to extract
+    x_idx : int
+        X index of the pixel to extract
+    output_file : str, optional
+        Path for output NetCDF file. If None, returns xarray Dataset
+        
+    Returns:
+    --------
+    xarray.Dataset or None
+        Dataset with single pixel if output_file is None, otherwise saves to file
+    """
+    # Open the dataset
+    ds = xr.open_dataset(netcdf_file)
+    
+    # Validate indices
+    if y_idx < 0 or y_idx >= ds.sizes['y']:
+        raise ValueError(f"y_idx {y_idx} out of bounds for dimension of size {ds.sizes['y']}")
+    if x_idx < 0 or x_idx >= ds.sizes['x']:
+        raise ValueError(f"x_idx {x_idx} out of bounds for dimension of size {ds.sizes['x']}")
+    
+    print(f"Extracting pixel at indices: y={y_idx}, x={x_idx}")
+    
+    # Extract the single pixel using isel but keep dimensions by using slice
+    # This preserves the dimension structure but makes y,x dimensions size 1
+    pixel_data = ds.isel(y=slice(y_idx, y_idx+1), x=slice(x_idx, x_idx+1))
+    
+    # Also reduce X and Y coordinate arrays to length 1 if they exist
+    if 'X' in pixel_data.coords and len(pixel_data['X']) > 1:
+        pixel_data = pixel_data.isel(X=slice(x_idx, x_idx+1))
+    if 'Y' in pixel_data.coords and len(pixel_data['Y']) > 1:
+        pixel_data = pixel_data.isel(Y=slice(y_idx, y_idx+1))
+    
+    # Ensure spatial_ref is preserved for geo-referencing
+    if 'spatial_ref' in ds.variables:
+        pixel_data['spatial_ref'] = ds['spatial_ref']
+        
+    # Update the GeoTransform attribute for the single pixel
+    if 'spatial_ref' in pixel_data.variables and hasattr(pixel_data['spatial_ref'], 'GeoTransform'):
+        # Parse the original GeoTransform
+        original_gt = pixel_data['spatial_ref'].attrs.get('GeoTransform', '')
+        if original_gt:
+            gt_parts = [float(x) for x in original_gt.split()]
+            if len(gt_parts) == 6:
+                # Update GeoTransform for the extracted pixel location
+                # gt_parts = [top_left_x, pixel_width, rotation1, top_left_y, rotation2, pixel_height]
+                pixel_x = float(pixel_data['x'].values[0])
+                pixel_y = float(pixel_data['y'].values[0])
+                
+                # Update top-left coordinates to the extracted pixel
+                gt_parts[0] = pixel_x - gt_parts[1]/2  # x - pixel_width/2
+                gt_parts[3] = pixel_y - gt_parts[5]/2  # y - pixel_height/2
+                
+                new_geotransform = ' '.join([str(x) for x in gt_parts])
+                pixel_data['spatial_ref'].attrs['GeoTransform'] = new_geotransform
+    
+    # Add metadata about the extraction
+    pixel_data.attrs['extracted_from'] = netcdf_file
+    pixel_data.attrs['pixel_indices'] = f"y={y_idx}, x={x_idx}"
+    
+    # Add coordinate info if available
+    if 'lat' in ds.variables and 'lon' in ds.variables:
+        pixel_data.attrs['actual_lat'] = float(ds['lat'].isel(y=y_idx, x=x_idx).values)
+        pixel_data.attrs['actual_lon'] = float(ds['lon'].isel(y=y_idx, x=x_idx).values)
+    
+    if output_file:
+        # Save to file with proper encoding for geo-referencing
+        encoding = {}
+        # Preserve important attributes for spatial_ref
+        if 'spatial_ref' in pixel_data.variables:
+            encoding['spatial_ref'] = {'_FillValue': None}
+            
+        pixel_data.to_netcdf(output_file, encoding=encoding)
+        print(f"Pixel data saved to {output_file}")
+        print(f"Extracted pixel at indices: y={y_idx}, x={x_idx}")
+        if 'actual_lat' in pixel_data.attrs:
+            print(f"Coordinates: {pixel_data.attrs['actual_lat']:.6f}°N, {pixel_data.attrs['actual_lon']:.6f}°E")
+        return None
+    else:
+        return pixel_data  
+    
+
+def create_runmask(input_dir, output_file=None, reference_file=None):
+    """
+    Create a runmask.nc file with 'run' variable set to all zeros.
+    The dimensions are based on the X,Y dimensions from files in the input directory.
+    
+    Parameters:
+    -----------
+    input_dir : str
+        Path to directory containing TEM input files
+    output_file : str, optional
+        Path for output runmask file. If None, saves as 'runmask.nc' in input_dir
+    reference_file : str, optional
+        Specific file to use for dimension reference. If None, uses first NetCDF file found
+        
+    Returns:
+    --------
+    str
+        Path to the created runmask file
+    """
+    import os
+    import glob
+    import xarray as xr
+    import numpy as np
+    from pathlib import Path
+    
+    input_path = Path(input_dir)
+    
+    # Find NetCDF files in the directory
+    nc_files = list(input_path.glob("*.nc"))
+    if not nc_files:
+        raise FileNotFoundError(f"No NetCDF files found in {input_dir}")
+    
+    # Use specified reference file or first file found
+    if reference_file:
+        ref_file = Path(reference_file)
+        if not ref_file.exists():
+            raise FileNotFoundError(f"Reference file {reference_file} not found")
+    else:
+        ref_file = nc_files[0]
+    
+    print(f"Using {ref_file.name} as reference for dimensions")
+    
+    # Open reference file to get dimensions
+    with xr.open_dataset(ref_file) as ds:
+        # Look for X,Y or x,y dimensions
+        if 'X' in ds.dims and 'Y' in ds.dims:
+            x_dim, y_dim = 'X', 'Y'
+            x_size, y_size = ds.dims['X'], ds.dims['Y']
+        elif 'x' in ds.dims and 'y' in ds.dims:
+            x_dim, y_dim = 'x', 'y'
+            x_size, y_size = ds.dims['x'], ds.dims['y']
+        else:
+            raise ValueError(f"Could not find X,Y or x,y dimensions in {ref_file}")
+        
+        # Get coordinate values if they exist
+        if x_dim in ds.coords:
+            x_coords = ds[x_dim].values
+        else:
+            x_coords = np.arange(x_size)
+            
+        if y_dim in ds.coords:
+            y_coords = ds[y_dim].values
+        else:
+            y_coords = np.arange(y_size)
+        
+        # Copy spatial reference information if it exists
+        spatial_ref = None
+        if 'spatial_ref' in ds.variables:
+            spatial_ref = ds['spatial_ref']
+    
+    print(f"Creating runmask with dimensions: {y_dim}={y_size}, {x_dim}={x_size}")
+    
+    # Create runmask array (all zeros)
+    run_data = np.zeros((y_size, x_size), dtype=np.int32)
+    
+    # Create dataset
+    coords = {y_dim: y_coords, x_dim: x_coords}
+    runmask_ds = xr.Dataset({
+        'run': xr.DataArray(
+            run_data, 
+            dims=[y_dim, x_dim], 
+            coords=coords,
+            attrs={
+                'long_name': 'run mask',
+                'description': 'Mask indicating which pixels to run (1=run, 0=skip)',
+                '_FillValue': -9999
+            }
+        )
+    }, coords=coords)
+    
+    # Add spatial reference if it existed in reference file
+    if spatial_ref is not None:
+        runmask_ds['spatial_ref'] = spatial_ref
+        # Update run variable to reference spatial_ref
+        runmask_ds['run'].attrs['grid_mapping'] = 'spatial_ref'
+    
+    # Add global attributes
+    runmask_ds.attrs.update({
+        'title': 'TEM Run Mask',
+        'description': f'Run mask created from dimensions of {ref_file.name}',
+        'created_from': str(ref_file)
+    })
+    
+    # Set output file path
+    if output_file is None:
+        output_file = input_path / 'run-mask.nc'
+    else:
+        output_file = Path(output_file)
+    
+    # Save to file
+    encoding = {'run': { 'dtype': 'int32'}}
+    if spatial_ref is not None:
+        encoding['spatial_ref'] = {'_FillValue': None}
+    
+    runmask_ds.to_netcdf(output_file, encoding=encoding)
+    print(f"Runmask saved to {output_file}")
+    
+    return str(output_file)
+
+# Example usage:
+# create_runmask('../dvmdostem-input-catalog/sample-temds/modex26_1x1_AK-UTQ/')
+# or specify output file:
+# create_runmask('../dvmdostem-input-catalog/sample-temds/modex26_1x1_AK-UTQ/', 'custom_runmask.nc')
+# or specify reference file:
+# create_runmask('../dvmdostem-input-catalog/sample-temds/modex26_1x1_AK-UTQ/', reference_file='vegetation.nc')
+
+
+
+
+import os
+import glob
+from pathlib import Path
+import shutil
+
+## Assumes that you have already created the multi-pixel TEM dataset for the
+## desired region (e.g., modex26-TLK) using the temds.tile.Tile functionality
+## above. Once you have that multi-pixel dataset, you can use this code to
+## extract out a single pixel dataset for a specific site (e.g., AK-TFS-IMC)
+## to put into the field-to-model-inputdata repo. Assumes that the extracted
+## pixel dataset will be put in to a directory named modex26_1x1_{SITE_ID}.
+## that is alongside the existing modex26-TLK directory.
+
+DIR = f"../field-to-model-inputdata/TEM/modex26-NSweden/"
+#SITE_ID = 'AK-TFS-IMC'; LAT=68.56066; LON=-149.34047
+#SITE_ID = 'AK-UTQ'; LAT=71.3; LON=-156.60
+SITE_ID = 'SE-ASRS'; LAT=68.35; LON=18.78
+
+for f in glob.glob(f"{DIR}/*.nc"):
+  src = Path(f)
+  dst = Path(src.parent.parent, f'modex26_1x1_{SITE_ID}', src.name)
+  dst.parent.mkdir(parents=True, exist_ok=True)
+  print("Source:", src, )
+  print("Destination:", dst)   
+  if 'historic-climate' in src.name:
+    extract_nearest_pixel_1(f, LAT, LON, dst)
+  if 'co2' in src.name:
+    shutil.copy(f, dst)
+  else:
+    print("Do me next time...", src.name)
+    extract_pixel_by_indices(f, 50, 57, dst)
+
+create_runmask(Path(dst.parent), output_file=Path(dst.parent, 'run-mask.nc'), reference_file=dst)
+
