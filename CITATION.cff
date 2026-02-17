@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+title: "TEMDS"
+type: software
+license: MIT
+
+message: >-
+  If you use this software, please cite using the metadata in this file.
+
+abstract: >-
+  Tools for downscaling CRU-JRA data in preparation for the DVMDOSTEM ecosystem
+  model.
+
+repository-code: "https://uaf-arctic-eco-modeling/Input_production"
+
+keywords:
+  - C++
+  - Python
+  - Earth Science
+  - Arctic
+authors:
+  - family-names: "Genet" 
+    given-names: "Hélène"
+    orcid: "https://orcid.org/0000-0003-4537-9563"
+    affiliation: "Institute of Arctic Biology, University of Alaska Fairbanks, Fairbanks 99775, Alaska, USA"
+
+  - family-names: "Carman"
+    given-names: "Tobey B."
+    orcid: "https://orcid.org/0000-0003-4617-4674"
+    affiliation: "Institute of Arctic Biology, University of Alaska Fairbanks, Fairbanks 99775, Alaska, USA"
+
+  - family-names: "Spicer"
+    given-names: "Rawser"
+    orcid: "https://orcid.org/0009-0001-9909-0178"
+    affiliation: "Institute of Arctic Biology, University of Alaska Fairbanks, Fairbanks 99775, Alaska, USA"

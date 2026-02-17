@@ -13,6 +13,7 @@ datasource objects and then calls this methods to populate/run the tile object
 from pathlib import Path
 import shutil
 
+import numpy as np
 import xarray as xr
 import pandas as pd
 import yaml
@@ -40,6 +41,9 @@ class Tile(object):
     are typically derived from observed data and are used to adjust the data
     once it has been interpolated.
 
+    The extent reported by the tile will be the **TILE** extents. The individual
+    datasources will generally be buffered, so if you query their extents, then
+    you will get extents that go to the outside of the buffer.
 
     Attributes
     ----------
@@ -51,6 +55,8 @@ class Tile(object):
         logging #TODO implement INT code
     extent: pandas.DataFrame
         DataFrame with columns 'minx', 'miny', 'maxx', 'maxy', and a single row
+        This represents the spatial extent of the tile in the CRS of the tile,
+        NOT including the buffer.
     resolution: float
         resolution of pixels for tile
     crs: ??
@@ -180,7 +186,7 @@ class Tile(object):
             else:
                 self.data[item] = dataset.TEMDataset(in_path)
 
-    def import_and_normalize(self, name, datasource, buffered=True, **kwargs):
+    def import_and_normalize(self, name, datasource, buffered=True, callback = None, **kwargs):
         """Loads an item to `data` as name from datasource. Each datasource 
         (e.g. AnnualDaily, WorldClim) needs to implement a get_by_extent() 
         method that can return an xarray dataset or AnnualTimeseries to a 
@@ -212,7 +218,14 @@ class Tile(object):
         )
         self.data[name] = datasource.get_by_extent(
             minx, miny, maxx, maxy, self.crs, **kwargs
-        ) 
+        )
+        if callback is not None:
+            if isinstance(self.data[name], dataset.TEMDataset ):
+                self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)
+            else:
+                for year in self.data[name].range():
+                    self.data[name][year].dataset = callback(self.data[name][year].dataset, self.logger, **kwargs)
+
 
     def save(self, where, **kwargs): 
         """Save `dataset` as a netCDF file.
@@ -257,6 +270,11 @@ class Tile(object):
         }
 
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
+
+        # BUG HERE:
+        # If user has specified items=['some_item'], it saves the items, but ra
+        # than update the manifext, it overwrites it, effectively hiding the
+        # existing saved tile data...
 
         # fill_value = lookup(kwargs, 'fill_value', 1.0e+20 )
         # missing_value = lookup(kwargs, 'missing_value', 1.0e+20 )
@@ -489,7 +507,7 @@ class Tile(object):
         renamed to match TEM expectations.
 
         Ensure that the tile object (self) has a 'downscaled_cru' key in its
-        data dictionary. This key should correspond to an AnnualTimeSeries
+        data dictionary. This key should correspond to an YearlyTimeSeries
         object containing the downscaled climate data. Make sure that the key
         passed to this method matches the key used in downscale_timeseries
         method to store the downscaled data.
@@ -511,47 +529,169 @@ class Tile(object):
             'nirr': mean net incoming shortwave radiation - 'precip': total
             precipitation
         '''
-        
+        if downscaled_id == 'co2':
+            self.logger.info("Converting CO2 data to TEM format...")
+
+
+            # Manually spliced data from NOAA ESRL Global Monitoring Division
+            # with the data from the demo file. (just added yrs 2016+)
+            # https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.txt
+            co2 = [296.311, 296.661, 297.04, 297.441, 297.86, 298.29, 298.726, 299.163, 
+                299.595, 300.016, 300.421, 300.804, 301.162, 301.501, 301.829, 302.154, 
+                302.48, 302.808, 303.142, 303.482, 303.833, 304.195, 304.573, 304.966, 
+                305.378, 305.806, 306.247, 306.698, 307.154, 307.614, 308.074, 308.531, 
+                308.979, 309.401, 309.781, 310.107, 310.369, 310.559, 310.667, 310.697, 
+                310.664, 310.594, 310.51, 310.438, 310.401, 310.41, 310.475, 310.605, 
+                310.807, 311.077, 311.41, 311.802, 312.245, 312.736, 313.27, 313.842, 
+                314.448, 315.084, 315.665, 316.535, 317.195, 317.885, 318.495, 318.935, 
+                319.58, 320.895, 321.56, 322.34, 323.7, 324.835, 325.555, 326.55, 
+                328.455, 329.215, 330.165, 331.215, 332.79, 334.44, 335.78, 337.655, 
+                338.925, 340.065, 341.79, 343.33, 344.67, 346.075, 347.845, 350.055, 
+                351.52, 352.785, 354.21, 355.225, 356.055, 357.55, 359.62, 361.69, 
+                363.76, 365.83, 367.9, 368, 370.1, 372.2, 373.6943, 375.3507, 377.0071, 
+                378.6636, 380.5236, 382.3536, 384.1336, 389.9, 391.65, 393.85, 396.52, 
+                398.65, 400.83,
+                404.41, 406.76, 408.72, 411.65, 414.21, 416.41, 418.53, 421.08, 424.61 ]
+            year = [1901, 1902, 1903, 1904, 1905, 1906, 1907, 1908, 1909, 1910, 1911, 
+                1912, 1913, 1914, 1915, 1916, 1917, 1918, 1919, 1920, 1921, 1922, 1923, 
+                1924, 1925, 1926, 1927, 1928, 1929, 1930, 1931, 1932, 1933, 1934, 1935, 
+                1936, 1937, 1938, 1939, 1940, 1941, 1942, 1943, 1944, 1945, 1946, 1947, 
+                1948, 1949, 1950, 1951, 1952, 1953, 1954, 1955, 1956, 1957, 1958, 1959, 
+                1960, 1961, 1962, 1963, 1964, 1965, 1966, 1967, 1968, 1969, 1970, 1971, 
+                1972, 1973, 1974, 1975, 1976, 1977, 1978, 1979, 1980, 1981, 1982, 1983, 
+                1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 
+                1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 
+                2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 
+                2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+            return xr.Dataset(data_vars={'co2':('year',co2)}, coords={'year':year})
+
+
+
+        # For any of the others, make sure it exists...
         if downscaled_id not in self.data:
-            raise ValueError("The tile object must have a 'downscaled_cru' key in its data dictionary.")
+            raise ValueError(f"Can't find {downscaled_id}! Available keys are: {self.data.keys()}")
 
-        target_vars = {
-            'tair_avg': 'mean', 
-            'vapo': 'mean', 
-            'nirr': 'mean',
-            'prec': 'sum'
-        }
 
-        new_names = {
-            'tair_avg':'tair', 
-            'vapo':'vapor_press', 
-            'nirr':'nirr', 
-            'prec':'precip'
-        }
+        if downscaled_id == 'fri-fire':
+            self.logger.info("Converting FRI fire data to TEM format...")
+            F = self.data[downscaled_id].dataset
+            F['Y'] = np.arange(F.sizes['y'])
+            F['X'] = np.arange(F.sizes['x'])
+            return F
 
-        # TODO: write general method in the Tile for returning data without
-        # the buffer...
-        buffered_ds = dataset.TEMDataset(self.data[downscaled_id].synthesize_to_monthly(target_vars, new_names))
-        minx, miny, maxx, maxy = self.extent[
-            ['minx', 'miny', 'maxx', 'maxy']
-        ].iloc[0]
-        unbuffered_ds =  buffered_ds.get_by_extent(minx, miny, maxx, maxy, self.crs, clip_with='xarray')
-       
+        if downscaled_id == 'historic-ef':
+            self.logger.info("Converting historical fire data to TEM format...")
+            F = self.data[downscaled_id].dataset
+            F['Y'] = np.arange(F.sizes['y'])
+            F['X'] = np.arange(F.sizes['x'])
+            return F
 
-        # buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
-        # buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
-        # buffered_ds.rio.write_crs(self.crs, inplace=True)
-        # buffered_ds.rio.write_coordinate_system(inplace=True)
+        if downscaled_id == 'topo':
+            self.logger.info("Converting topo data to TEM format...")
+            T = self.data[downscaled_id].dataset.drop(['TPI', 'drainage_class'])
 
-        # mask_x = (buffered_ds.x >= self.extent['minx'].squeeze()) & (buffered_ds.x <= self.extent['maxx'].squeeze())
-        # mask_y = (buffered_ds.y >= self.extent['miny'].squeeze()) & (buffered_ds.y <= self.extent['maxy'].squeeze())
+            T['Y'] = np.arange(T.sizes['y'])
+            T['X'] = np.arange(T.sizes['x'])
 
-        # unbuffered_ds = buffered_ds.where(mask_x & mask_y, drop=True)
+            D = self.data[downscaled_id].dataset.drop(['elevation', 'TPI', 'slope', 'aspect'])
+            D['Y'] = np.arange(D.sizes['y'])
+            D['X'] = np.arange(D.sizes['x'])
 
-        # This is kind of the fast/dirty way to do this...might be better to 
-        # use the .save(...) method to standardize the output a bit more...
+            return {
+                'topo_data':T,
+                'drainage_data':D
+                }
 
-        # print("Putting metadata in attrs....{}".format(util.Version()))
-        # unbuffered_ds.dataset.attrs['temds_git_version'] = f"{util.Version()}"
+        if downscaled_id == 'veg':
+            self.logger.info("Converting vegetation data to TEM format...")
+            V = self.data[downscaled_id].dataset
+            V['Y'] = np.arange(V.sizes['y'])
+            V['X'] = np.arange(V.sizes['x'])
+            return V
 
-        return unbuffered_ds
+        if downscaled_id == 'soiltex':
+            self.logger.info("Converting soil texture data to TEM format...")
+            ST = self.data[downscaled_id].dataset
+            ST['Y'] = np.arange(ST.sizes['y'])
+            ST['X'] = np.arange(ST.sizes['x'])
+            return ST
+    
+        if downscaled_id == 'cru-downscaled':
+            self.logger.info("Converting downscaled CRU data to TEM format...")
+
+            target_vars = {
+                'tair_avg': 'mean', 
+                'vapo': 'mean', 
+                'nirr': 'mean',
+                'prec': 'sum'
+            }
+
+            new_names = {
+                'tair_avg':'tair', 
+                'vapo':'vapor_press', 
+                'nirr':'nirr', 
+                'prec':'precip'
+            }
+
+            # TODO: write general method in the Tile for returning data without
+            # the buffer...
+            buffered_ds = dataset.TEMDataset(self.data[downscaled_id].synthesize_to_monthly(target_vars, new_names))
+            minx, miny, maxx, maxy = self.extent[
+                ['minx', 'miny', 'maxx', 'maxy']
+            ].iloc[0]
+            unbuffered_ds =  buffered_ds.get_by_extent(minx, miny, maxx, maxy, self.crs, clip_with='xarray')
+ 
+            # WE NEED TO ADD IN THE LAT/LON COORDINATES HERE!!!
+
+            # Make an object that can convert between projections
+            transformer = pyproj.Transformer.from_crs(unbuffered_ds.dataset.rio.crs.to_epsg(), 4326)
+
+
+            # FIX THIS!!!
+            # I think this is transforming from pixel/line to lat/lon, which might
+            # not be what we want....
+            # I think what we want is from projected coordinates to lat/lon....
+
+            # 2D grids of x and y in projected coordinates
+            X, Y = np.meshgrid(unbuffered_ds.dataset['x'].values, unbuffered_ds.dataset['y'].values)
+            #X, Y = unbuffered_ds.dataset.rio.transform() * (np.meshgrid(unbuffered_ds.dataset['x'], unbuffered_ds.dataset['y']))
+            #X, Y = unbuffered_ds.dataset.rio.transform() * (np.meshgrid(np.arange(unbuffered_ds.dataset.sizes['x']), np.arange(unbuffered_ds.dataset.sizes['y'])))
+
+            # NOTE: Not sure how to confirm if the origin is upper left or lower left!!!
+            
+            # 2D grids of lat and lon
+            LATS, LONS = transformer.transform(X, Y)
+
+            # Assign to xds
+            print("Adding latitude and longitude coordinates...")
+            unbuffered_ds.dataset['lat'] = (('y','x'), LATS)
+            unbuffered_ds.dataset['lat'].attrs['long_name'] = 'latitude'
+            unbuffered_ds.dataset['lat'].attrs['units'] = 'degrees_north'
+            unbuffered_ds.dataset['lat'].attrs['standard_name'] = 'latitude'
+            
+            unbuffered_ds.dataset['lon'] = (('y','x'), LONS)
+            unbuffered_ds.dataset['lon'].attrs['long_name'] = 'longitude'
+            unbuffered_ds.dataset['lon'].attrs['units'] = 'degrees_east'
+            unbuffered_ds.dataset['lon'].attrs['standard_name'] = 'longitude'
+
+            unbuffered_ds.dataset['X'] = np.arange(unbuffered_ds.dataset.sizes['x'])
+            unbuffered_ds.dataset['Y'] = np.arange(unbuffered_ds.dataset.sizes['y'])
+
+
+            # buffered_ds.attrs['data_years'] = f"{self.data['downscaled_cru'].range()}"
+            # buffered_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
+            # buffered_ds.rio.write_crs(self.crs, inplace=True)
+            # buffered_ds.rio.write_coordinate_system(inplace=True)
+
+            # mask_x = (buffered_ds.x >= self.extent['minx'].squeeze()) & (buffered_ds.x <= self.extent['maxx'].squeeze())
+            # mask_y = (buffered_ds.y >= self.extent['miny'].squeeze()) & (buffered_ds.y <= self.extent['maxy'].squeeze())
+
+            # unbuffered_ds = buffered_ds.where(mask_x & mask_y, drop=True)
+
+            # This is kind of the fast/dirty way to do this...might be better to 
+            # use the .save(...) method to standardize the output a bit more...
+
+            # print("Putting metadata in attrs....{}".format(util.Version()))
+            # unbuffered_ds.dataset.attrs['temds_git_version'] = f"{util.Version()}"
+
+            return unbuffered_ds

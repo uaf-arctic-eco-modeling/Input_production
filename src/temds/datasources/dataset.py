@@ -5,26 +5,38 @@ dataset
 Objects to manage data for TEMDS project
 
 """
+import os
 from pathlib import Path
 from copy import deepcopy
 import gc
+import pathlib
+import shapely.geometry # for .box function
 
 import xarray as xr
 import numpy as np
 import rioxarray  # activate 
+import geopandas as gpd
+import pandas as pd
+import rasterio as rio
 from osgeo import gdal
 from affine import Affine
 from pyproj import CRS
 from cf_units import Unit
+from dapper.met import cmip_utils
 
+
+import temds.datasources.vegetation
 from . import errors
-from . import worldclim, crujra
+from . import worldclim, crujra, cmip6, topo
+from . import soil_texture
 from temds import file_tools
 from temds import climate_variables 
 from temds.logger import Logger
 from temds.constants import MONTH_START_DAYS 
 from temds.util import Version
 from temds import gdal_tools
+
+
 
 ## We can better clear the memory cache on some OS's with this 
 ## trick. If libc.so.6 is not present the code dose nothing
@@ -121,28 +133,36 @@ class TEMDataset(object):
     @property
     def transform(self):
         """Property for Quick access to geo transform"""
+        # print('transform')
         return self.dataset.rio.transform()
 
     @property
     def resolution(self):
         """Property for Quick access to resolution"""
+        # print('res')
         return self.dataset.rio.resolution()
     
     @property
     def extent(self):
-        """Property for Quick access to resolution"""
+        """
+        Returns (left,bottom,right,top), outer most coords (bounds) of the data.
+        """
         return self.dataset.rio.bounds()
 
     @property
     def vars(self):
-        """Property for quick access to variables in dataset
         """
+        Property for quick access to variables in dataset
+        """
+        # print('vars')
         return list(self.dataset.data_vars)
     
     @property
     def units(self):
-        """Property for quick access to units for variables in dataset
         """
+        Property for quick access to units for variables in dataset
+        """
+        # print('units')
         return {var: Unit(self.dataset[var].units) for var in self.vars}
    
     @property
@@ -169,7 +189,7 @@ class TEMDataset(object):
 
     @staticmethod
     def from_raster_extent(
-            raster, in_vars = [], ds_time_dim=[], buffer_px=30, logger=Logger()
+            raster, in_vars = [], ds_time_dim=[], buffer_px=0, logger=Logger()
         ):
         """
         Creates new xr.Dataset for `dataset` using the extent, transform, and 
@@ -184,7 +204,7 @@ class TEMDataset(object):
             List of variables to create `Dataset.data_vars` for
         ds_time_dim: list, defaults []
             The time dimension for the `Dataset`
-        buffer_px: int, default 30
+        buffer_px: int, default 0
             Buffer in pixels to add to extent. When `raster` crs is EPSG:4326
             This argument is ignored
         logger: logger.Logger, defaults to new object
@@ -242,24 +262,35 @@ class TEMDataset(object):
         ## do we need the dimension trick here?
         x_array = np.arange(minx, maxx, abs(x_res)) + (abs(x_res)/2)
         rows, cols = len(y_array), len(x_array)
-        dims = ['time', y_dim, x_dim]
-        n_time = len(ds_time_dim)
-        shape = [n_time, rows, cols]
 
-        empty_data = np.zeros(n_time * rows * cols)\
-                       .reshape(shape).astype('float32')
+        # handle case where there are no time dimensions.
+        n_time = len(ds_time_dim)
+
+        if n_time > 0:
+            dims = ['time', y_dim, x_dim]
+            shape = [n_time, rows, cols]
+            empty_data = np.zeros(n_time * rows * cols)\
+                        .reshape(shape).astype('float32')
+        else:
+            dims = [y_dim, x_dim]
+            shape = [rows, cols]
+            empty_data = np.zeros(rows * cols)\
+                        .reshape(shape).astype('float32')
+
+        # TODO: drop the zero length time coord that gets created
+
         data_vars = { 
             var : (dims, deepcopy(empty_data) ) for var in in_vars
         }
 
-        ## the deep copy is to prevent shared memory issues
-        ## might not be necessary here, but included just in
-        ## case
         coords={
             y_dim: y_array, 
             x_dim: x_array,
-            'time': deepcopy(ds_time_dim)
         }
+        if n_time > 0:
+            coords['time'] = deepcopy(ds_time_dim)  
+            ## the deep copy is to prevent shared memory issues
+            ## might not be necessary here, but included just in case
 
         logger.info(f'{func_name}: output crs - {extent_ds.GetProjection()}')        
 
@@ -281,6 +312,682 @@ class TEMDataset(object):
             .rio.write_coordinate_system(inplace=True)
 
         return TEMDataset(dataset, logger=logger)
+
+    @staticmethod
+    def from_soil_texture(data_path, extent_raster=None, download=False,
+                          overwrite=False, logger=Logger(), buffer=0,
+                          resample_alg='average'):
+        func_name = "TEMdataset.from_soil_texture"
+        logger.info(f'{func_name}: Processing soil texture data in {data_path}')
+
+        if download:
+            logger.info(f'{func_name}: Downloading data.')
+            file_tools.download_all_files(soil_texture.urlsand, data_path, overwrite)
+            file_tools.download_all_files(soil_texture.urlsilt, data_path, overwrite)
+            file_tools.download_all_files(soil_texture.urlclay, data_path, overwrite)
+
+        # ???if not Path(data_path, soil_texture..
+
+        if not extent_raster:
+            raise ValueError(f'{func_name}: extent_raster is required!')
+
+        logger.info(f'{func_name}: Using extent from {extent_raster}')
+        er = gdal.Open(extent_raster)
+
+        # Original method seemed to have some extra steps...
+        # also the original method didn't seem to process the sand file??
+        # starts at 1km in some strange projection
+        # crop to just high latitude
+        # average across depths
+        # reproject to 6931 and put at 4km rez
+        # resample to 50km rez
+        # resample to 4km rez
+        # run thru extra python script : 
+        #   where the fine rez file is -9999, 
+        #   take the coarse value, 
+        #   otherwise take the fine value.
+
+        # Get the extent from the extent raster
+        er_gt = er.GetGeoTransform()
+        er_minx = er_gt[0]
+        er_miny = er_gt[3]
+        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
+        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset')
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
+                                              in_vars='pct_clay pct_sand pct_silt'.split(), 
+                                              ds_time_dim=[], buffer_px=0)
+
+        for X in ['clay','sand','silt']:
+            logger.info(f'{func_name}: Processing {X} data')
+
+            ds_15_30 = gdal.Open(pathlib.Path(data_path, f'{X}_15-30cm_mean_1000.tif'))
+            ds_30_60 = gdal.Open(pathlib.Path(data_path, f'{X}_30-60cm_mean_1000.tif'))
+            ds_60_100 = gdal.Open(pathlib.Path(data_path, f'{X}_60-100cm_mean_1000.tif'))
+
+            assert ds_15_30.GetSpatialRef().IsSame(ds_30_60.GetSpatialRef()), "CRS mismatch"
+            assert ds_15_30.GetSpatialRef().IsSame(ds_60_100.GetSpatialRef()), "CRS mismatch"
+
+            warpOpts = gdal.WarpOptions(
+                        format='MEM',
+                        srcSRS=ds_15_30.GetSpatialRef(), 
+                        dstSRS=er.GetSpatialRef(), 
+                        xRes=er.GetGeoTransform()[1], 
+                        yRes=er.GetGeoTransform()[5], 
+                        resampleAlg='average', 
+                        outputType=gdal.GDT_Float32, 
+                        outputBounds=[er_minx, er_miny, er_maxx, er_maxy])
+
+            # crop them all down to the AOI
+            dst_1530 = gdal.Warp("", ds_15_30, options=warpOpts)
+            dst_3060 = gdal.Warp("", ds_30_60, options=warpOpts)
+            dst_60100 = gdal.Warp("", ds_60_100, options=warpOpts)
+
+            # Find the average over the 3 depth ranges
+            avg = (dst_1530.ReadAsArray() * 15 + dst_3060.ReadAsArray() * 30 + dst_60100.ReadAsArray() * 40) / (150 + 300 + 400)
+
+
+            logger.info(f'{func_name}: Assigning data to the new dataset')
+            newDS.dataset[f'pct_{X}'] = (['y','x'], avg)
+
+        newDS.dataset['pct_clay'].attrs.update(units='percent')
+        newDS.dataset['pct_sand'].attrs.update(units='percent')
+        newDS.dataset['pct_silt'].attrs.update(units='percent')
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+        return newDS
+
+    @staticmethod
+    def from_vegetation(data_path, extent_raster=None, download=False,
+                          overwrite=False, logger=Logger(), buffer=0):
+        func_name = "TEMdataset.from_vegetation"
+
+        logger.info(f'{func_name}: Processing vegetation data in {data_path}')
+
+        if download:
+            raise NotImplementedError('Vegetation download not implemented yet!')
+            #logger.info(f'{func_name}: Downloading data.')
+            #file_tools.download_all_files(vegetation.url_iem_veg, data_path, overwrite)
+        
+        # Extent raster is likely something small(ish) and in projection 6931.
+        # need to reproject it to wgs84 before using it as a bbox.
+
+        logger.info(f'{func_name}: Reading shapefiles')
+
+        # naieve hardcoded full extents, wgs84
+        #political_shp = gpd.read_file("working/00-download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp", bbox=(-180, 40, 180, 90))
+        #eco_shp = gpd.read_file("working/00-download/mask/Ecoregions2017/Ecoregions2017.shp", bbox=(-180, 40, 180, 90))
+
+        ER = rio.open(extent_raster)
+
+        assert ER.crs.to_epsg() == 6931, "Extent raster must be in EPSG:6931"
+
+        ext_bnds_wgs84 = rio.warp.transform_bounds(ER.crs.to_epsg(), 4326, *ER.bounds)
+
+        political_shp = gpd.read_file(temds.datasources.vegetation.political_shp_path, 
+                                      bbox=ext_bnds_wgs84)
+        eco_shp = gpd.read_file(temds.datasources.vegetation.eco_shp_path, 
+                                bbox=ext_bnds_wgs84)
+        
+        # Using bbox to read the file doesn't clip the polygons, so we need to clip them.
+        # To do this we need the extent raster as a vector
+        # and then use that to clip the shapefiles.
+
+        def raster_extent_to_geoseries(raster_path):
+            """Convert raster extent to GeoSeries for use in from_vegetation"""
+            with rio.open(raster_path) as src:
+                bounds = src.bounds
+                polygon = shapely.geometry.box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+                
+                # Create GeoSeries with proper CRS
+                geoseries = gpd.GeoSeries([polygon], crs=src.crs)
+                
+            return geoseries
+        
+        extent_geoseries = raster_extent_to_geoseries(extent_raster)
+        extent_geoseries_wgs84 = extent_geoseries.to_crs(4326)
+
+        # Use for clipping
+        political_shp = political_shp.clip(extent_geoseries_wgs84)
+        eco_shp = eco_shp.clip(extent_geoseries_wgs84)
+
+        logger.info(f'{func_name}: Reprojecting shapefiles to extent raster CRS: {ER.crs.to_epsg()}')
+        political_shp = political_shp.to_crs(ER.crs.to_epsg())
+        eco_shp = eco_shp.to_crs(ER.crs.to_epsg())
+
+        logger.info(f'{func_name}: Processing political shapefile')
+
+        def get_gdf(shape_obj, key = 'shapeName', idx_name = 'state_idx'):
+            '''Opens a shapefile, creates in index based on the unique values found
+            in the specified key column. Adds this index to a data frame. Make the
+             index 1 based. Then turn it into a geodataframe and return it.'''
+            f2 = func_name + ".get_gdf"
+            logger.debug(f"{f2}: Creating index ({idx_name}) for {key} in shape object..")
+            if key not in shape_obj.columns:
+                raise ValueError(f'Key {key} not found in shapefile columns')
+            df = pd.DataFrame(shape_obj[key].unique())
+            df.reset_index(inplace=True)
+            df = df.set_axis([idx_name,key], axis=1)
+            df[idx_name] += 1 # make it 1 based
+            df_f  = shape_obj.merge(df, on=key, how='left')
+            geo_df = gpd.GeoDataFrame(df_f)
+
+            return geo_df
+
+        country_geo_df = get_gdf(political_shp,  'shapeGroup', 'ctry_idx',)
+        state_geo_df = get_gdf(political_shp,  'shapeName', 'state_idx',)
+        eco_geo_df = get_gdf(eco_shp,  'ECO_NAME', 'eco_idx',)
+        biome_geo_df = get_gdf(eco_shp,  'BIOME_NAME', 'biome_idx',)
+        ecobiome_geo_df = get_gdf(eco_shp,  'ECO_BIOME_', 'ecobiome_idx',)
+        realm_geo_df = get_gdf(eco_shp,  'REALM', 'realm_idx',)
+
+        def burn_gdf(raster_fpath, gdf, idx_col, meta):
+            f2 = func_name + ".burn_gdf"
+            with rio.open(raster_fpath, 'w+', **meta) as out:
+                out_arr = out.read(1)
+                shapes = ((geom,value) for geom, value in zip(gdf.geometry, gdf[idx_col]))
+                burned = rio.features.rasterize(shapes=shapes, fill=-9999, out=out_arr, transform=out.transform)
+                logger.info(f'{f2}: Writing {raster_fpath}')
+                out.write_band(1, burned)
+
+        files = [
+            '/tmp/country_raster_6931_4000m.tiff',
+            '/tmp/state_raster_6931_4000m.tiff',
+            '/tmp/eco_raster_6931_4000m.tiff',
+            '/tmp/biome_raster_6931_4000m.tiff',
+            '/tmp/ecobiome_raster_6931_4000m.tiff',
+            '/tmp/realm_raster_6931_4000m.tiff',
+            '/tmp/TEM_Landcover_V4_6931_4000m.tiff',
+            '/tmp/drainage_raster_6931_4000m.tiff',
+        ]
+        [os.unlink(f) for f in files if os.path.exists(f)]
+
+        meta = ER.meta.copy()
+        meta.update(compress='lzw')
+        burn_gdf('/tmp/country_raster_6931_4000m.tiff', country_geo_df, 'ctry_idx', meta)
+        burn_gdf('/tmp/state_raster_6931_4000m.tiff', state_geo_df, 'state_idx', meta)
+        burn_gdf('/tmp/eco_raster_6931_4000m.tiff', eco_geo_df, 'eco_idx', meta)
+        burn_gdf('/tmp/biome_raster_6931_4000m.tiff', biome_geo_df, 'biome_idx', meta)
+        burn_gdf('/tmp/ecobiome_raster_6931_4000m.tiff', ecobiome_geo_df, 'ecobiome_idx', meta)
+        burn_gdf('/tmp/realm_raster_6931_4000m.tiff', realm_geo_df, 'realm_idx', meta)
+
+        logger.info(f"{func_name}: Convert the TEM_Landcover_V4 to match the  AOI raster in extents and resolution")
+        X = gdal.Warp(
+            "/tmp/TEM_Landcover_V4_6931_4000m.tiff",
+            temds.datasources.vegetation.land_cover_path,
+            options=gdal.WarpOptions(
+                format='GTiff',
+                srcSRS='EPSG:6931',
+                dstSRS='EPSG:6931',
+                xRes=ER.res[0],
+                yRes=ER.res[1],
+                outputBounds=ER.bounds,
+                resampleAlg='mode',
+            ))
+        X.FlushCache()
+
+        # slow....
+        topo = TEMDataset.from_topo(
+            data_path='working/00-download/topo/',
+            extent_raster=extent_raster,
+            download=False,
+            logger=logger,
+        )
+
+        # Make sure we only write out the variable we are interested in.
+        topo.dataset['drainage_class'].astype(np.int32).rio.to_raster("/tmp/drainage_raster_6931_4000m.tiff")
+
+        index_names = ['ctry_idx', 'state_idx', 'eco_idx', 'biome_idx', 'ecobiome_idx', 'realm_idx', 'lc_idx', 'drain_idx']
+        
+        def generate_indices(files, index_names):
+            # Reads in each raster, flattens it and creates a data frame 
+            # with an index set on the dataframe...
+            f2 = func_name + "generate_indices"
+            for f, idx_name in zip(files, index_names):
+                with rio.open(f) as src:
+                    logger.debug(f"{f2} reading {f} with shape {src.shape}")
+                    arr = src.read(1)
+                    df = pd.DataFrame(arr.flatten())
+                    df = df.set_axis([idx_name], axis=1)
+                    yield df
+        
+        # This is a table with one row per pixel and columns for each index.
+        logger.info(f"{func_name}: Creating the ecotype table by concatening all the indices...")
+        ecotype = pd.concat(list(generate_indices(files, index_names)), axis=1)
+        
+        logger.info(f"{func_name}: Loading the land cover classification...")
+        classif = pd.read_csv(temds.datasources.vegetation.land_cover_classification)
+        classif = classif.rename(columns={"value": "lc_idx"})
+        classif = classif.rename(columns={"classname ": "classname"}) # there is a trailing space in the csv column name
+
+        
+        ecotype['classname'] = 'N/A'
+        for row in classif.T: 
+            lc_idx = classif.loc[row,'lc_idx']
+            cn = classif.loc[row,'classname']
+            idx = (ecotype['lc_idx'] == lc_idx)
+            ecotype.loc[idx, 'classname'] = cn
+
+
+        # Put back in the text based lables for country and state (shapeName and shapeGroup)
+        ecotype = pd.merge(ecotype, state_geo_df.drop(['geometry', 'shapeType', 'shapeID'], axis=1), on=['state_idx'], how='left')
+
+        # put back in the text based labels for biome, realm, etc
+        ecotype = pd.merge(ecotype, eco_geo_df.drop(['OBJECTID','BIOME_NUM','ECO_BIOME_','NNH','ECO_ID','SHAPE_LENG','SHAPE_AREA','NNH_NAME','COLOR', 'COLOR_BIO', 'COLOR_NNH', 'LICENSE', 'geometry',], axis=1), on=['eco_idx'], how='left')
+
+        # Add subregion column
+        ecotype['subregion'] = "N/A"
+
+        idx = ( (ecotype['shapeName'] == 'Alaska') | \
+                    (ecotype['ECO_NAME'] == 'Pacific Coastal Mountain icefields and tundra') | \
+                    (ecotype['ECO_NAME'] == 'Alaska-St. Elias Range tundra') | \
+                    (ecotype['ECO_NAME'] == 'Interior Yukon-Alaska alpine tundra') | \
+                    (ecotype['ECO_NAME'] == 'Brooks-British Range tundra') | \
+                    (ecotype['ECO_NAME'] == 'Arctic foothills tundra') | \
+                    (ecotype['ECO_NAME'] == 'Interior Yukon-Alaska alpine tundra') )
+        ecotype['subregion'] = np.where(idx, 'Western North America', ecotype['subregion'])
+
+        idx = ( (ecotype['shapeGroup'] == 'CAN') & (ecotype['ECO_NAME'] == 'Ogilvie-MacKenzie alpine tundra') )
+        ecotype['subregion'] = np.where(idx, 'Central North America', ecotype['subregion'])
+
+        idx = ( ((ecotype['shapeGroup'] == 'CAN') | (ecotype['shapeGroup'] == 'GRL')) & \
+                    (ecotype['shapeName'] == 'Quebec') |  \
+                    (ecotype['shapeName'] == 'Ontario') | \
+                    (ecotype['shapeName'] == 'Newfoundland and Labrador') | \
+                    (ecotype['ECO_NAME'] == 'Southern Hudson Bay taiga') | \
+                    (ecotype['ECO_NAME'] == 'Central Canadian Shield forests') | \
+                    (ecotype['ECO_NAME'] == 'Eastern Canadian Forest-Boreal transition') )
+        ecotype['subregion'] = np.where(idx, 'Eastern North America', ecotype['subregion'])
+
+
+        idx = ( (ecotype['shapeGroup'] == 'RUS') )
+        ecotype['subregion'] = np.where(idx, 'Eastern Eurasia', ecotype['subregion'])
+
+        idx = ( (ecotype['ECO_NAME'] == 'Yamal-Gydan tundra') | \
+                   (ecotype['ECO_NAME'] == 'Russian Arctic desert') | \
+                   (ecotype['ECO_NAME'] == 'West Siberian taiga') | \
+                   (ecotype['ECO_NAME'] == 'Western Siberian hemiboreal forests') | \
+                   (ecotype['ECO_NAME'] == 'South Siberian forest steppe') | \
+                   (ecotype['ECO_NAME'] == 'Northwest Russian-Novaya Zemlya tundra') | \
+                   (ecotype['ECO_NAME'] == 'Trans-Baikal conifer forests') | \
+                   (ecotype['ECO_NAME'] == 'Kazakh forest steppe') ) 
+        ecotype['subregion'] = np.where(idx, 'Central Eurasia', ecotype['subregion'])
+
+        idx = ( (ecotype['shapeGroup'] == 'NOR') | \
+                   (ecotype['shapeGroup'] == 'SWE') | \
+                   (ecotype['shapeGroup'] == 'FIN') | \
+                   (ecotype['shapeGroup'] == 'ISL') | \
+                   (ecotype['ECO_NAME'] == 'Kola Peninsula tundra') | \
+                   (ecotype['ECO_NAME'] == 'Scandinavian and Russian taiga') | \
+                   (ecotype['ECO_NAME'] == 'Temperate Broadleaf & Mixed Forests') | \
+                   (ecotype['ECO_NAME'] == 'Urals montane forest and taiga') )
+        ecotype['subregion'] = np.where(idx, 'Western Eurasia', ecotype['subregion']) 
+
+        # Add an alpine column
+        ecotype['alpine'] = 'N/A'
+        alpine_idx = ( ecotype['ECO_NAME'].str.contains('alpine', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('montane', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('mountain', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('mountains', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('range', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('rockies', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('cordillera', case=False) | \
+                       ecotype['ECO_NAME'].str.contains('rock', case=False) )
+        ecotype['alpine'] = np.where(alpine_idx, 1, 0)
+
+        # add a community column
+        ecotype['community '] = 'N/A'
+
+        idx = ( (ecotype['classname'] == 'White Spruce forest') )
+        ecotype['community'] = np.where(idx, 'white spruce forest', ecotype['community '])
+
+        idx = ( (ecotype['classname'] == 'Black Spruce forest') | \
+                (ecotype['classname'] == 'Spruce forest') | \
+                (ecotype['classname'] == 'Fir forest') | \
+                (ecotype['classname'] == 'Hemlock forest') )
+        ecotype['community'] = np.where(idx, 'black spruce forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Aspen forest') )
+        ecotype['community'] = np.where(idx, 'aspen forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Birch forest') | \
+                (ecotype['classname'] == 'Poplar forest') | \
+                (ecotype['classname'] == 'Maple') | \
+                (ecotype['classname'] == 'Oak forest') | \
+                (ecotype['classname'] == 'Linden') )
+        ecotype['community'] = np.where(idx, 'birch forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Mixed forest') )
+        ecotype['community'] = np.where(idx, 'mixed forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Larch forest') )
+        ecotype['community'] = np.where(idx, 'larch forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Scotts Pine forest') | \
+                (ecotype['classname'] == 'Siberian Pine') )
+        ecotype['community'] = np.where(idx, 'scots pine forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Jack Pine forest') | \
+                (ecotype['classname'] == 'Pine forest') )
+        ecotype['community'] = np.where(idx, 'jack pine forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Pine forest') & (ecotype['REALM'] == 'Palearctic') )
+        ecotype['community'] = np.where(idx, 'scots pine forest', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Herbaceous') | \
+                (ecotype['classname'] == 'Graminoid tundra') )
+        ecotype['community'] = np.where(idx, 'tussock tundra', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Other shrublands') | \
+                (ecotype['classname'] == 'Cedar Elfin Wood') | \
+                (ecotype['classname'] == 'Erect-shrub tundra') | \
+                (ecotype['classname'] == 'Shrub tundra') | \
+                (ecotype['classname'] == 'Alpine shrubland') | \
+                (ecotype['classname'] == 'Prostrate-shrub tundra') | \
+                (ecotype['classname'] == 'Riparian shrubland') )
+        ecotype['community'] = np.where(idx, 'shrub tundra', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Barren tundra') | \
+                (ecotype['classname'] == 'Sparsely Vegetated') )
+        ecotype['community'] = np.where(idx, 'heath tundra', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Fen') )
+        ecotype['community'] = np.where(idx, 'fen', ecotype['community'])
+
+        idx = ( (ecotype['classname'] == 'Bog') )
+        ecotype['community'] = np.where(idx, 'bog', ecotype['community'])
+        
+        idx = ( (ecotype['classname'] == 'Wet-sedge tundra') | \
+                (ecotype['classname'] == 'Marsh') )
+        ecotype['community'] = np.where(idx, 'wetsedge tundra', ecotype['community'])
+
+        ecotype['CMT'] = 'CMT00'
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest'),'CMT01',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'white spruce forest'),'CMT02',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'jack pine forest'),'CMT66',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'scots pine forest'),'CMT74',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'larch forest'),'CMT71',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'mixed forest'),'CMT67',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'birch forest'),'CMT03',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'aspen forest'),'CMT65',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra'),'CMT04',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra'),'CMT05',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra'),'CMT07',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'wetsedge tundra'),'CMT06',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog'),'CMT31',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'fen'),'CMT55',ecotype['CMT'])
+
+        # drain_idx: 1 --> poorly drained, 0 --> well drained
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest') & (ecotype['subregion'] == 'Western North America') & (ecotype['drain_idx'] == 1), 'CMT13', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')) & (ecotype['drain_idx'] == 1), 'CMT60', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'black spruce forest') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')) & (ecotype['drain_idx'] == 0), 'CMT69', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')), 'CMT61', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & ((ecotype['subregion'] == 'Eastern Eurasia') | (ecotype['subregion'] == 'Central Eurasia')), 'CMT75', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & (ecotype['subregion'] == 'Western Eurasia'), 'CMT80', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'bog') & ((ecotype['ECO_NAME'] == 'Russian Arctic desert') | (ecotype['ECO_NAME'] == 'Kola Peninsula tundra') | (ecotype['ECO_NAME'] == 'Scandinavian coastal conifer forests') | (ecotype['ECO_NAME'] == 'Scandinavian Montane Birch forest and grasslands')) , 'CMT92', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'fen') & (ecotype['REALM'] == 'Palearctic') , 'CMT91', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra') & (ecotype['subregion'] == 'Central North America'), 'CMT52', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra') & (ecotype['subregion'] == 'Eastern North America'), 'CMT90', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'heath tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT90', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'larch forest') & ((ecotype['subregion'] == 'Central Eurasia') | (ecotype['subregion'] == 'Western Eurasia')),'CMT72',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'mixed forest') & (ecotype['REALM'] == 'Palearctic'),'CMT77',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'scots pine forest') & (ecotype['subregion'] == 'Western Eurasia'),'CMT82',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')), 'CMT50', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & (ecotype['subregion'] == 'Eastern Eurasia'), 'CMT70', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & ((ecotype['subregion'] == 'Western Eurasia') | (ecotype['subregion'] == 'Central Eurasia')), 'CMT76', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'shrub tundra') & (ecotype['alpine'] == 'alpine'),'CMT20',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & ((ecotype['subregion'] == 'Central North America') | (ecotype['subregion'] == 'Eastern North America')), 'CMT51', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT73', ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'tussock tundra') & (ecotype['alpine'] == 'alpine'),'CMT21',ecotype['CMT'])
+        ecotype['CMT'] = np.where((ecotype['community'] == 'wetsedge tundra') & (ecotype['REALM'] == 'Palearctic'), 'CMT77', ecotype['CMT'])
+
+        ecotype['CMT_num'] = pd.to_numeric(ecotype['CMT'].str.extract('(\d+)', expand=False)).fillna(np.int32(-9999)).astype(np.int32)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset')
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
+                                              in_vars=['veg_class'], 
+                                              ds_time_dim=[], buffer_px=0)
+
+
+        # dunno why, but this data comes out flipped, so we reverse the y axis here
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['veg_class'] = (['y','x'], 
+                                      np.flipud(np.reshape(ecotype['CMT_num'], (ER.shape[0],ER.shape[1]))))
+
+
+        newDS.dataset['veg_class'].attrs.update(units='', name='Community Type Classification')
+        
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(ER.crs.to_wkt(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+
+        return newDS
+
+
+    @staticmethod
+    def from_historic_explicit_fire(synthetic=True, extent_raster_path=None, synthetic_time=None, logger=Logger()):
+        func_name = "TEMdataset.from_historic_explicit_fire"
+        logger.info(f'{func_name}: Processing explicit fire data')   
+
+        if extent_raster_path is None:
+            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        
+        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
+        extent_raster = gdal.Open(extent_raster_path)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset...')
+        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+                                      in_vars=['exp_burn_mask','exp_fire_severity','exp_jday_of_burn','exp_area_of_burn',],
+                                      ds_time_dim=[], buffer_px=0)
+        # if not isinstance(synthetic_time, xr.DataArray):
+        #     raise ValueError(f'{func_name}: synthetic_time must be an xarray DataArray!')   
+
+        if isinstance(synthetic, xr.DataArray):
+            logger.info(f'{func_name}: Generating synthetic data arrays...')
+            time_length = synthetic.sizes['time']
+            exp_burn_mask = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+            exp_fire_severity = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+            exp_jday_of_burn = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+            exp_area_of_burn = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
+        else:
+            raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['exp_burn_mask'] = (['time','y','x'], exp_burn_mask)
+        newDS.dataset['exp_fire_severity'] = (['time','y','x'], exp_fire_severity)
+        newDS.dataset['exp_jday_of_burn'] = (['time','y','x'], exp_jday_of_burn)
+        newDS.dataset['exp_area_of_burn'] = (['time','y','x'], exp_area_of_burn)
+
+        logger.info(f'{func_name}: Setting attributes for data variables')
+        newDS.dataset['exp_burn_mask'].attrs.update(units='', name='Fire Occurrence')
+        newDS.dataset['exp_fire_severity'].attrs.update(units='', name='Fire Severity')
+        newDS.dataset['exp_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
+        newDS.dataset['exp_area_of_burn'].attrs.update(units='km-2', name='Area of Burn (km-2)')
+
+        return newDS
+
+    @staticmethod
+    def from_fri(synthetic=True, extent_raster_path=None, logger=Logger()):
+        func_name = "TEMdataset.from_fri"
+        logger.info(f'{func_name}: Processing fire return interval data')   
+
+        if extent_raster_path is None:
+            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        
+        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
+        extent_raster = gdal.Open(extent_raster_path)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset...')
+        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+                                      in_vars=['fri','fri_severity','fri_jday_of_burn','fri_area_of_burn',],
+                                      ds_time_dim=[], buffer_px=0)
+
+        if synthetic:
+            logger.info(f'{func_name}: Generating synthetic data arrays...')
+            fri = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*2000
+            fri_severity = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*2
+            fri_jday_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))+160
+            fri_area_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*1
+        else:
+            raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
+
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['fri'] = (['y','x'], fri)
+        newDS.dataset['fri_severity'] = (['y','x'], fri_severity)
+        newDS.dataset['fri_jday_of_burn'] = (['y','x'], fri_jday_of_burn)
+        newDS.dataset['fri_area_of_burn'] = (['y','x'], fri_area_of_burn)
+
+        logger.info(f'{func_name}: Setting attributes for data variables')
+        newDS.dataset['fri'].attrs.update(units='', name='Fire Return Interval')
+        newDS.dataset['fri_severity'].attrs.update(units='', name='Fire Severity')
+        newDS.dataset['fri_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
+        newDS.dataset['fri_area_of_burn'].attrs.update(units='', name='Area of Burn (km2)')
+
+        logger.info(f'{func_name}: Setting spatial properties for dataset from {extent_raster_path}')
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(extent_raster.GetProjection(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+
+        return newDS
+    
+
+
+    @staticmethod
+    def from_topo(data_path, download=False, extent_raster=None,
+                  overwrite=False, logger=Logger(), buffer=0, 
+                  resample_alg='average'):
+
+        func_name = "TEMdataset.from_topo"
+
+        logger.info(f'{func_name}: Processing topography data in {data_path}')
+
+        ## download first if needed
+        if download:
+            logger.info(f'{func_name}: Downloading data.')
+            file_tools.download(topo.url, data_path, overwrite)
+
+        if not Path(data_path, topo.zipped_raw).exists():
+            raise topo.FileError("Something went wrong with the download.")
+
+        if not Path(data_path, topo.unzipped_raw).exists():
+            logger.info(f'{func_name}: Extracting data.')
+            file_tools.extract(Path(data_path, topo.unzipped_raw),
+                               Path(data_path, topo.zipped_raw))
+
+        if not extent_raster:
+            raise ValueError(f'{func_name}: extent_raster is required!')
+
+        logger.info(f'{func_name}: Using extent from {extent_raster}')
+        er = gdal.Open(extent_raster)
+
+        # Get the extent from the extent raster
+        er_gt = er.GetGeoTransform()
+        er_minx = er_gt[0]
+        er_miny = er_gt[3]
+        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
+        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
+
+        # get the full topography dataset in memory. This is an Arc/Info 
+        # Binary Grid format, which is a collection of a whole bunch of files,
+        # so its easier to read it with GDAL rather than the xarray tools.
+        # This is obtuse because the unzipped directory has another level, 
+        # with the same name, i.e.  mn75_grd/mn75_grd, we have to add that
+        # before gdal can figure out what/how to open the file.
+        logger.info(f'{func_name}: Loading topography data.')
+        srcDS = Path(data_path, topo.unzipped_raw, topo.unzipped_raw)
+        ds = gdal.Translate("", srcDS=srcDS, format="MEM")
+        ds.FlushCache()
+
+        # ^---consider replacing with plain gdal open, read only.
+        # refactor to  "src" and "dest" or "aoi" and "topo" rather than ds, ds2, etc
+
+        logger.info(f'{func_name}: Reprojecting and cropping topography data.')
+        ds2 = gdal.Warp("", ds, 
+                        options=gdal.WarpOptions(format="MEM", 
+                                                 srcSRS=ds.GetSpatialRef(), 
+                                                 dstSRS=er.GetSpatialRef(), 
+                                                 xRes=er.GetGeoTransform()[1], 
+                                                 yRes=er.GetGeoTransform()[5], 
+                                                 resampleAlg='average',
+                                                 outputType=gdal.GDT_Float32,
+                                                 outputBounds=[er_minx, er_miny, er_maxx, er_maxy]))
+        ds2.FlushCache()
+        # logger.debug("Saving temp file out...")
+        # tmp = gdal.Translate("/tmp/topo_0_B.tif", ds2, format="GTiff")
+        # tmp.FlushCache()
+        # del(tmp)
+
+
+        logger.info(f'{func_name}: Computing aspect, slope, and TPI.')
+        assert np.abs(ds2.GetGeoTransform()[1]) == np.abs(ds2.GetGeoTransform()[5]), "Non-square pixels detected"
+        aspect_ds2 = gdal.DEMProcessing("", ds2, 
+                                        processing='aspect', 
+                                        options=gdal.DEMProcessingOptions(
+                                            format='MEM', 
+                                            computeEdges=True, 
+                                            scale=ds2.GetGeoTransform()[1], 
+                                            ))
+        aspect_ds2.FlushCache()
+
+        slope_ds2 = gdal.DEMProcessing("", ds2, 
+                                        processing='slope', 
+                                        options=gdal.DEMProcessingOptions(
+                                            format='MEM', 
+                                            computeEdges=True, 
+                                            slopeFormat='degree',
+                                            )) 
+        slope_ds2.FlushCache()
+
+        TPI_ds2 = gdal.DEMProcessing("", ds2, 
+                                        processing='TPI', 
+                                        options=gdal.DEMProcessingOptions(
+                                            format='MEM', 
+                                            computeEdges=True,
+                                            )) 
+        TPI_ds2.FlushCache()
+
+        # Find the drainage class. Original method used gdal_calc.py and 
+        # also factored in the mask...
+        slope = slope_ds2.ReadAsArray()
+        drainage_class = np.where( ((slope >= -0.05) & (slope <= 0.05)), 1, 0 )   
+
+        # gdal_calc.py \
+        #     -A '/Volumes/5TIV/PROCESSED/TOPO/tpi_4k_6931_mask.tif' \
+        #     -B '/Volumes/5TIV/PROCESSED/TOPO/slope_4k_6931_mask.tif' \
+        #     --outfile='/Volumes/5TIV/PROCESSED/TOPO/drainage.tif' \
+        #     --calc="numpy.where(((A >= -0.05) & (A <= 0.05) & (B <= 1.0)), 1, 0)" --NoDataValue=-9999
+
+
+        logger.info(f'{func_name}: Creating empty xarray dataset')
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
+                                              in_vars='elevation aspect slope TPI drainage_class'.split(), 
+                                              ds_time_dim=[], buffer_px=0)
+
+        logger.info(f'{func_name}: Assigning data to the new dataset')
+        newDS.dataset['elevation'] = (['y','x'], ds2.ReadAsArray())
+        newDS.dataset['aspect'] = (['y','x'], aspect_ds2.ReadAsArray())
+        newDS.dataset['slope'] = (['y','x'], slope_ds2.ReadAsArray())
+        newDS.dataset['TPI'] = (['y','x'], TPI_ds2.ReadAsArray())
+        newDS.dataset['drainage_class'] = (['y','x'], drainage_class)
+
+        newDS.dataset['elevation'].attrs.update(units='m', name='Elevation')
+        newDS.dataset['aspect'].attrs.update(units='degrees', name='Aspect')
+        newDS.dataset['slope'].attrs.update(units='degrees', name='Slope')
+        newDS.dataset['TPI'].attrs.update(units='', name='Topographic Position Index')
+        newDS.dataset['drainage_class'].attrs.update(units='', name='Drainage Class (1=poorly drained, 0=well drained)')
+
+        newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
+                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_coordinate_system(inplace=True) 
+
+        return newDS
+    
 
     @staticmethod
     def from_worldclim(
@@ -336,10 +1043,9 @@ class TEMDataset(object):
         """
         ## used in messages.
         func_name = "TEMdataset.from_worldclim"
-        
         if in_vars == 'all':
             in_vars = worldclim.VARS
-        if not type(in_vars) is list:
+        if type(in_vars) is not list:
             in_vars = [in_vars]
         completed = {}
         logger.info(f'{func_name}: Processing Worldclim data in {data_path}')
@@ -369,13 +1075,18 @@ class TEMDataset(object):
         if extent_raster is None:
             key = list(completed.keys())[0]
             extent_raster = list(completed[key].glob('*.tif'))[0]
-        
         new = YearlyDataset.from_raster_extent(
             extent_raster, 
             in_vars=in_vars, 
             ds_time_dim=MONTH_START_DAYS, 
-            logger=logger
+            logger=logger,
+            buffer_px=0
         )
+        # new the TEMDataset object does not seem to be geo-refd at this point...
+        # but new.dataset is geo-refed...and it looks like the right spot too.
+        logger.info(f"{func_name}: Initialization complete")
+        logger.info(f"{func_name}: {new.dataset.rio.transform()=}")
+        logger.info(f"{func_name}: {new.dataset.rio.transform().to_gdal()=}")
 
         x_dim = 'x'
         y_dim = 'y'
@@ -385,13 +1096,27 @@ class TEMDataset(object):
 
 
         gt = new.transform.to_gdal()
+        logger.debug(f"{func_name}: {gt=}")
+
         minx, miny = gt[0], gt[3]
         maxx = minx + abs(gt[1]) * new.dataset[x_dim].size
         maxy = miny + abs(gt[5]) * new.dataset[y_dim].size
+
+        # Problem was here: we calc maxy using the abs(), so it gets rid of 
+        # the negative sign, which is what we need for the y direction.
+        # and then we assign maxy to extent...BUT 
+        # when calling the gdal_tools.empty_dataset, we use the gt which is
+        # the original geotransform, which has the negative y direction!!
+
         extent = (minx, miny, maxx, maxy) #_warp_order
         logger.info(
             f'{func_name}: Running gdal.Warp to extent {extent} on all data'
         )
+
+        # TODO: verify names
+        # PROBLREMS SEEMS TO BE HERE...not sure if this is correct and the
+        # other ones (cru) need to be renamed like this, or if this is the one that is wrong
+
         for var in in_vars:
             cv = climate_variables.lookup_alias(worldclim.NAME, var)
             unit = cv.std_unit.name
@@ -413,21 +1138,35 @@ class TEMDataset(object):
                     f'month {month} at index {idx}'
                 ))
                 
-                # load result to memory so we don't have temp files
-                result = gdal.Warp(
-                    '', data_raster, 
-                    xRes=abs(gt[1]), yRes=abs(gt[5]),
-                    outputBounds=extent,
-                    dstSRS=new.crs.to_wkt(),
-                    format='mem',
+                # Explicitly create destination dataset of the correct size and
+                # with the geo ref info assigned. 
+                # 
+                # It is important here to use abs() on the pixel size in y
+                # direction because gdal_tools.empty_dataset uses that to create
+                # the geotransform and if it is negative, the data gets flipped
+                # upside down (and shifted south). Assume the issue would be
+                # happen in the x direction as well, but we don't seem to
+                # encounter any negative x resolutions.
+                result = gdal_tools.empty_dataset(new.dataset[x_dim].size, 
+                                                  new.dataset[y_dim].size, 
+                                                  new.crs.to_wkt(), (gt[0], abs(gt[1]), gt[2], gt[3], gt[4], abs(gt[5])))
+                # Now warp into this empty dataset...
+                _ = gdal.Warp(
+                    result, data_raster, 
                     resampleAlg=resample_alg,
                     dstNodata=-3.4e+38,
                     outputType=gdal.GDT_Float32,
                 )
+
+                # At this point if we plot the pixels, 
+                # it looks like it is grabbing the data to the south of what is
+                # requested unless we take the abs() above...
                 pixels = result.ReadAsArray()
-                if gt[5] < 0: # filp flop if res_y is negative
-                    pixels = pixels[::-1]
-                    
+
+                # This did not seem to be needed after fixing with abs() above.
+                #if gt[5] < 0: # filp flop if res_y is negative
+                #    pixels = pixels[::-1]
+
                 pixels[pixels <= -3e30] = np.nan # fix
                 
                 new.dataset[var][idx] = pixels # 0based index
@@ -443,13 +1182,18 @@ class TEMDataset(object):
                     new.dataset[wcn].values, stn, source
                 )
 
+        
 
+        logger.info(f'{func_name}: Renaming variables to standard names...')
+        logger.debug(f'{func_name}: Before rename: {list(new.dataset.data_vars)}')
+        logger.debug(f'{func_name}: Using aliases: {climate_variables.aliases_for(worldclim.NAME, "dict_r")}')        
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(worldclim.NAME, 'dict_r')
         )
+        logger.debug(f'{func_name}: After rename: {list(new.dataset.data_vars)}') 
 
         return new
-
+    
     def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
         """Returns xr.dataset for use in downscaling
 
@@ -488,11 +1232,18 @@ class TEMDataset(object):
             subset of data from extent (`minx`,`miny`)(`maxx`,`maxy`)
 
         """
+        funcname = 'TEMDataset.get_by_extent'
+        self.logger.debug(f'{funcname}: Starting with extent {minx},{miny},{maxx},{maxy}')
         if self._dataset is None:
             raise errors.UninitializedError(
                 "Cannot operate on Uninitialized TEMDataset"
         )
 
+        file_location = None
+        if isinstance(self._dataset, Path):
+            file_location = self._dataset
+            self._dataset = self.dataset
+            self.in_memory = True
 
         lookup = lambda key, default: kwargs[key] if key in kwargs else default
         update_kw = lambda key, default: kwargs.update({key: lookup(key, default)})
@@ -513,7 +1264,7 @@ class TEMDataset(object):
                 'class attribute `resolution` != None'
             ))
 
-        self.logger.debug(f'TEMDataset.get_by_extent kwargs: {kwargs}')
+        self.logger.debug(f'{funcname}: kwargs: {kwargs}')
 
         use = lookup('clip_with', 'gdal')
         if use == 'gdal':
@@ -522,7 +1273,17 @@ class TEMDataset(object):
             tile = self.get_by_extent_xr(minx, miny, maxx, maxy, extent_crs, **kwargs) 
         else:
             raise TypeError("get_by_extent: 'clip_with' must be 'gdal', or 'xarray'")
+        
+        if not file_location is None:
+            del(self._dataset)
+            self._dataset = file_location
+            self.in_memory = False
+        
+        self.logger.debug(f'{funcname}: ...cleaning up memory at the end of function')
         gc.collect()
+        # disabling here leads to ~.15GB memory increase per year.
+
+        self.logger.debug(f'{funcname}: ...calling malloc_trim(0) at the end of function (pass thru lambda if not supported)')
         malloc_trim(0)
 
         return TEMDataset(tile)
@@ -541,9 +1302,11 @@ class TEMDataset(object):
             at `resolution`
 
         """
-        # print('gdal')
-        working_dataset = self.dataset
+        funcname = 'TEMDataset.get_by_extent_gdal'
+        self.logger.debug(f'{funcname}: Starting with extent {minx},{miny},{maxx},{maxy}')
 
+        working_dataset = self.dataset
+        
         resolution = kwargs['resolution']
         nd_as_array = kwargs['warp_no_data_as_array']
         gdal_type = kwargs['gdal_type']
@@ -564,7 +1327,16 @@ class TEMDataset(object):
 
         ## clipped shape, and geotransform
         c_x, c_y = int((maxx-minx)/resolution), int((maxy-miny)/resolution)
-        c_gt = minx, resolution, 0.0, miny, 0.0, resolution
+        #c_gt = minx, resolution, 0.0, miny, 0.0, resolution
+        print(c_x, c_y)
+        x_sign, y_sign = 1, 1
+        if c_x<0:
+            x_sign = -1
+        if c_y < 0:
+            y_sign = -1
+
+        c_gt = minx, x_sign*resolution, 0.0, miny, 0.0, x_sign*resolution
+
 
         if hasattr(working_dataset, 'lat') and hasattr(working_dataset, 'lon'):
             s_x = working_dataset.lon.shape[0]
@@ -577,36 +1349,50 @@ class TEMDataset(object):
         ## which may not be needed on all datasets, so be wary in in future
         s_gt = working_dataset.rio.transform()
         s_gt = s_gt.c, abs(s_gt.a), s_gt.b, s_gt.f, s_gt.d, abs(s_gt.e)
-        
-        
+
+        # gdal wants things in order, x, y, band count
+        source_dim_sizes = [s_x, s_y]
+        #dest_dim_sizes = [c_x, c_y]
+        dest_dim_sizes = [abs(c_x), abs(c_y)]
+
         # N time steps
-        n_ts = working_dataset['time'].shape[0]
+        if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
+            n_ts = working_dataset['time'].shape[0]
+            source_dim_sizes.append(n_ts)
+            dest_dim_sizes.append(n_ts)
+        else:
+            n_ts = 1 # not a time step; in GDAL's view always at least 1 Band.
+            dest_dim_sizes.append(1)
+            source_dim_sizes.append(1)
 
     
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: source GeoTransform: {s_gt}')
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: destination dimensions (for each Variable): x={c_x}, y={c_y}, time={n_ts}')
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: destination GeoTransform: {c_gt}')
-        self.logger.debug(f'TEMDataset.get_by_extent_gdal: Resampling Algorithm: {resample_alg}')
+        self.logger.debug(f'{funcname}: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
+        self.logger.debug(f'{funcname}: source GeoTransform: {s_gt}')
+        self.logger.debug(f'{funcname}: destination dimensions (for each Variable): x={c_x}, y={c_y}, time={n_ts}')
+        self.logger.debug(f'{funcname}: destination GeoTransform: {c_gt}')
+        self.logger.debug(f'{funcname}: Resampling Algorithm: {resample_alg}')
 
 
         dest_crs = extent_crs.to_wkt()
 
         # setup dest and soruce
-        dest = driver.Create("", c_x, c_y, n_ts, gdal_type)
+        dest = driver.Create("", *dest_dim_sizes, gdal_type)
         dest.SetProjection(dest_crs)
         dest.SetGeoTransform(c_gt)
         dest.FlushCache()
 
         source_crs = working_dataset.rio.crs.to_wkt()
-        source = driver.Create("", s_x, s_y, n_ts, gdal_type)
+        source = driver.Create("", *source_dim_sizes, gdal_type)
         source.SetProjection(source_crs)
         source.SetGeoTransform(s_gt)
-        
-        source.FlushCache()
-        ## opption 2
+        source.FlushCache() # this should work just once, but when working in 
+                            # the interpreter, you often have to call it 
+                            # multiple times.
+
+        ## option 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
+        self.logger.debug(f"{funcname}: deleting vars_dict")
         del(vars_dict)
 
         # Option 1
@@ -647,34 +1433,58 @@ class TEMDataset(object):
             
         #     data_arrays[var] = dest.ReadAsArray()
             
-        ## we want these to be teh center of the pixels so for x and y the range
+        ## we want these to be the center of the pixels so for x and y the range
+        self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
         x_coords = np.arange(minx+resolution/2, minx + c_x * resolution, resolution) 
-        y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
+        #y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
+
+        print(miny,maxy, resolution)
+        if miny < maxy:
+            # print('a')
+            y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution)
+        else: 
+            # print('b')
+            y_coords = np.arange(maxy+resolution/2, maxy + abs(c_y) * resolution, resolution)
+        # print(y_coords)
+
 
         coords={
-            'time': deepcopy(working_dataset.time.values), 
             'x': x_coords,
             'y': y_coords
         }
+        dims = ['y', 'x']
 
+        # Handle the time dimension if present. 
+        if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
+            coords['time'] = deepcopy(working_dataset.time.values)
+            dims.insert(0, 'time')
+
+        self.logger.debug(f"{funcname}: allocating Dataset")
         tile = xr.Dataset({
             var: xr.DataArray(
-                data, dims=['time','y','x'], coords=coords 
+                data, dims=dims, coords=coords
             ) for var, data in data_arrays.items()
         })
 
         for var in self.vars:
             tile[var].attrs.update(working_dataset[var].attrs)
 
+        self.logger.debug(f"{funcname}: writing spatial metadata to Dataset")
         tile.rio.write_crs(
             dest_crs, 
             inplace=True
         )
+        self.logger.debug(f"{funcname}: writing coordinate system to Dataset in place")
         tile.rio.write_transform(Affine.from_gdal(*c_gt), inplace=True)
+
+        self.logger.debug(f"{funcname}: cleaning up gdal source and dest datasets")
         del(source)
         del(dest)
+        self.logger.debug(f"{funcname}: ...forcing garbage collection" )
         gc.collect()
+        self.logger.debug(f"{funcname}: ...trimming malloc'd memory (pass thru lambda on some systems...)" )
         malloc_trim(0)
+
         return tile
 
     def get_by_extent_xr(self, minx, miny, maxx, maxy, extent_crs, **kwargs):
@@ -807,6 +1617,23 @@ class TEMDataset(object):
         overwrite = lookup(kwargs, 'overwrite', False)
         extra_attrs = lookup(kwargs, 'extra_attrs', {})
 
+        ## fixes all the weird rio stuff
+        crs = self.dataset.spatial_ref.attrs['spatial_ref']
+        x_dim = 'x'
+        y_dim = 'y'
+        if CRS(crs) == CRS('EPSG:4326'): #is this true for other crs as well?
+            x_dim ='lon'
+            y_dim = 'lat'
+        self.dataset = self.dataset.rio.write_crs(crs, inplace=True).\
+                 rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
+                 rio.write_coordinate_system(inplace=True) 
+        
+        self.dataset = self.dataset.rio.write_crs(crs, inplace=True).\
+                 rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
+                 rio.write_coordinate_system(inplace=True) 
+
+
+
         # self.set_climate_encoding(**kwargs)
         if 'climate_encoding' in kwargs:            
             climate_enc = kwargs['climate_encoding']
@@ -823,8 +1650,12 @@ class TEMDataset(object):
         self.dataset.attrs.update(TEMDS_version = Version())
         self.dataset.attrs.update(extra_attrs)
 
+            
+
         if  not Path(out_file).exists() or overwrite:
+            
             Path(out_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(out_file).unlink(missing_ok=True)
             self.dataset.to_netcdf(
                     out_file, 
                     # encoding=encoding, 
@@ -874,13 +1705,16 @@ class TEMDataset(object):
 
         if 'spatial_ref' in in_dataset:
             if 'crs_wkt' in in_dataset['spatial_ref'].attrs:
-                self.logger.warn(f"Dataset is carrying CRS info: {in_dataset['spatial_ref'].attrs['crs_wkt']}. Ignoring crs passed in kwargs: ({kwargs_crs=})")
+                self.logger.warn(f"{func_name}: Dataset is carrying CRS info: {in_dataset['spatial_ref'].attrs['crs_wkt'][0:50]}...")
+                self.logger.warn(f"Ignoring crs passed in kwargs: ({kwargs_crs=})")
                 crs = in_dataset['spatial_ref'].attrs['crs_wkt']
             else:
-                self.logger.warn(f"Dataset has spatial_ref attribute, but does not have crs_wkt. Using crs passed in kwargs: ({kwargs_crs=})")
+                self.logger.warn(f"{func_name}: Dataset has spatial_ref attribute, but does not have crs_wkt.")
+                self.logger.warn(f"Using crs passed in kwargs: ({kwargs_crs=})")
                 crs = kwargs_crs
         else:
-            self.logger.warn(f"Dataset is missing CRS info. Using crs passed in kwargs: ({kwargs_crs=})")
+            self.logger.warn(f"{func_name}: Dataset is missing CRS info.")
+            self.logger.warn(f"Using crs passed in kwargs: ({kwargs_crs=})")
             crs = kwargs_crs
 
         ## BUGGY with dask multiprocess
@@ -906,6 +1740,27 @@ class TEMDataset(object):
         else:
             self.logger.info("Dataset is missing lon/lat dimensions. Using default x, y spatial dimensions.")
 
+
+        # # trickery to ensure all data uses our standard min coords
+        s_minx, s_miny, s_maxx, s_maxy = in_dataset.rio.bounds()
+        transform = in_dataset.rio.transform()
+        if transform.c > s_minx:
+            transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+            if x_dim == 'x':
+                in_dataset = in_dataset.reindex(x=in_dataset.x[::-1])
+            else:
+                in_dataset = in_dataset.reindex(lon=in_dataset.lon[::-1])
+            in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+
+        if transform.f > s_miny:
+            transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+            if y_dim == 'y':
+                in_dataset = in_dataset.reindex(y=in_dataset.y[::-1])
+            else:
+                in_dataset = in_dataset.reindex(lat=in_dataset.lat[::-1])
+            in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+
+
         in_dataset = \
             in_dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
@@ -915,13 +1770,15 @@ class TEMDataset(object):
             in_dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
                  rio.write_coordinate_system(inplace=True) 
-        
+        self.logger.debug(f'{func_name}: ...collecting garbage at end of load...')
         gc.collect()
         malloc_trim(0)
         if self.in_memory :
+            self.logger.debug(f'{func_name}: loading data into memory...')
             self._dataset=in_dataset
             self.logger.debug(f'{func_name}: dataset initialized')
         else:
+            self.logger.debug(f'{func_name}: dataset not loaded into memory, returning lazy loaded dataset...')
             return in_dataset
     
     def verify(self):
@@ -992,7 +1849,7 @@ class YearlyDataset(TEMDataset):
                 
 
     @staticmethod
-    def from_TEMDataset(inds, year):
+    def from_TEMDataset(inds, year, logger=Logger()):
         """converts an existing TEMDataset to YearlyDataset
 
         Parameters
@@ -1026,6 +1883,196 @@ class YearlyDataset(TEMDataset):
                 "An item in comparison is missing 'year' attribute"
             )
         return self.year < other.year
+    
+    def from_cmip6(year, data_path,
+            elevation = 0,
+            download=False,
+            variables = 'all',
+            models=[],
+            experiments=[],
+            ensambles=[],
+            extent=None,
+            logger=Logger(),
+            calcualte_vapo=False
+        ):
+        func_name = "YearlyDataset.from_cmip6"
+        table=['day']
+
+        if variables=='all':
+            variables = cmip6.SOURCE_VARS
+
+        params = {
+            'models': models,
+            'variables': variables,
+            'experiment': experiments,
+            'table': table,
+            'ensemble': ensambles,
+
+        }
+        logger.debug(f'dapper Params: {params}')
+        
+
+        available = cmip_utils.find_available_data(params)
+        logger.info(f'YearlyDataset.from_cmip6: found {available.shape[0]} datasets')
+        if available.shape[0] == 0:
+            msg = (
+                'YearlyDataset.from_cmip6: requested cmip6 datasets not found.'
+                'Check your arguments for models, expiremnts, etc.'
+            )
+            logger.error(msg)
+            raise errors.YearlyTimeSeriesError(msg)
+
+
+        lat_bounds=None
+        lon_bounds=None
+        if not extent is None:
+            lon_bounds = (extent.minx, extent.maxx)
+            lat_bounds = (extent.miny, extent.maxy)
+        # print(lon_bounds)
+
+        if download:
+            cmip_utils.download_pangeo(
+                available, data_path, lat_bounds=lat_bounds, lon_bounds=lon_bounds
+            )
+
+        ready_variables = []
+        for var_file in Path(data_path).glob('*.nc'):
+            # logger.debug(f'checking: {var_file}')
+            var, model, experiment, ensamble = var_file.stem.split('_')
+            if not var in variables:
+                # print('var')
+                continue
+            if models != [] and not model in models:
+                # print('model')
+                continue
+            if experiments != [] and not experiment in experiments:
+                # print('exp')
+                continue
+            if ensambles != [] and not ensamble in ensambles:
+                # print(ensamble, ensambles)
+                # print('ens', ensambles != [],not ensamble in ensambles)
+                continue
+            logger.debug(f'processing: {var_file}')
+
+            data =  xr.open_dataset(var_file)
+
+            ## Drop original encoding as we will redo this 
+            ## to match our other data
+            data = data.drop_encoding()
+
+            ## this does change lon_bnds as well, but why?
+            data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
+            data = data.sortby(data.lon)
+
+            ready_variables.append(data)
+        logger.info(f'YearlyDataset.from_cmip6: datasets open = {len(ready_variables)}')
+        
+        data = xr.merge(ready_variables)
+        # return data
+        data = data.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
+        # return data
+        ## we use 'noleap' calender
+        data = data.convert_calendar('noleap')
+        if data.time.size != 365:
+            msg = (
+                'YearlyDataset.from_cmip6: full year of data(noleap) not '
+                f'found for year: {year}, N timestps was {data.time.size}. '
+                'It should be 365. Check if data is available for the year '
+                'in CMIP6 experiment being used'
+            )
+            logger.error(msg)
+            raise errors.YearlyTimeSeriesError(msg)
+
+        
+
+
+        new = YearlyDataset(year, data, logger=logger)
+
+        source = cmip6.NAME
+        for std_var, var in climate_variables.aliases_for(source, 'dict').items():
+            if climate_variables.has_conversion(std_var, source):
+                logger.info(f'{func_name}: Converting units for {var} to {std_var}')
+                new.dataset[var].values = climate_variables.to_std_units(
+                    new.dataset[var].values, std_var, source
+                )
+                cv = climate_variables.lookup_alias(source, var)
+                unit = str(cv.std_unit)
+                # print(unit)
+                v_name = cv.name
+                new.dataset[var].attrs.update(units=unit, name=v_name)
+
+
+        if calcualte_vapo:
+            new.dataset = cmip6.callback_psl_to_vapo(new.dataset, logger, elevation=elevation)
+
+        new.dataset = new.dataset.rename(
+            climate_variables.aliases_for(cmip6.NAME, 'dict_r')
+        )
+        verified, reasons = new.verify()
+        if not verified:
+            logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
+
+        # data is in wgs84; is it always though?
+        new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
+            .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
+            .rio.write_coordinate_system(inplace=True)
+        new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
+            .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
+            .rio.write_coordinate_system(inplace=True)
+        gt = (-180.0, 1.8617204339585491, 0.0, 83.75, 0.0, -1.8617204339523812)
+        new.dataset.rio.write_transform(Affine.from_gdal(*gt), inplace=True)
+
+        return new
+
+        
+    @staticmethod
+    def from_explicit_fire(year, data_path=None, synthetic=True, 
+                           extent_raster_path=None, 
+                           logger=Logger()):
+        func_name = "TEMdataset.from_explicit_fire"
+        logger.info(f'{func_name}: Processing explicit fire data')   
+
+        if extent_raster_path is None:
+            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        
+        if data_path is not None:
+            raise NotImplementedError(f'{func_name}: data_path not yet implemented!')
+        if not synthetic:
+            raise NotImplementedError(f'{func_name}: non-synthetic data not yet implemented!')
+
+        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
+        extent_raster = gdal.Open(extent_raster_path)
+
+        logger.info(f'{func_name}: Creating empty xarray dataset...')
+        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+                                      in_vars='exp_burn_mask exp_jday_of_burn exp_severity exp_area_of_burn'.split(' '),
+                                      ds_time_dim=['time'], buffer_px=0)
+
+        new = YearlyDataset.from_TEMDataset(newDS, year)
+
+        from IPython import embed; embed()
+
+        # ### Monthly information
+        # month = list(range(1, 13, 1))
+        # monthlength=[31,28,31,30,31,30,31,31,30,31,30,31]
+        # first_day_of_month_noleap=[1,32,60,91,121,152,182,213,244,274,305,335]
+        # first_day_of_month_leap=[1,33,61,92,122,153,183,214,245,275,306,336]
+        # #data = {'month': month, 'doy_noleap': first_day_of_month_noleap, 'doy_leap': first_day_of_month_leap, 'length': monthlength}
+        # data = {'month': month, 'doy_noleap': first_day_of_month_noleap, 'length': monthlength}
+        # month_info = pd.DataFrame(data)
+
+
+        # if synthetic:
+        #     logger.info(f'{func_name}: Generating synthetic data arrays...')
+        #     fire_occurrence = np.zeros(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))
+        #     fire_severity = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*2
+        #     fire_jday_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))+160
+        #     fire_area_of_burn = np.ones(shape=(extent_raster.RasterYSize, extent_raster.RasterXSize))*1
+        # else:
+        #     raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
+
+
+
 
     @staticmethod
     def from_crujra(year, data_path, 
@@ -1127,7 +2174,8 @@ class YearlyDataset(TEMDataset):
         ## so we just change the name here
         var = 'pre'
         cv = climate_variables.lookup_alias(crujra.NAME, var)
-        unit = cv.std_unit.name
+        unit = str(cv.std_unit)
+        # print(unit)
         v_name = cv.name
         new.dataset[var].attrs.update(units=unit, name=v_name)
 
@@ -1147,7 +2195,7 @@ class YearlyDataset(TEMDataset):
         logger.info(f'{func_name}: Calculating vapo kPa')
         pres = new.dataset['pres']
         spfh = new.dataset['spfh']
-        new.dataset['vapo'] = crujra.calculate_vapo(pres, spfh)
+        new.dataset['vapo'] = climate_variables.calculate_vapo(pres, spfh)
         unit = climate_variables.CLIMATE_VARIABLES['vapo'].std_unit.name
         v_name = climate_variables.CLIMATE_VARIABLES['vapo'].name
         new.dataset['vapo'].attrs.update(units=unit, name=v_name)
@@ -1169,9 +2217,14 @@ class YearlyDataset(TEMDataset):
         new.dataset['winddir'].attrs.update(units=unit, name=v_name)
         
 
+        logger.info(f'{func_name}: Renaming variables to TEMDS standard names...')
+        logger.info(f'{func_name}: current names: {list(new.dataset.data_vars)}')
+        logger.info(f'{func_name}: {climate_variables.aliases_for(crujra.NAME, "dict_r")}')
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(crujra.NAME, 'dict_r')
         )
+        logger.info(f'{func_name}: new names: {list(new.dataset.data_vars)}')
+
         verified, reasons = new.verify()
         if not verified:
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
