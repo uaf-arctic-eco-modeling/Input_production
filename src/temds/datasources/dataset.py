@@ -1329,10 +1329,7 @@ class TEMDataset(object):
         ## clipped shape, and geotransform
         
         c_x, c_y = int((maxx-minx)/resolution), int((maxy-miny)/resolution)
-<<<<<<< HEAD
         #c_gt = minx, resolution, 0.0, miny, 0.0, resolution
-=======
->>>>>>> a2f8a50 (working qdm prototype)
         print(c_x, c_y)
         x_sign, y_sign = 1, 1
         if c_x<0:
@@ -1341,10 +1338,7 @@ class TEMDataset(object):
             y_sign = -1
 
         c_gt = minx, x_sign*resolution, 0.0, miny, 0.0, x_sign*resolution
-<<<<<<< HEAD
 
-=======
->>>>>>> a2f8a50 (working qdm prototype)
 
         if hasattr(working_dataset, 'lat') and hasattr(working_dataset, 'lon'):
             s_x = working_dataset.lon.shape[0]
@@ -1361,10 +1355,8 @@ class TEMDataset(object):
 
         # gdal wants things in order, x, y, band count
         source_dim_sizes = [s_x, s_y]
-<<<<<<< HEAD
+        
         #dest_dim_sizes = [c_x, c_y]
-=======
->>>>>>> a2f8a50 (working qdm prototype)
         dest_dim_sizes = [abs(c_x), abs(c_y)]
 
         # N time steps
@@ -1760,10 +1752,7 @@ class TEMDataset(object):
         else:
             self.logger.info("Dataset is missing lon/lat dimensions. Using default x, y spatial dimensions.")
 
-<<<<<<< HEAD
 
-=======
->>>>>>> a2f8a50 (working qdm prototype)
         # # trickery to ensure all data uses our standard min coords
         s_minx, s_miny, s_maxx, s_maxy = in_dataset.rio.bounds()
         transform = in_dataset.rio.transform()
@@ -1774,11 +1763,8 @@ class TEMDataset(object):
             else:
                 in_dataset = in_dataset.reindex(lon=in_dataset.lon[::-1])
             in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
-<<<<<<< HEAD
 
-=======
                 
->>>>>>> a2f8a50 (working qdm prototype)
         if transform.f > s_miny:
             transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
             if y_dim == 'y':
@@ -1786,10 +1772,7 @@ class TEMDataset(object):
             else:
                 in_dataset = in_dataset.reindex(lat=in_dataset.lat[::-1])
             in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
-<<<<<<< HEAD
-=======
         
->>>>>>> a2f8a50 (working qdm prototype)
 
 
         in_dataset = \
