@@ -494,10 +494,18 @@ class Pipeline:
             resolution=self.config.resolution
         )
         
+
         output_path = cache_manager.get_path("cru")
         output_path.mkdir(parents=True, exist_ok=True)
-        cru_subset.save(str(output_path))
-        
+        cru_subset.save(
+            output_path,
+            #cache_manager.get_path("cru"),
+            #f"{cache_manager.data_dir}/{AOI_NAME}_cru}/",
+            name_pattern=f'{aoi.name}_cru_{{year}}.nc',
+            overwrite=True, complevel=1
+        )
+
+
         return output_path
     
     @pipeline_step("tile_index")
