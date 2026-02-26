@@ -157,7 +157,7 @@ class AOIMask(object):
   eco_map_fname = "Ecoregions2017.zip"
   eco_map_url = f"https://storage.googleapis.com/teow2016/{eco_map_fname}"
 
-  RES = 4000 # meters
+  RES = 1000 # meters
 
   def __init__(self):
     # anything to do here?

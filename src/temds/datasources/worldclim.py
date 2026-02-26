@@ -57,6 +57,12 @@ def name_for(variable, version='2.1', resolution='30s', month=None):
     else:
         return f'wc{version}_{resolution}_{variable}_{month:02d}'
 
+# This is a hack...just trying to get the imports to work on new pipeline
+# system and think that this is somethign with the old CLI that needs to 
+# be deprecated or refactored...has to do with the downloading which we
+# haven't touched in months...
+WORLDCLIM_URL_PATTERN = 'https://geodata.ucdavis.edu/climate/worldclim/{v_us}/base/{name}.zip'
+
 def url_for(variable, version='2.1', resolution='30s'):
     v_us = version.replace('.','_')
     name = name_for(variable, version, resolution)

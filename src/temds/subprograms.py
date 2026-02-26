@@ -9,10 +9,13 @@ import multiprocessing
 
 import yaml
 
-from . import crujra
-from . import aoitools
-from . import util
-from .worldclim import WORLDCLIM_VARS, WORLDCLIM_URL_PATTERN, WorldClim
+# Forcing this to work while getting new pipeline system to work.
+# should fix/cleanup/standardize...
+from temds.datasources import crujra
+from temds import aoitools
+from temds import util
+from temds.datasources.worldclim import VARS as WORLDCLIM_VARS
+from temds.datasources.worldclim import WORLDCLIM_URL_PATTERN
 
 DATA_SOURCES = [
     'worldclim',
@@ -94,7 +97,14 @@ def download(what, config='', save_to='./download', url_pattern='default', overw
         vars = config['worldclim']['vars']
         if 'all' == vars:
             vars = WORLDCLIM_VARS
-       
+
+        # Forcing things to work while getting new pipeline system to work.
+        # should fix this at some point!
+
+        # WorldClim download functionality - TODO: needs implementation
+        raise NotImplementedError("WorldClim download not yet implemented")
+
+        
         data = WorldClim(
             url,
             config['aoi']['raster'],
@@ -103,14 +113,14 @@ def download(what, config='', save_to='./download', url_pattern='default', overw
             _vars=vars
         )
 
-    save_to = config.path_to('preprocessed', what)
-    aoi_name = config['aoi']['name']
-    save_to.mkdir(parents=True, exist_ok=True)
-    data.save(
-        Path(save_to, f'{what}-{aoi_name}.nc'), 
-        overwrite=overwrite
-    )
-    return data
+        save_to = config.path_to('preprocessed', what)
+        aoi_name = config['aoi']['name']
+        save_to.mkdir(parents=True, exist_ok=True)
+        data.save(
+            Path(save_to, f'{what}-{aoi_name}.nc'), 
+            overwrite=overwrite
+        )
+        return data
 
 
 def setup_directories(*args, **kwargs):

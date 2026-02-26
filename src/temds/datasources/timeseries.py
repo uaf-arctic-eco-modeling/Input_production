@@ -83,7 +83,6 @@ class YearlyTimeSeries(UserList):
         if is_list_ds:
             data = [YearlyDataset(None, item, logger=self.logger, **kwargs) for item in data]
 
-        
         self.data = sorted(data)
         self.start_year = 0 ## start year not set
         

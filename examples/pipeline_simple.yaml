@@ -1,0 +1,26 @@
+# Minimal Pipeline Configuration Example
+# This is a simple example showing the minimal required configuration
+
+# Define one or more AOIs to process
+aois:
+  - name: my_aoi
+    vector_file: path/to/my_aoi.geojson
+
+# Working directory for all outputs
+working_dir: working
+
+# Spatial parameters
+resolution: 1000       # Resolution in meters
+crs: EPSG:6931        # Coordinate reference system
+
+# Paths to input datasets
+data_sources:
+  worldclim: working/00-download/worldclim
+  vegetation: working/00-download/vegetation/
+  topography: working/00-download/topo/
+  soil_texture: working/00-download/soiltexture/
+  fri: synthetic
+  # cru: working/00-download/cru  # Optional
+
+# All other settings use defaults
+# To customize steps, tile processing, etc., see pipeline_temrs.yaml

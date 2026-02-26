@@ -1,0 +1,96 @@
+# Example Pipeline Configuration for TEM-RS Inputs Processing
+# This configuration defines a repeatable workflow for processing climate and
+# environmental data for TEM (Terrestrial Ecosystem Model) Regional Setup.
+
+# List of Areas of Interest (AOIs) to process
+aois:
+  - name: temrs_site7
+    vector_file: working/01-aoi/temrs_site7/temrs_site7.geojson
+  
+  # - name: temrs_site6c
+  #   vector_file: working/01-aoi/temrs_site6c/temrs_site6c.geojson
+  
+  # - name: temrs_site6ab
+  #   vector_file: working/01-aoi/temrs_site6ab/temrs_site6ab.geojson
+  
+  # - name: temrs_site4a
+  #   vector_file: working/01-aoi/temrs_site4a/temrs_site4a.geojson
+  
+  # - name: temrs_site4bc
+  #   vector_file: working/01-aoi/temrs_site4bc/temrs_site4bc.geojson
+
+# Global settings
+working_dir: working
+resolution: 1000  # meters
+crs: EPSG:6931    # Arctic LAEA projection
+
+# Data source paths
+data_sources:
+  worldclim: working/00-download/worldclim
+  vegetation: working/00-download/vegetation/
+  topography: working/00-download/topo/
+  soil_texture: working/00-download/soiltexture/
+  fri: synthetic  # Use "synthetic" to generate, or path to real data
+  cru: working/02-arctic/cru-jra-fixed-temds/
+
+# Step-by-step configuration
+# Each step can be enabled/disabled, forced to re-run, or cached
+steps:
+  aoi_raster:
+    enabled: true
+    force: false
+    cache: true
+  
+  worldclim:
+    enabled: true
+    force: false
+    cache: true
+  
+  vegetation:
+    enabled: true
+    force: false
+    cache: true
+  
+  topography:
+    enabled: true
+    force: false
+    cache: true
+  
+  soil_texture:
+    enabled: true
+    force: false
+    cache: true
+  
+  fri:
+    enabled: true
+    force: false
+    cache: true
+  
+  cru:
+    enabled: true  # Disabled by default (commented out in original script)
+    force: false
+    cache: true
+  
+  tile_index:
+    enabled: true
+    force: false
+    cache: true
+  
+  tiles:
+    enabled: true
+    force: false
+    cache: true
+
+# Tile processing configuration
+tile_config:
+  process_tiles: true
+  tile_indices:
+    - H00_V00  # Process only the first tile (0, 0)
+  all_tiles: false  # Set to true to process all tiles in the index
+  baseline_start_year: 1970
+  baseline_end_year: 2000
+  downscale: false  # Disable downscaling (commented in original script)
+
+# Logging
+verbose: false
+log_file: null  # Set to a path to log to file, or null for console only
