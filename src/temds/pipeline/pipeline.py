@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from typing import Optional, List, Set, Callable, Dict, Any
 from functools import wraps
+import numpy as np
 
 import temds
 
@@ -326,7 +327,7 @@ class Pipeline:
         
         output_path = cache_manager.get_path("worldclim")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        wc.save(str(output_path))
+        wc.save(str(output_path), overwrite=True)
         
         return output_path
     
@@ -354,7 +355,7 @@ class Pipeline:
         
         output_path = cache_manager.get_path("vegetation")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        veg.save(str(output_path))
+        veg.save(str(output_path), overwrite=True, fill_value=np.int32(-9999), missing_value=np.int32(-9999))
         
         return output_path
     
@@ -382,7 +383,7 @@ class Pipeline:
         
         output_path = cache_manager.get_path("topography")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        topo.save(str(output_path))
+        topo.save(str(output_path), overwrite=True, fill_value=np.int32(-9999), missing_value=np.int32(-9999))
         
         return output_path
     
@@ -410,7 +411,7 @@ class Pipeline:
         
         output_path = cache_manager.get_path("soil_texture")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        soil.save(str(output_path))
+        soil.save(str(output_path), overwrite=True, fill_value=np.int32(-9999), missing_value=np.int32(-9999))
         
         return output_path
     
@@ -440,7 +441,7 @@ class Pipeline:
         
         output_path = cache_manager.get_path("fri")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        fri.save(str(output_path))
+        fri.save(str(output_path), overwrite=True, fill_value=np.int32(-9999), missing_value=np.int32(-9999))
         
         return output_path
     
