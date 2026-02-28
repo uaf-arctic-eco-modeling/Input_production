@@ -22,7 +22,7 @@ from osgeo import gdal
 from affine import Affine
 from pyproj import CRS
 from cf_units import Unit
-from dapper.met import cmip_utils
+# dapper.met is lazy loaded because it is quite slow to import...
 
 
 import temds.datasources.vegetation
@@ -1895,8 +1895,57 @@ class YearlyDataset(TEMDataset):
             logger=Logger(),
             calcualte_vapo=False
         ):
+        """Creates a YearlyDataset from CMIP6 climate model data.
+
+        Uses the dapper package to find and optionally download CMIP6 data
+        from Pangeo. Processes daily climate data for a single year, converts
+        units to TEMDS standards, and optionally calculates vapor pressure.
+
+        Dynamically imports dapper to avoid unnecessary dependencies when not 
+        using CMIP6 data.
+
+        Parameters
+        ----------
+        year : int
+            Year of data to process
+        data_path : path
+            Path to local directory containing or to receive CMIP6 .nc files
+        elevation : float, default 0
+            Elevation in meters, used for vapor pressure calculation if enabled
+        download : bool, default False
+            If True, download data from Pangeo to data_path
+        variables : str or list, default 'all'
+            Variables to process. If 'all', uses all variables in cmip6.SOURCE_VARS
+        models : list, default []
+            List of CMIP6 model names to include. Empty list includes all models
+        experiments : list, default []
+            List of CMIP6 experiments to include. Empty list includes all experiments
+        ensambles : list, default []
+            List of ensemble members to include. Empty list includes all ensembles
+        extent : GeoDataFrame or object with minx, miny, maxx, maxy, default None
+            Spatial extent to clip data to. If None, full spatial extent is used
+        logger : logger.Logger, default Logger()
+            Logger instance for messages
+        calcualte_vapo : bool, default False
+            If True, calculate vapor pressure from sea level pressure
+
+        Returns
+        -------
+        YearlyDataset
+            A YearlyDataset that will pass `verify`, with variables renamed to 
+            TEMDS standard names and units converted to standard units
+
+        Raises
+        ------
+        errors.YearlyTimeSeriesError
+            If no datasets match the specified parameters, or if a full year 
+            (365 days, noleap calendar) of data is not available for the specified year
+        """
         func_name = "YearlyDataset.from_cmip6"
         table=['day']
+
+        # Dynamic import - only load dapper when actually needed
+        from dapper.met import cmip_utils
 
         if variables=='all':
             variables = cmip6.SOURCE_VARS
