@@ -279,15 +279,25 @@ class Pipeline:
         # Load vector
         aoi_mask = AOIMask.load_vector(aoi.vector_file)
         
+        # Set resolution on the AOIMask instance
+        aoi_mask.RES = self.config.resolution
+
+        # Extract CRS code (e.g., "EPSG:6931" -> 6931)
+        crs_code = int(self.config.crs.split(':')[1])
+
+        # Convert to target CRS if needed
+        if aoi_mask.aoi.crs.to_epsg() != crs_code:
+            self.logger.info(f"Converting AOI from EPSG:{aoi_mask.aoi.crs.to_epsg()} to EPSG:{crs_code}")
+            aoi_mask.aoi = aoi_mask.aoi.to_crs(crs_code)
+
         # Create raster
         output_path = cache_manager.get_path("aoi_raster")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         aoi_mask.to_rasterfile(
-            where=str(output_path.parent),
-            name=output_path.stem,
-            resolution=self.config.resolution,
-            crs=self.config.crs
+            output_dir=str(output_path.parent.parent),
+            name=aoi.name,
+            crs=crs_code
         )
         
         return output_path
