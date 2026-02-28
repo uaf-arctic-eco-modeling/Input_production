@@ -35,7 +35,8 @@ def pipeline_step(step_name: str):
             
             # Check cache unless force is enabled
             if step_config.cache and not step_config.force and not self.force_all:
-                cache_manager = kwargs.get('cache_manager')
+                # Extract cache_manager from args (second positional argument)
+                cache_manager = args[1] if len(args) > 1 else kwargs.get('cache_manager')
                 if cache_manager and cache_manager.validate(step_name):
                     cache_path = cache_manager.get_path(step_name)
                     self.logger.info(f"✓ Cache hit for '{step_name}': {cache_path}")
