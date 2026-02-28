@@ -115,9 +115,10 @@ def pipeline_run(
         # Force re-run ignoring cache
         temds pipeline-run pipeline.yaml --force-all
     """
-    logger = temds.logger.Logger([], temds.logger.DEBUG)
+    # Configure logger based on verbose flag
+    log_level = temds.logger.DEBUG if verbose else temds.logger.INFO
+    logger = temds.logger.Logger([], log_level)
     
-    #log = temds.logger.Logger([], temds.logger.DEBUG)
     try:
         pipeline = Pipeline.from_config_file(config_file, logger=logger)
         pipeline.run(

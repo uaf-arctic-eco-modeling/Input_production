@@ -89,7 +89,7 @@ class Pipeline:
             logger: Optional logger instance
         """
         self.config = config
-        self.logger = logger or Logger()
+        self.logger = logger if logger is not None else Logger()
         self.force_all = False
         
         # Statistics tracking
@@ -146,9 +146,9 @@ class Pipeline:
         
         # Process each AOI
         for aoi in aois:
-            self.logger.info(f"\n{'='*60}")
+            #self.logger.info(f"\n{'='*60}")
             self.logger.info(f"Processing AOI: {aoi.name}")
-            self.logger.info(f"{'='*60}")
+            #self.logger.info(f"{'='*60}")
             
             self.run_for_aoi(
                 aoi, 
@@ -161,9 +161,9 @@ class Pipeline:
         
         # Print summary
         elapsed = time.time() - start_time
-        self.logger.info(f"\n{'='*60}")
+        #self.logger.info(f"\n{'='*60}")
         self.logger.info("Pipeline Complete!")
-        self.logger.info(f"{'='*60}")
+        #self.logger.info(f"{'='*60}")
         self.logger.info(f"AOIs processed: {self.stats['aois_processed']}")
         self.logger.info(f"Steps run: {self.stats['steps_run']}")
         self.logger.info(f"Steps cached: {self.stats['steps_cached']}")
