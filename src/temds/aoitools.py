@@ -676,7 +676,7 @@ class TileIndex(object):
 
 
   def create_tile_index(self, nickname='', id=''):
-    '''Use gdal.TileIndex() to create a shapefile tile index of the tileset.
+    '''Use gdal.TileIndex() to create a GeoJSON tile index of the tileset.
     In its present form, this requires the tileset to have been "cut" already,
     meaning that there needs to be a hierarchy of folders containing the tile
     rasters.
@@ -690,7 +690,7 @@ class TileIndex(object):
     id: str
       A unique identifier for the tileset. This can be used to distinguish
       between different tilesets that may have similar names. This is added to
-      the tile index shapefile name.
+      the tile index file name.
 
     '''
     opts = {
@@ -706,19 +706,22 @@ class TileIndex(object):
       raise RuntimeError(f"No files found matching {pattern}, can't create tile index.")
 
     print(f"Found {len(files)} files to tile.")
-    dstPath = pathlib.Path(self.root, nickname, f"tile_index{id}.shp")
+    
+    # Create temporary shapefile first (gdal.TileIndex requires shapefile format)
+    tmpPath = pathlib.Path(self.root, nickname, f"tile_index{id}_temp.shp")
+    dstPath = pathlib.Path(self.root, nickname, f"tile_index{id}.geojson")
 
-    gdal.TileIndex(dstPath, 
+    gdal.TileIndex(tmpPath, 
                    files,
                    **opts)
-    if not dstPath.exists():
-      raise RuntimeError(f"PROBLEM CREATING TILE INDEX: {dstPath}")
+    if not tmpPath.exists():
+      raise RuntimeError(f"PROBLEM CREATING TILE INDEX: {tmpPath}")
     
-    # Add some convenience columns to the shapefile with tile id and 
+    # Add some convenience columns to the tile index with tile id and 
     # tile H and V indices...
 
-    # Need to read the file in, add a few columns and save it again...
-    df = gpd.read_file(dstPath)
+    # Read the temporary shapefile, add columns, and save as GeoJSON
+    df = gpd.read_file(tmpPath)
     df['tile_id'] = df['location'].str.extract(r'(H\d+_V\d+)')
 
     # Separate H and V columns:
@@ -727,7 +730,13 @@ class TileIndex(object):
     df['V'] = df['V'].astype(int)
 
     print(f"Finished adding convenience columns to tile index, saving to {dstPath}")
-    df.to_file(dstPath, driver='ESRI Shapefile')
+    df.to_file(dstPath, driver='GeoJSON')
+    
+    # Clean up temporary shapefile and associated files
+    for ext in ['.shp', '.shx', '.dbf', '.prj', '.cpg']:
+      temp_file = tmpPath.with_suffix(ext)
+      if temp_file.exists():
+        temp_file.unlink()
 
 
   def get_tile_index_total_area(self, nickname=''):
