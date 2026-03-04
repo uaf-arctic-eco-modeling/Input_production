@@ -223,8 +223,8 @@ class Pipeline:
                 self._step_cru(aoi, cache_manager)
             elif step_name == "setup_tiles":
                 self._step_setup_tiles(aoi, cache_manager)
-            elif step_name == "tile_index":
-                self._step_tile_index(aoi, cache_manager)
+            elif step_name == "baseline":
+                self._step_baseline(aoi, cache_manager)
             else:
                 self.logger.warn(f"Unknown step: {step_name}")
     
@@ -525,7 +525,7 @@ class Pipeline:
     
     @pipeline_step("setup_tiles")
     def _step_setup_tiles(self, aoi: AOIConfig, cache_manager: CacheManager) -> Path:
-        """Chops the AOI into tiles and makes a directory foreach tile, with a
+        """Chops the AOI into tiles and makes a directory for each tile, with a
         rasterized version of the AOI in each tile directory. Then creates a 
         tile index shapefile with the tile extents and IDs.
         
@@ -560,47 +560,9 @@ class Pipeline:
         # Create the tile index shapefile
         tile_index.create_tile_index(nickname='', id='')
 
-        return tile_root
-
-    # @pipeline_step("tile_index")
-    # def _step_tile_index(self, aoi: AOIConfig, cache_manager: CacheManager) -> Path:
-    #     """Create tile index for the AOI and creates the directotry structure
-    #     for the tiles, along with a raster in each tile directory.
-        
-    #     Args:
-    #         aoi: AOI configuration cache_manager: Cache manager for this AOI
-            
-    #     Returns:
-    #         Path to tile index file
-    #     """
-    #     aoi_raster = cache_manager.get_path("aoi_raster")
-    #     if not aoi_raster.exists():
-    #         raise FileNotFoundError(f"AOI raster not found: {aoi_raster}. Run aoi_raster step first.")
-        
-    #     # Load the AOI from the raster file (not the vector)
-    #     # This ensures we're using the same extent and CRS as the rasterized AOI
-    #     aoi_mask = AOIMask.load_raster(str(aoi_raster))
-
-    #     # Set resolution on the AOIMask instance
-    #     aoi_mask.RES = self.config.resolution
-
-    #     # Create TileIndex object
-    #     tile_root = str(cache_manager.tile_dir)
-    #     tile_index = TileIndex(root=tile_root, aoimask=aoi_mask)
-
-    #     # Calculate tile extents and grid size
-    #     tile_index.calculate_tile_extents()
-    #     tile_index.calculate_tile_gridsize()
-
-    #     # # Cut the tileset (creates tile rasters in subdirectories)
-    #     # tile_index.cut_tileset(tile_index.calculate_tile_extents(), nickname='')
-
-    #     # Create the tile index shapefile
-    #     tile_index.create_tile_index(nickname='', id='')
-
-    #     output_path = cache_manager.get_path("tile_index")
-
-    #     return output_path
+        # Return path to tile index file for caching
+        tile_index_path = Path(tile_root) / "tile_index.geojson"
+        return tile_index_path
     
     @pipeline_step("tiles")
     def _step_tiles(self, aoi: AOIConfig, cache_manager: CacheManager) -> None:
@@ -617,9 +579,11 @@ class Pipeline:
             self.stats['steps_skipped'] += 1
             return
         
-        tile_index_path = cache_manager.get_path("tile_index")
+        # Get tile index from setup_tiles output
+        tile_dir = cache_manager.get_path("setup_tiles")
+        tile_index_path = tile_dir / "tile_index.geojson"
         if not tile_index_path.exists():
-            raise FileNotFoundError(f"Tile index not found: {tile_index_path}. Run tile_index step first.")
+            raise FileNotFoundError(f"Tile index not found: {tile_index_path}. Run setup_tiles step first.")
         
         # Load tile index to get available tiles
         import geopandas as gpd

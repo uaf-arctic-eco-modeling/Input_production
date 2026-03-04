@@ -69,9 +69,6 @@ class CacheManager:
         elif step_name == "cru":
             return self.data_dir / f"{self.aoi_name}_cru"
             
-        elif step_name == "tile_index":
-            return self.tile_dir / "tile_index.geojson"
-            
         elif step_name == "setup_tiles":
             return self.tile_dir
 
@@ -99,7 +96,10 @@ class CacheManager:
             return path.is_dir() and any(path.glob("*.nc"))
 
         if step_name == "setup_tiles":
-            return path.is_dir() and any(path.glob("*/EPSG.yml"))
+            # Check for tile index file and at least one tile directory with raster
+            tile_index = path / "tile_index.geojson"
+            has_tiles = path.is_dir() and any(path.glob("tiles/*/EPSG_6931.tiff"))
+            return tile_index.exists() and has_tiles
           
         return path.exists()
     
@@ -133,7 +133,7 @@ class CacheManager:
                 with xr.open_dataset(nc_files[0]) as ds:
                     return len(ds.data_vars) > 0
                     
-            elif step_name in ["tile_index", "aoi_vector"]:
+            elif step_name == "aoi_vector":
                 # GeoJSON - just check it's valid JSON
                 import json
                 with open(path) as f:
@@ -150,6 +150,29 @@ class CacheManager:
                 # Try opening with rioxarray
                 import rioxarray
                 with rioxarray.open_rasterio(path) as ds:
+                    return True
+            
+            elif step_name == "setup_tiles":
+                # Validate tile index GeoJSON and at least one tile raster
+                import json
+                tile_index_path = path / "tile_index.geojson"
+                if not tile_index_path.exists():
+                    return False
+                
+                # Check tile index is valid GeoJSON
+                with open(tile_index_path) as f:
+                    data = json.load(f)
+                if not isinstance(data, dict):
+                    return False
+                
+                # Check at least one tile raster exists and can be opened
+                tile_rasters = list(path.glob("tiles/*/EPSG_6931.tiff"))
+                if not tile_rasters:
+                    return False
+                
+                # Try opening one tile raster to verify it's valid
+                import rioxarray
+                with rioxarray.open_rasterio(tile_rasters[0]) as ds:
                     return True
                     
             else:
@@ -192,7 +215,7 @@ class CacheManager:
             "soil_texture",
             "fri",
             "cru",
-            "tile_index"
+            "setup_tiles"
         ]
         
         return {step: self.validate(step) for step in steps}
