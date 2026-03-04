@@ -71,15 +71,16 @@ steps:
     force: false
     cache: true
   
-  tile_index:
+  setup_tiles:
     enabled: true
     force: false
     cache: true
-  
+
   tiles:
     enabled: true
     force: false
     cache: true
+
 
 # Tile processing configuration
 tile_config:
@@ -89,8 +90,10 @@ tile_config:
   all_tiles: false  # Set to true to process all tiles in the index
   baseline_start_year: 1970
   baseline_end_year: 2000
-  downscale: false  # Disable downscaling (commented in original script)
+  downscale: true  
+  baseline: true
+  correction: true
 
 # Logging
-verbose: false
+verbose: true
 log_file: null  # Set to a path to log to file, or null for console only
