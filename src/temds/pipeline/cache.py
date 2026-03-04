@@ -70,8 +70,11 @@ class CacheManager:
             return self.data_dir / f"{self.aoi_name}_cru"
             
         elif step_name == "tile_index":
-            return self.tile_dir / "tiles" / "tile_index.geojson"
+            return self.tile_dir / "tile_index.geojson"
             
+        elif step_name == "setup_tiles":
+            return self.tile_dir
+
         elif step_name == "tile":
             tile_index = kwargs.get('tile_index', 'H00_V00')
             return self.tile_dir / "tiles" / tile_index / "manifest.yml"
@@ -94,7 +97,10 @@ class CacheManager:
         # For directories (like CRU timeseries)
         if step_name == "cru":
             return path.is_dir() and any(path.glob("*.nc"))
-            
+
+        if step_name == "setup_tiles":
+            return path.is_dir() and any(path.glob("*/EPSG.yml"))
+          
         return path.exists()
     
     def validate(self, step_name: str, **kwargs) -> bool:

@@ -79,8 +79,11 @@ class Pipeline:
         "soil_texture",
         "fri",
         "cru",
-        "tile_index",
-        "tiles"
+        "setup_tiles",
+        "baseline",
+        "correction",
+        "downscale",
+        "export_TEM",
     ]
     
     def __init__(self, config: PipelineConfig, logger: Optional[Logger] = None):
@@ -218,12 +221,12 @@ class Pipeline:
                 self._step_fri(aoi, cache_manager)
             elif step_name == "cru":
                 self._step_cru(aoi, cache_manager)
+            elif step_name == "setup_tiles":
+                self._step_setup_tiles(aoi, cache_manager)
             elif step_name == "tile_index":
                 self._step_tile_index(aoi, cache_manager)
-            elif step_name == "tiles":
-                self._step_tiles(aoi, cache_manager)
             else:
-                self.logger.warning(f"Unknown step: {step_name}")
+                self.logger.warn(f"Unknown step: {step_name}")
     
     def _get_steps_to_run(
         self,
@@ -520,36 +523,90 @@ class Pipeline:
 
         return output_path
     
-    @pipeline_step("tile_index")
-    def _step_tile_index(self, aoi: AOIConfig, cache_manager: CacheManager) -> Path:
-        """Create tile index for the AOI.
+    @pipeline_step("setup_tiles")
+    def _step_setup_tiles(self, aoi: AOIConfig, cache_manager: CacheManager) -> Path:
+        """Chops the AOI into tiles and makes a directory foreach tile, with a
+        rasterized version of the AOI in each tile directory. Then creates a 
+        tile index shapefile with the tile extents and IDs.
         
         Args:
             aoi: AOI configuration
             cache_manager: Cache manager for this AOI
-            
         Returns:
             Path to tile index file
         """
         aoi_raster = cache_manager.get_path("aoi_raster")
         if not aoi_raster.exists():
             raise FileNotFoundError(f"AOI raster not found: {aoi_raster}. Run aoi_raster step first.")
+
+        # Load the AOI from the raster file (not the vector)
+        # This ensures we're using the same extent and CRS as the rasterized AOI
+        aoi_mask = AOIMask.load_raster(str(aoi_raster))
+
+        # Set resolution on the AOIMask instance
+        aoi_mask.RES = self.config.resolution
+
+        # Create TileIndex object
+        tile_root = str(cache_manager.tile_dir)
+        tile_index = TileIndex(root=tile_root, aoimask=aoi_mask)
+
+        # Calculate tile extents and grid size
+        tile_index.calculate_tile_extents()
+        tile_index.calculate_tile_gridsize()
+
+        # Cut the tileset (creates tile rasters in subdirectories)
+        tile_index.cut_tileset(tile_index.calculate_tile_extents(), nickname='')
+
+        # Create the tile index shapefile
+        tile_index.create_tile_index(nickname='', id='')
+
+        return tile_root
+
+    # @pipeline_step("tile_index")
+    # def _step_tile_index(self, aoi: AOIConfig, cache_manager: CacheManager) -> Path:
+    #     """Create tile index for the AOI and creates the directotry structure
+    #     for the tiles, along with a raster in each tile directory.
         
-        output_path = cache_manager.get_path("tile_index")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+    #     Args:
+    #         aoi: AOI configuration cache_manager: Cache manager for this AOI
+            
+    #     Returns:
+    #         Path to tile index file
+    #     """
+    #     aoi_raster = cache_manager.get_path("aoi_raster")
+    #     if not aoi_raster.exists():
+    #         raise FileNotFoundError(f"AOI raster not found: {aoi_raster}. Run aoi_raster step first.")
         
-        # Create tile index
-        tile_index = create_tile_index(
-            extent_raster_path=str(aoi_raster),
-            out_file=str(output_path),
-            logger=self.logger
-        )
-        
-        return output_path
+    #     # Load the AOI from the raster file (not the vector)
+    #     # This ensures we're using the same extent and CRS as the rasterized AOI
+    #     aoi_mask = AOIMask.load_raster(str(aoi_raster))
+
+    #     # Set resolution on the AOIMask instance
+    #     aoi_mask.RES = self.config.resolution
+
+    #     # Create TileIndex object
+    #     tile_root = str(cache_manager.tile_dir)
+    #     tile_index = TileIndex(root=tile_root, aoimask=aoi_mask)
+
+    #     # Calculate tile extents and grid size
+    #     tile_index.calculate_tile_extents()
+    #     tile_index.calculate_tile_gridsize()
+
+    #     # # Cut the tileset (creates tile rasters in subdirectories)
+    #     # tile_index.cut_tileset(tile_index.calculate_tile_extents(), nickname='')
+
+    #     # Create the tile index shapefile
+    #     tile_index.create_tile_index(nickname='', id='')
+
+    #     output_path = cache_manager.get_path("tile_index")
+
+    #     return output_path
     
     @pipeline_step("tiles")
     def _step_tiles(self, aoi: AOIConfig, cache_manager: CacheManager) -> None:
-        """Process individual tiles.
+        """Check config to see if tile processing is enabled. If so, 
+        open the tile index and then loop over the tiles in it, processing each
+        if it is specified in the config.
         
         Args:
             aoi: AOI configuration
@@ -572,7 +629,8 @@ class Pipeline:
         if self.config.tile_config.tile_indices:
             tiles_to_process = self.config.tile_config.tile_indices
         elif self.config.tile_config.all_tiles:
-            tiles_to_process = tile_index['index'].tolist()
+            # Use 'tile_id' column which has format like 'H01_V02'
+            tiles_to_process = tile_index['tile_id'].tolist()
         else:
             self.logger.info("No tiles specified for processing")
             return
@@ -608,9 +666,9 @@ class Pipeline:
                 return
         
         # Get tile extent from index
-        tile_row = tile_index_gdf[tile_index_gdf['index'] == tile_idx]
+        tile_row = tile_index_gdf[tile_index_gdf['tile_id'] == tile_idx]
         if tile_row.empty:
-            self.logger.warning(f"  Tile {tile_idx} not found in index")
+            self.logger.warn(f"  Tile {tile_idx} not found in index")
             return
         
         extent = tile_row.iloc[0].geometry.bounds  # (minx, miny, maxx, maxy)
@@ -659,7 +717,7 @@ class Pipeline:
                 self.logger.info(f"    Importing {tile_name}")
                 tile.import_and_normalize(tile_name, str(dataset_path), buffered=True)
             else:
-                self.logger.warning(f"    Skipping {tile_name} (not found)")
+                self.logger.warn(f"    Skipping {tile_name} (not found)")
         
         # Import CRU timeseries
         cru_path = cache_manager.get_path("cru")

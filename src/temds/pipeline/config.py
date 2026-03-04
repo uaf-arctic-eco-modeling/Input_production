@@ -62,7 +62,7 @@ class PipelineConfig(BaseModel):
             "soil_texture": StepConfig(),
             "fri": StepConfig(),
             "cru": StepConfig(),
-            "tile_index": StepConfig(),
+            "setup_tiles": StepConfig(),
             "tiles": StepConfig(),
         },
         description="Configuration for each pipeline step"
