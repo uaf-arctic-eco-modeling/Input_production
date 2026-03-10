@@ -514,9 +514,17 @@ TILE_SIZE_Y = 100
 
 class TileIndex(object):
 
-  def __init__(self, root, aoimask):
+  def __init__(self, root, aoi_raster = None, logger=None):
     self.root = root
-    self.aoimask = aoimask
+    self.logger = logger
+
+    self.logger.info(f"Initializing TileIndex with root {self.root} and aoi_raster {aoi_raster=}")
+
+    with gdal.Open(aoi_raster, gdal.gdalconst.GA_ReadOnly) as ds:
+      self.aoi_filepath = aoi_raster
+      self.aoi_rasterx = ds.RasterXSize
+      self.aoi_rastery = ds.RasterYSize
+      self.aoi_gt = ds.GetGeoTransform()
 
   def remove_tiles(self):
     shutil.rmtree(self.root + "/tiles")
@@ -539,15 +547,13 @@ class TileIndex(object):
 
   def calculate_tile_gridsize(self):
 
-    maskX, maskY = self.aoimask.raster_size()
+    N_TILES_X = int(self.aoi_rasterx / TILE_SIZE_X)
+    N_TILES_Y = int(self.aoi_rastery / TILE_SIZE_Y)
 
-    N_TILES_X = int(maskX / TILE_SIZE_X)
-    N_TILES_Y = int(maskY / TILE_SIZE_Y)
-
-    if maskX % TILE_SIZE_X > 0:
+    if self.aoi_rasterx % TILE_SIZE_X > 0:
       N_TILES_X += 1
 
-    if maskX % TILE_SIZE_Y > 0:
+    if self.aoi_rastery % TILE_SIZE_Y > 0:
       N_TILES_Y += 1
 
     return N_TILES_X, N_TILES_Y
@@ -561,12 +567,23 @@ class TileIndex(object):
     resolution.
     '''
 
+    # NOTE:
+    # For north-up images (negative pixel height), gt[3] is the TOP (maximum Y)
 
-    maskX, maskY = self.aoimask.raster_size()
+    # X extent
+    minx = self.aoi_gt[0]
+    maxx = self.aoi_gt[0] + (self.aoi_gt[1] * self.aoi_rasterx)
 
-    aoi_extents = self.aoimask.raster_extents()
+    # Y extent - handle both north-up and south-up rasters
+    if self.aoi_gt[5] < 0:  # North-up (typical case?)
+      # gt[3] is the top (maximum Y)
+      maxy = self.aoi_gt[3]
+      miny = self.aoi_gt[3] + (self.aoi_gt[5] * self.aoi_rastery)
+    else:  # South-up (unusual?)
+      miny = self.aoi_gt[3]
+      maxy = self.aoi_gt[3] + (self.aoi_gt[5] * self.aoi_rastery)
 
-    aoiGT = self.aoimask.raster_geoTransform()
+    print(f"minx={minx}, miny={miny}, maxx={maxx}, maxy={maxy}")
 
     N_tiles_X, N_tiles_Y = self.calculate_tile_gridsize()
 
@@ -575,29 +592,22 @@ class TileIndex(object):
     for h in range(N_tiles_X):
       for v in range(N_tiles_Y):
 
-        tile_xmin = aoi_extents['minx'] + TILE_SIZE_X * h * aoiGT[1]
+        # X coordinates (same for both orientations)
+        tile_xmin = minx + TILE_SIZE_X * h * self.aoi_gt[1]
         if (h+1) == len(range(N_tiles_X)):
-          tile_xmax = tile_xmin + (maskX % TILE_SIZE_X) * aoiGT[1]
+          tile_xmax = tile_xmin + (self.aoi_rasterx % TILE_SIZE_X) * self.aoi_gt[1]
         else:
-          tile_xmax = tile_xmin + TILE_SIZE_X * aoiGT[1]
+          tile_xmax = tile_xmin + TILE_SIZE_X * self.aoi_gt[1]
 
-        tile_pixelXsize = aoiGT[1]
-        tile_pixelYsize = aoiGT[5]
-
-        # Origin LOWER LEFT
-        tile_ymin = aoi_extents['miny'] + tile_pixelYsize * maskY \
-                    + TILE_SIZE_Y * v * tile_pixelYsize * -1
+        # Y coordinates - work from top to bottom
+        tile_ymax = maxy + TILE_SIZE_Y * v * self.aoi_gt[5]
         if (v+1) == len(range(N_tiles_Y)):
-          tile_ymax = tile_ymin + (maskY % TILE_SIZE_Y) * tile_pixelYsize * -1
+          tile_ymin = tile_ymax + (self.aoi_rastery % TILE_SIZE_Y) * self.aoi_gt[5]
         else:
-          tile_ymax = tile_ymin + TILE_SIZE_Y * tile_pixelYsize * -1 
+          tile_ymin = tile_ymax + TILE_SIZE_Y * self.aoi_gt[5]
 
-        # # Origin UPPER LEFT 
-        # tile_ymin = aoi_extents['miny'] + TILE_SIZE_Y * v * aoiGT[5]
-        # if (v+1) == len(range(N_tiles_Y)):
-        #   tile_ymax = tile_ymin + (maskY % TILE_SIZE_Y) * aoiGT[5]
-        # else:
-        #   tile_ymax = tile_ymin + TILE_SIZE_Y * aoiGT[5]
+        tile_pixelXsize = self.aoi_gt[1]
+        tile_pixelYsize = self.aoi_gt[5]
 
         tile_extents.append(dict(hidx=h, vidx=v, 
                                  xmin=tile_xmin, xmax=tile_xmax, 
@@ -612,6 +622,12 @@ class TileIndex(object):
 
     for tile in tile_extents:
 
+      # Open the source dataset first
+      src_ds = gdal.Open(self.aoi_filepath, gdal.gdalconst.GA_ReadOnly)
+
+      print(f"Tile bounds: xmin={tile['xmin']}, ymin={tile['ymin']}, xmax={tile['xmax']}, ymax={tile['ymax']}")
+      print(f"Source GT: {src_ds.GetGeoTransform()}")
+
       warpOptions = {
         'format': 'VRT',
         'srcSRS': 'EPSG:6931',
@@ -624,16 +640,21 @@ class TileIndex(object):
       }
 
       # Put it in a temporary dataset
-      #ds = gdal.Warp('', self.root+'/01-aoi/aoi_5km_buffer_6931.tiff', **warpOptions)
-      ds_tile = gdal.Warp('', self.aoimask.as_raster(), **warpOptions)
+      ds_tile = gdal.Warp('', src_ds, **warpOptions)
 
-      if np.count_nonzero(ds_tile.ReadAsArray()) < 1:
+      if ds_tile is None:
+        print(f"WARNING: gdal.Warp returned None for tile {tile}")
+        continue
+
+      data = ds_tile.ReadAsArray()
+
+      if np.count_nonzero(data) < 1:
         print("Skip tile!")
       else:
         print(f"TIME TO TILE! {tile=}")
         # get indices of non-zero data. Use these to further trim down the
         # extents of the tiles.
-        valid_y, valid_x = np.nonzero(ds_tile.ReadAsArray())
+        valid_y, valid_x = np.nonzero(data)
 
         xoffset, px_w, rot1, yoffset, rot2, px_h = ds_tile.GetGeoTransform()
 
