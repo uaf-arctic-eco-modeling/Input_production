@@ -548,16 +548,9 @@ class Pipeline:
         if not aoi_raster.exists():
             raise FileNotFoundError(f"AOI raster not found: {aoi_raster}. Run aoi_raster step first.")
 
-        # Load the AOI from the raster file (not the vector)
-        # This ensures we're using the same extent and CRS as the rasterized AOI
-        aoi_mask = AOIMask.load_raster(str(aoi_raster))
-
-        # Set resolution on the AOIMask instance
-        aoi_mask.RES = self.config.resolution
-
         # Create TileIndex object
         tile_root = str(cache_manager.tile_dir)
-        tile_index = TileIndex(root=tile_root, aoimask=aoi_mask)
+        tile_index = TileIndex(root=tile_root, aoi_raster=aoi_raster, logger=self.logger)
 
         # Calculate tile extents and grid size
         tile_index.calculate_tile_extents()
