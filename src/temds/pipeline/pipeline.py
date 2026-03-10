@@ -280,29 +280,55 @@ class Pipeline:
         Returns:
             Path to rasterized AOI file
         """
-        # Load vector
-        aoi_mask = AOIMask.load_vector(aoi.vector_file)
+
+        from osgeo import gdal 
+        import geopandas as gpd
+        import temds.region.tools
+ 
+        raw_aoi = gpd.read_file(aoi.vector_file)
+        assert raw_aoi.crs == 3338
+
+        converted_aoi = raw_aoi.to_crs(6931)
+        assert converted_aoi.crs == 6931
+
+        # TODO: fix the hard coded resolution....
+        assert self.config.resolution == 1000, "Currently resolution is hard coded to 1000m in this step, but it should be unified across the codebase. Please update the config or the code to match."
+
+
+        # Here we get a dataframe with two rows. One row has the geometry for
+        # the original mask, and the other row has a geometry for the bounds of
+        # the mask, but aligned to the resolution. This is because
+        # gdal.Rasterize needs the bounds to be aligned to the resolution, but
+        # we also want to keep the original shape of the mask for burning into
+        # the raster
+        better_aoi = temds.region.tools.align_to_resolution(converted_aoi, 1000)
+
+        bounds = better_aoi[better_aoi['item']=='res_aligned_bounds'].geometry.bounds.iloc[0]
+
+        ds, layer = temds.region.tools.geopandas_to_ogr_dataset(better_aoi.loc[[0], "geometry"], layer_name='run_mask')
+        opts = gdal.RasterizeOptions(
+          format='GTIFF',
+          outputBounds=(bounds['minx'], bounds['miny'], bounds['maxx'], bounds['maxy']),
+          outputSRS='EPSG:6931',  # Added: specify output CRS
+          xRes=1000,
+          yRes=1000,
+          noData=0,
+          burnValues=[1],
+          allTouched=True,
+          initValues=0,
+          layers=[layer.GetName()],
+          outputType=gdal.GDT_Int16
+        )
+
+        rds = gdal.Rasterize(cache_manager.get_path("aoi_raster"), ds, options=opts)
         
-        # Set resolution on the AOIMask instance
-        aoi_mask.RES = self.config.resolution
+        # Flush and close the dataset to ensure it's written to disk
+        rds.FlushCache()
+        rds = None
 
-        # Extract CRS code (e.g., "EPSG:6931" -> 6931)
-        crs_code = int(self.config.crs.split(':')[1])
-
-        # Convert to target CRS if needed
-        if aoi_mask.aoi.crs.to_epsg() != crs_code:
-            self.logger.info(f"Converting AOI from EPSG:{aoi_mask.aoi.crs.to_epsg()} to EPSG:{crs_code}")
-            aoi_mask.aoi = aoi_mask.aoi.to_crs(crs_code)
-
-        # Create raster
+        # # Create raster
         output_path = cache_manager.get_path("aoi_raster")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        aoi_mask.to_rasterfile(
-            output_dir=str(output_path.parent.parent),
-            name=aoi.name,
-            crs=crs_code
-        )
         
         return output_path
     
