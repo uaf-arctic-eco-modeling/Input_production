@@ -16,8 +16,16 @@ def align_to_resolution(vector, resolution):
     miny = resolution * np.floor(miny/resolution).astype(int)
     maxx = resolution * np.ceil(maxx/resolution).astype(int)
     maxy = resolution * np.ceil(maxy/resolution).astype(int)
-    aligned =  gpd.GeoSeries(shapely.box(minx, miny, maxx, maxy ), [0], vector.crs)
-    return aligned
+
+    # This doesn't work because it makes a polygon that is the full extent,
+    # but we lose the mask shape in this step. 
+    aligned = gpd.GeoSeries(shapely.box(minx, miny, maxx, maxy ), [0], vector.crs)
+
+    # So here we add it back
+    d = {'item': ['mask', 'res_aligned_bounds'], 
+         'geometry': [vector.geometry.iloc[0], aligned.geometry.iloc[0]]}
+
+    return gpd.GeoDataFrame(d, crs=vector.crs)
 
 
 def geopandas_to_ogr_dataset(geoseries, layer_name="layer"):

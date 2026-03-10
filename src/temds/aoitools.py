@@ -15,6 +15,7 @@ import pandas as pd
 from osgeo import gdal, ogr, osr
 
 import temds.util
+import temds.region.tools
 
 gdal.UseExceptions()
 
@@ -232,7 +233,10 @@ class AOIMask(object):
 
     instance = AOIMask()
 
-    instance.aoi = gpd.read_file(vector_file).geometry # Make sure we end up with a GeoSeries
+    raw_aoi = gpd.read_file(vector_file).geometry # Make sure we end up with a GeoSeries
+
+    # Make sure that we are lined up with our pixel grid.
+    instance.aoi = temds.region.tools.align_to_resolution(raw_aoi, AOIMask.RES)
 
     return instance
 
@@ -274,6 +278,7 @@ class AOIMask(object):
       #print("Flipping image vertically...")
       miny, maxy = maxy, miny
 
+    #print(f"AOIMask.get_raster_extent(...): minx={minx}, miny={miny}, maxx={maxx}, maxy={maxy}")
     return pd.DataFrame(dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy), index=[0])
 
   def get_vector_bounds(self):
@@ -295,23 +300,16 @@ class AOIMask(object):
     assert self.aoi.crs is not None, "AOI has no CRS"
     assert self.aoi.crs.to_epsg() == 6931, "AOI must be in EPSG:6931"
 
-    bounds = self.get_vector_bounds()
-    #print(f"Bounds before rounding outwards\n {bounds}")
+    #print(f"Bounds before rounding outwards: {self.get_vector_bounds()=}")
 
-    bounds = np.ceil((bounds/1000))*1000
+    bounds_df = temds.region.tools.align_to_resolution(self.aoi, self.RES)
 
-    max_x = bounds['maxx'] + (self.RES - (bounds['maxx'] - bounds['minx']) % self.RES)
-    max_y = bounds['maxy'] + (self.RES - (bounds['maxy'] - bounds['miny']) % self.RES)
+    # bounds_df has two rows, one for the original mask geometry and one
+    # for the aligned bounds geometry. We want the aligned bounds geometry, 
+    # which is the one with item == 'res_aligned_bounds'
+    minx, miny, maxx, maxy = bounds_df[bounds_df['item'] == 'res_aligned_bounds'].geometry.bounds.iloc[0]
+    return pd.Series(dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy))
 
-    bounds_2 = pd.Series(dict(minx=bounds['minx'].squeeze(),
-                miny=bounds['miny'].squeeze(),
-                maxx=max_x.squeeze(),
-                maxy=max_y.squeeze()))
-    #print(f"Bounds after rounding outwards\n {bounds_2}")
-
-    #print(f"Differences in bounds: {bounds_2 - bounds}")
-
-    return bounds_2
 
   def to_shapefile(self, output_dir, name, crs='6931'):
 
