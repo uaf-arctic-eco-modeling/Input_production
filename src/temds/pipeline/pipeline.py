@@ -494,12 +494,6 @@ class Pipeline:
             self.stats['steps_skipped'] += 1
             return None
         
-        # Load timeseries
-        # cru_ts = YearlyTimeSeries(
-        #     data=self.config.data_sources.cru,
-        #     logger=self.logger
-        # )
-
         cru_arctic = temds.datasources.timeseries.YearlyTimeSeries(
           Path(self.config.data_sources.cru),
           #Path('working/02-arctic/cru-jra-fixed-temds/'),
@@ -507,23 +501,12 @@ class Pipeline:
           in_memory=False,
         )
 
-        # original implementation - requires that the aoi_raster is an 
-        # aoitools.AOIMask with aoi attribute, which is not currently the case.
-        # Need to refactor to use raster extent instead.
-        # cru_subset = cru_arctic.get_by_extent(
-        #     *(aoi_raster().iloc[0].values),
-        #     extent_crs=aoi_raster.aoi.crs, 
-        #     resolution=self.config.resolution, 
-        #     in_memory=True
-        # )
-
-
         # New implementation - simply read the extent from the aoi raster file 
         # and subset the CRU data to that extent. This should be more flexible 
         # and work with any rasterized AOI, not just those created by aoitools.
         # Get extent from AOI raster
-        import rioxarray
-        with rioxarray.open_rasterio(aoi_raster) as aoi_ds:
+        import rioxarray as rxr
+        with rxr.open_rasterio(cache_manager.get_path("aoi_raster")) as aoi_ds:
             bounds = aoi_ds.rio.bounds()
             extent_crs = aoi_ds.rio.crs
         
@@ -532,10 +515,10 @@ class Pipeline:
             minx=bounds[0], miny=bounds[1],
             maxx=bounds[2], maxy=bounds[3],
             extent_crs=extent_crs,
-            resolution=self.config.resolution
+            resolution=self.config.resolution,
+            in_memory=True
         )
         
-
         output_path = cache_manager.get_path("cru")
         output_path.mkdir(parents=True, exist_ok=True)
         cru_subset.save(
