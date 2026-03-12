@@ -68,7 +68,7 @@ class Tile(object):
         area in `crs` units of pixel buffer
 
     """
-    def __init__(self, index, extent, resolution, crs, buffer_px = 20, logger=Logger()):
+    def __init__(self, index, extent, resolution, crs, buffer_px = 0, logger=Logger()):
         """
 
         Parameters
@@ -96,7 +96,7 @@ class Tile(object):
         self.index = index # 2 tuple (H, V)
 
         if (isinstance(extent, list) or isinstance (extent, tuple)) and len(extent) == 4:
-            self.extent = pd.DataFrame([extent], columns=['minx', 'maxx', 'miny', 'maxy'])
+            self.extent = pd.DataFrame([extent], columns=['minx', 'miny', 'maxx', 'maxy'])
         elif isinstance(extent, pd.DataFrame):
             self.extent = extent
         else:
@@ -105,7 +105,21 @@ class Tile(object):
         self.resolution = resolution # Maybe? Maybe inherent from TIF? 
         self.buffer_area = buffer_px * self.resolution # maybe buffer_area is actually more of "buffer distance in projection units"
         self.buffer_pixels = buffer_px
-        self.crs = crs
+
+        if isinstance(crs, int):
+            self.crs = pyproj.crs.CRS.from_epsg(crs)
+        elif isinstance(crs, pyproj.crs.crs.CRS):
+            self.crs = crs
+        elif isinstance(crs, str):
+            try:
+                self.crs = pyproj.crs.CRS.from_wkt(crs)
+            except pyproj.exceptions.CRSError:
+                try:
+                    self.crs = pyproj.crs.CRS.from_epsg(int(crs.lower().replace('epsg:', '')))
+                except Exception as e:
+                    raise ValueError(f"Invalid CRS string: {crs}, error: {e}")  
+        else:
+            raise TypeError("CRS must be an int EPSG code, a WKT string, or a pyproj CRS object")
 
         self.logger = logger
         # A valid tile will be constructed when self.data has enough
@@ -204,21 +218,23 @@ class Tile(object):
         buffered: bool, Defaults True
             When true add buffer to tile data being clipped
         """
+        self.logger.debug(f"{self.extent=}, {self.resolution=}, {self.crs.to_epsg()=}, {buffered=}")
         minx, miny, maxx, maxy = self.extent[
             ['minx', 'miny', 'maxx', 'maxy']
         ].iloc[0]
-        extent = minx, miny, maxx, maxy 
+
         if buffered:
             minx,maxx = minx-self.buffer_area,maxx+self.buffer_area
             miny,maxy = miny-self.buffer_area,maxy+self.buffer_area
 
         kwargs['resolution'] = self.resolution
         self.logger.info(
-            f'importing {name} from {datasource} for the extent: {extent}'
+            f'importing {name} from {datasource} for the extent: {minx}, {miny}, {maxx}, {maxy}'
         )
         self.data[name] = datasource.get_by_extent(
             minx, miny, maxx, maxy, self.crs, **kwargs
         )
+        self.logger.debug(f"{self.data[name]=}")
         if callback is not None:
             if isinstance(self.data[name], dataset.TEMDataset ):
                 self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)
