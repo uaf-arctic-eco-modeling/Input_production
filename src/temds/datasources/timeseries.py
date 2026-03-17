@@ -361,6 +361,8 @@ class YearlyTimeSeries(UserList):
 
         var_dict = {}
         for var, method  in climate_variables.BASELINE_LOOKUP.items():
+            if not var in self[start_year].dataset.data_vars:
+                continue
             self.logger.info(f'creating baseline for {var} with  {method}')
             ts = [self[yr].dataset[var].values for yr in range(start_year, end_year)]
             ts = np.array(ts)

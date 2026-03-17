@@ -22,7 +22,7 @@ from osgeo import gdal
 from affine import Affine
 from pyproj import CRS
 from cf_units import Unit
-from dapper.met import cmip_utils
+# from dapper.met import cmip_utils
 
 
 import temds.datasources.vegetation
@@ -1912,46 +1912,49 @@ class YearlyDataset(TEMDataset):
         logger.debug(f'dapper Params: {params}')
         
 
-        available = cmip_utils.find_available_data(params)
-        logger.info(f'YearlyDataset.from_cmip6: found {available.shape[0]} datasets')
-        if available.shape[0] == 0:
-            msg = (
-                'YearlyDataset.from_cmip6: requested cmip6 datasets not found.'
-                'Check your arguments for models, expiremnts, etc.'
-            )
-            logger.error(msg)
-            raise errors.YearlyTimeSeriesError(msg)
+        # available = cmip_utils.find_available_data(params)
+        # logger.info(f'YearlyDataset.from_cmip6: found {available.shape[0]} datasets')
+        # if available.shape[0] == 0:
+        #     msg = (
+        #         'YearlyDataset.from_cmip6: requested cmip6 datasets not found.'
+        #         'Check your arguments for models, expiremnts, etc.'
+        #     )
+        #     logger.error(msg)
+        #     raise errors.YearlyTimeSeriesError(msg)
 
 
-        lat_bounds=None
-        lon_bounds=None
-        if not extent is None:
-            lon_bounds = (extent.minx, extent.maxx)
-            lat_bounds = (extent.miny, extent.maxy)
-        # print(lon_bounds)
+        # lat_bounds=None
+        # lon_bounds=None
+        # if not extent is None:
+        #     lon_bounds = (extent.minx, extent.maxx)
+        #     lat_bounds = (extent.miny, extent.maxy)
 
-        if download:
-            cmip_utils.download_pangeo(
-                available, data_path, lat_bounds=lat_bounds, lon_bounds=lon_bounds
-            )
+        # if download:
+        #     cmip_utils.download_pangeo(
+        #         available, data_path, lat_bounds=lat_bounds, lon_bounds=lon_bounds
+        #     )
+
+        
+
 
         ready_variables = []
         for var_file in Path(data_path).glob('*.nc'):
             # logger.debug(f'checking: {var_file}')
-            var, model, experiment, ensamble = var_file.stem.split('_')
-            if not var in variables:
-                # print('var')
-                continue
-            if models != [] and not model in models:
-                # print('model')
-                continue
-            if experiments != [] and not experiment in experiments:
-                # print('exp')
-                continue
-            if ensambles != [] and not ensamble in ensambles:
-                # print(ensamble, ensambles)
-                # print('ens', ensambles != [],not ensamble in ensambles)
-                continue
+            # var, model, experiment, ensamble = var_file.stem.split('_')
+            var =  var_file.stem.split('-')[-1]
+            # if not var in variables:
+            #     # print('var')
+            #     continue
+            # if models != [] and not model in models:
+            #     # print('model')
+            #     continue
+            # if experiments != [] and not experiment in experiments:
+            #     # print('exp')
+            #     continue
+            # if ensambles != [] and not ensamble in ensambles:
+            #     # print(ensamble, ensambles)
+            #     # print('ens', ensambles != [],not ensamble in ensambles)
+            #     continue
             logger.debug(f'processing: {var_file}')
 
             data =  xr.open_dataset(var_file)
@@ -1967,7 +1970,10 @@ class YearlyDataset(TEMDataset):
             ready_variables.append(data)
         logger.info(f'YearlyDataset.from_cmip6: datasets open = {len(ready_variables)}')
         
-        data = xr.merge(ready_variables)
+        try:
+            data = xr.merge(ready_variables)
+        except xr.MergeError:   # needs this sometimes?
+            data = xr.merge(ready_variables, compat='override')
         # return data
         data = data.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
         # return data
