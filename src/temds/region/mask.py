@@ -42,8 +42,14 @@ class Mask(object):
     
         rds = gdal.Rasterize('', ds, options=opts)
     
-        
         return cls(rds)
+
+    @property
+    def resolution(self):
+        """tuple because sometimes one res is negative
+        """
+        return self.raster.GetGeoTransform()[1], self.raster.GetGeoTransform()[5]
+    
 
     def to_file(self, where: Path):
         

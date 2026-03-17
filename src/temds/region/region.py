@@ -13,6 +13,9 @@ from collections import UserDict
 
 from ..gdal_tools import empty_dataset
 
+from .logger import Logger
+from .datasources import dataset, timeseries
+
 
 class Manifest(UserDict):
     def __init__(self):
@@ -36,17 +39,64 @@ class Manifest(UserDict):
       
 
 class RegionOfInterest(object):
-    def __init__(self, vector, mask):
+    def __init__(self, vector, mask, logger=Logger()):
         self.boundary = vector #GeoDataFrame or GeoSeries with single row limit to single polygon?
         self.data = {}
         self.mask = mask
+
+    @property
+    def resolution(self):
+        """Resolution is defined by the mask dataset
+        """
+        return self.mask.resolution
 
     def import_from_directory(self, directory: Path):
         pass
 
     ## rename this
-    def import_and_normalize(self, name, datasource, buffered=True, callback = None, **kwargs):
+    def import_from_datasource(self, name, datasource, buffered=True, callback = None, **kwargs):
         pass
+        """Loads an item to `data` as name from datasource. Each datasource 
+        (e.g. AnnualDaily, WorldClim) needs to implement a get_by_extent() 
+        method that can return an xarray dataset or AnnualTimeseries to a 
+        specified spatial temporal resolution and extent
+
+        Parameters
+        ----------
+        name: str
+            used as key for datasource in `data`
+        datasource: Object
+            Object must implement `get_by_extent` with 6 arguments
+            (minx: float, maxx: float, miny: float, maxy: float, 
+            extent_crs: pyproj.crs.crs.CRS, resolution: float)
+
+        buffered: bool, Defaults True
+            When true add buffer to tile data being clipped
+        """
+        minx, miny, maxx, maxy = self.extent[
+            ['minx', 'miny', 'maxx', 'maxy']
+        ].iloc[0]
+        extent = minx, miny, maxx, maxy 
+        if buffered:
+            minx,maxx = minx-self.buffer_area,maxx+self.buffer_area
+            miny,maxy = miny-self.buffer_area,maxy+self.buffer_area
+        
+
+        kwargs['resolution'] = self.resolution
+
+
+        self.logger.info(
+            f'importing {name} from {datasource} for the extent: {extent}'
+        )
+        self.data[name] = datasource.get_by_extent(
+            minx, miny, maxx, maxy, self.crs, **kwargs
+        )
+        if callback is not None:
+            if isinstance(self.data[name], dataset.TEMDataset ):
+                self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)
+            else:
+                for year in self.data[name].range():
+                    self.data[name][year].dataset = callback(self.data[name][year].dataset, self.logger, **kwargs)
 
 
 
