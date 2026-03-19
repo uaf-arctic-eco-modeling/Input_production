@@ -313,7 +313,7 @@ class Tile(object):
                 ds.save(out_file, **kwargs)
                 manifest['data'][name] = str( f'{name}.nc')
             else:
-                raise TypeError('Saving {name}, type not supported')
+                raise TypeError(f'Saving {name}, type not supported')
        
         manifest_file = Path(where).joinpath(f'H{H:02d}_V{V:02d}', 'manifest.yml')
         if manifest_file.exists() and update_manifest:
