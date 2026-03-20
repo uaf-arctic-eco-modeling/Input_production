@@ -1253,6 +1253,7 @@ class TEMDataset(object):
         update_kw('warp_no_data_as_array', False)
         update_kw('gdal_type', gdal.GDT_Float32) ### Probably covert to lookup table, so types are inferred from the dataset
         update_kw('prime_warp', True)
+        update_kw('dest_gt', None)
         
         ## general kwarg
         update_kw('resolution', self.resolution)
@@ -1310,8 +1311,10 @@ class TEMDataset(object):
         resolution = kwargs['resolution']
         nd_as_array = kwargs['warp_no_data_as_array']
         gdal_type = kwargs['gdal_type']
+        # print( gdal_type )
         run_primer = kwargs['prime_warp']
         resample_alg = kwargs['resample_alg']
+        dest_gt = kwargs['dest_gt']
 
         ## Clipping with gdal ensures alignment
         ##  1) set up scratch gdal datasets in memory
@@ -1329,7 +1332,7 @@ class TEMDataset(object):
         # driver = gdal.GetDriverByName("MEM")
 
         ## clipped shape, and geotransform
-        dest_x, dest_y = int((maxx-minx)/resolution[0]), int((maxy-miny)/resolution[1])
+        dest_x, dest_y = abs(int((maxx-minx)/resolution[0])), abs(int((maxy-miny)/resolution[1]))
         #dest_gt = minx, resolution, 0.0, miny, 0.0, resolution
         # print(dest_x, dest_y)
         # x_sign, y_sign = 1, 1
@@ -1339,7 +1342,9 @@ class TEMDataset(object):
         #     y_sign = -1
 
         # dest_gt = minx, x_sign*resolution, 0.0, miny, 0.0, y_sign*resolution
-        dest_gt = minx, resolution[0], 0.0, miny, 0.0, resolution[1]     
+        if dest_gt is None:
+            # NOTE: assumes north up
+            dest_gt = minx, resolution[0], 0.0, maxy, 0.0, resolution[1]    
 
         if hasattr(working_dataset, 'lat') and hasattr(working_dataset, 'lon'):
             source_x = working_dataset.lon.shape[0]
@@ -1350,9 +1355,11 @@ class TEMDataset(object):
 
         ## read GT from dataset, extra step is to keep resolution positive
         ## which may not be needed on all datasets, so be wary in in future
+       
         source_gt = working_dataset.rio.transform()
-        ## TODO check if this is needed
         # source_gt = source_gt.c, abs(source_gt.a), source_gt.b, source_gt.f, source_gt.d, abs(source_gt.e)
+        source_gt = source_gt.c, source_gt.a, source_gt.b, source_gt.f, source_gt.d, source_gt.e
+        print(source_gt)
 
         # gdal wants things in order, x, y, band count
         # source_dim_sizes = [source_x, source_y]
@@ -1382,10 +1389,13 @@ class TEMDataset(object):
         # dest.SetProjection(dest_crs)
         # dest.SetGeoTransform(dest_gt)
         # dest.FlushCache()
+        print(dest_gt)
+        print(dest_x, dest_y, n_ts)
         dest = gdal_tools.empty_dataset(
-            dest_x, dest_y, dest_crs, dest_gt, bands = n_ts, gdal_type=gdal_type
+            dest_x, dest_y, dest_crs, dest_gt, n_ts, gdal_type
         )
-
+        driver = gdal.GetDriverByName('GTiff')
+        driver.CreateCopy('sample-dest.tif', dest)
 
         source_crs = working_dataset.rio.crs.to_wkt()
         # source = driver.Create("", *source_dim_sizes, gdal_type)
@@ -1394,15 +1404,20 @@ class TEMDataset(object):
         # source.FlushCache() # this should work just once, but when working in 
         #                     # the interpreter, you often have to call it 
         #                     # multiple times.
-        dest = gdal_tools.empty_dataset(
-            source_x, source_y, source_crs, source_gt, bands = n_ts, gdal_type=gdal_type
+        source = gdal_tools.empty_dataset(
+            source_x, source_y, source_crs, source_gt, n_ts, gdal_type
         )
 
+        # driver = gdal.GetDriverByName('GTiff')
+        driver.CreateCopy('sample-source.tif', source)
 
         ## option 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         self.logger.debug(f"{funcname}: deleting vars_dict")
+
+        driver.CreateCopy('sample-dest.tif', dest)
+        driver.CreateCopy('sample-source.tif', source)
         del(vars_dict)
 
         # Option 1
@@ -1445,19 +1460,22 @@ class TEMDataset(object):
             
         ## we want these to be the center of the pixels so for x and y the range
         self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
-        x_coords = np.arange(minx+resolution/2, minx + dest_x * resolution, resolution) 
+        res_x = resolution[0]
+        x_coords = np.arange(minx+res_x/2, minx + dest_x * res_x, res_x) 
         #y_coords = np.arange(miny+resolution/2, miny + dest_y * resolution, resolution) 
 
         # print(miny,maxy, resolution)
-        res_y = np.abs(resolution[1])
-        if miny < maxy:
-            # print('a')
-            
-            y_coords = np.arange(miny+res_y/2, miny + dest_y * res_y, res_y)
+        res_y = resolution[1]
+        # y_coords = np.arange(miny+res_y/2, miny + dest_y * res_y, res_y)
+        if res_y > 0:
+            print('a')
+            y_coords = np.arange(minx+res_y/2, miny + dest_y * res_y, res_y)
         else: 
-            # print('b')
+            print('b')
             y_coords = np.arange(maxy+res_y/2, maxy + abs(dest_y) * res_y, res_y)
         # print(y_coords)
+
+
 
 
         coords={
@@ -1970,6 +1988,8 @@ class YearlyDataset(TEMDataset):
             logger.debug(f'processing: {var_file}')
 
             data =  xr.open_dataset(var_file)
+            gt = data.rio.transform()
+            # print(gt)
 
             ## Drop original encoding as we will redo this 
             ## to match our other data
@@ -1978,6 +1998,7 @@ class YearlyDataset(TEMDataset):
             ## this does change lon_bnds as well, but why?
             data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
             data = data.sortby(data.lon)
+            
 
             ready_variables.append(data)
         logger.info(f'YearlyDataset.from_cmip6: datasets open = {len(ready_variables)}')
@@ -2037,8 +2058,10 @@ class YearlyDataset(TEMDataset):
         new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
             .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
             .rio.write_coordinate_system(inplace=True)
-        gt = (-180.0, 1.8617204339585491, 0.0, 83.75, 0.0, -1.8617204339523812)
-        new.dataset.rio.write_transform(Affine.from_gdal(*gt), inplace=True)
+        # gt = (-180.0, 1.8617204339585491, 0.0, 83.75, 0.0, -1.8617204339523812)
+
+        
+        new.dataset.rio.write_transform(gt, inplace=True)
 
         return new
 
