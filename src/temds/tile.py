@@ -28,8 +28,10 @@ from . import climate_variables
 
 from .logger import Logger
 from .datasources import dataset, timeseries
+from .datasources.cloud_dataset import CloudDataset
 
 from joblib import Parallel, delayed
+from cmethods import adjust
 
 
 
@@ -216,6 +218,19 @@ class Tile(object):
         self.logger.info(
             f'importing {name} from {datasource} for the extent: {extent}'
         )
+
+
+        if isinstance( datasource, CloudDataset) or \
+                (isinstance(datasource, timeseries.YearlyTimeSeries) and \
+                 isinstance( datasource.data[0], CloudDataset)
+            ):
+            self.logger.debug(
+                f'Setting crs and resolution in kwargs for CloudDataset types'
+            )
+
+            kwargs['resolution'] = self.resolution
+            kwargs['crs'] = self.crs
+
         self.data[name] = datasource.get_by_extent(
             minx, miny, maxx, maxy, self.crs, **kwargs
         )
@@ -246,6 +261,7 @@ class Tile(object):
             update_manifest: bool, default False
             clear_existing: bool, default False
         """
+        crs = None
         if isinstance(self.crs, str):
             crs = pyproj.crs.CRS.from_wkt(self.crs)
         elif isinstance(self.crs, pyproj.crs.crs.CRS):
@@ -310,6 +326,10 @@ class Tile(object):
             elif isinstance(ds, dataset.TEMDataset): 
                 out_file = Path(where).joinpath(f'H{H:02d}_V{V:02d}', f'{name}.nc') 
                 out_file.parent.mkdir(exist_ok=True, parents=True)
+                if 'time' in ds.dataset.dims:
+                    kwargs['unlimited_dims'] = ['time']
+                else:   
+                    kwargs['unlimited_dims'] = None
                 ds.save(out_file, **kwargs)
                 manifest['data'][name] = str( f'{name}.nc')
             else:
@@ -476,7 +496,6 @@ class Tile(object):
 
         return dataset.YearlyDataset(year, downscaled)
 
-
     def downscale_timeseries(self, downscaled_id, source_id, correction_id, variables, parallel=False):
         """
         Add downscaled to self.data dict as xarray dataset. 
@@ -494,6 +513,31 @@ class Tile(object):
                 results.append(data)
         
         self.data[downscaled_id] = timeseries.YearlyTimeSeries(results)
+
+    def general_downscale(self, method, variables, hist_period, proj_period, obs_key, sim_key, kind='+', **kwargs ):
+
+        print('building obsh')
+        obsh = self.data[obs_key].convert_range_to_single_dataset(variables, hist_period[0], hist_period[1])
+        print('building simh')
+        simh = self.data[sim_key].convert_range_to_single_dataset(variables, hist_period[0], hist_period[1])
+        print('building simp')
+        simp = self.data[sim_key].convert_range_to_single_dataset(variables, proj_period[0], proj_period[1])
+        results = []
+        
+        for var in variables:
+            print('downscaling', var)
+            temp = adjust(
+                method=method,
+                obs=obsh[var],
+                simh=simh[var],
+                simp=simp[var],
+                kind="+",
+                **kwargs
+            )[var].transpose('time', 'y','x')
+            results.append(temp)
+        return xr.merge(results)
+
+
 
     def to_TEM(self, downscaled_id):
         '''

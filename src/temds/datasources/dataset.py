@@ -8,6 +8,7 @@ Objects to manage data for TEMDS project
 import os
 from pathlib import Path
 from copy import deepcopy
+import operator
 import gc
 import pathlib
 import shapely.geometry # for .box function
@@ -1680,7 +1681,9 @@ class TEMDataset(object):
         self.dataset.attrs.update(TEMDS_version = Version())
         self.dataset.attrs.update(extra_attrs)
 
-            
+        unlimited_dims = None    
+        if 'unlimited_dims' in kwargs:
+            unlimited_dims = kwargs['unlimited_dims']
 
         if  not Path(out_file).exists() or overwrite:
             
@@ -1690,7 +1693,7 @@ class TEMDataset(object):
                     out_file, 
                     # encoding=encoding, 
                     engine="netcdf4",
-                    # unlimited_dims={'time':True}
+                    unlimited_dims=unlimited_dims
                 )
         else:
             raise FileExistsError(
@@ -1782,6 +1785,7 @@ class TEMDataset(object):
                 in_dataset = in_dataset.reindex(lon=in_dataset.lon[::-1])
             in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
 
+                
         if transform.f > s_miny:
             transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
             if y_dim == 'y':
@@ -1789,6 +1793,7 @@ class TEMDataset(object):
             else:
                 in_dataset = in_dataset.reindex(lat=in_dataset.lat[::-1])
             in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+        
 
 
         in_dataset = \
@@ -1836,7 +1841,43 @@ class TEMDataset(object):
                 reasons.append(f'{var} has units {units} but needs {std_units}')
 
         return verified, reasons
+    
+    def check_dataset_with_nan_mask(self, mask):
+        matches = {}
+        for var in self.dataset.data_vars:
+            matches[var] = bool((np.isnan(self.dataset[var].sum(axis=0, skipna=False)) == mask).all().values)
+        return bool(np.array([v for k, v in matches.items()]).all()), matches
+    
+    def check_number_timesteps(self, expected=365):
+        correct = self.dataset.time.shape[0] == expected
+        missing = []
+        if not correct:
+            missing = [] # TODO
+        return correct, missing
 
+    def fill_outliers(self, var, mean, std, n_std):
+        in_range_ix = ~(
+            (self.dataset[var] > mean + n_std * std) | \
+            (self.dataset[var] < mean - n_std * std)
+        )
+        # keeps values were idx is true, replaces others with mean
+        updated = self.dataset[var].where(in_range_ix, mean) 
+        self.dataset[var] = updated
+
+    def fill_out_of_bounds(self, var, value, which, fill):
+        if which == 'lower':
+            op = operator.lt
+        else:
+            op = operator.gt
+        ix = op(self.dataset[var], value) 
+        # return ix
+        if ix.any():
+            # print('filling')
+            updated = self.dataset[var].where(
+                ix | np.isnan(self.dataset[var]), # don't fill nans
+                fill 
+            ) 
+            self.dataset[var] = updated
 
 class YearlyDataset(TEMDataset):
     """This sub class of TEMDataset represents daily data
@@ -2281,6 +2322,8 @@ class YearlyDataset(TEMDataset):
         else:
             kwargs['extra_attrs'] = {'data_year': self.year}
 
+        kwargs['unlimited_dims'] = ['time']
+
         super().save(out_file, **kwargs)
 
 
@@ -2384,3 +2427,9 @@ class YearlyDataset(TEMDataset):
             super().get_by_extent(minx, miny, maxx, maxy, extent_crs, **kwargs),
             self.year
         ) 
+
+    
+    def drop_leap_days(self):
+        idx = ~((self.dataset.time.dt.month == 2) & (self.dataset.time.dt.day == 29))
+        temp = self.dataset.sel(time=idx)
+        self.dataset = temp
