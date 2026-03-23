@@ -21,12 +21,14 @@ def download(where, collection_id,  request):
     client.retrieve(collection_id, request, target=where) 
 
 
-def download_era5_daily(where, years, bounds, variables):
+def download_era5_daily(where, years, bounds, variables, logger=None):
     collection_id = "derived-era5-single-levels-daily-statistics"
     where = Path(where)
+    print(f'Downloading {collection_id }')
     for year in years:
+        print(f'.. for {year}')
         for var, stat in variables.items():
-
+            print(f'.... for {var} - {stat}')
             request = {
                 "product_type": ["reanalysis"],
                 "variable": [var],
@@ -38,6 +40,6 @@ def download_era5_daily(where, years, bounds, variables):
                 "frequency": "1_hourly",
                 "area": bounds,
                 "data_format": "netcdf",
-                "download_format": "zip",
+                # "download_format": "zip",
             }
             download(where/f'{year}-{var}.nc', collection_id, request)

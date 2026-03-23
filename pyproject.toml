@@ -44,4 +44,4 @@ dependencies = [
 Homepage = "https://github.com/uaf-arctic-eco-modeling/Input_production"
 
 [project.scripts]
-TEMdownscale = "temds.cli:app"
+TEMdownscale = "temds.cli.main:app"
