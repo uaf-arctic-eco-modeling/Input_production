@@ -15,15 +15,15 @@ TODO:
 """
 from pathlib import Path
 
-import shapely
 import geopandas as gpd
 from osgeo import gdal
 import pyproj
-import yaml
+import xarray as xr
+from joblib import Parallel, delayed
 
 
-
-from ..gdal_tools import empty_dataset
+# from ..gdal_tools import empty_dataset
+from .. import corrections, downscalers
 
 from ..logger import Logger
 from ..datasources import dataset, timeseries
@@ -305,115 +305,171 @@ class Region(object):
 
     ## much of he tile stuff should move here
 
+    def calculate_climate_baseline(self, start_year, end_year, target, source, **kwargs):
+        """Calculate the climate baseline for the tile from data in an 
+        AnnulTimeseries object
 
-class SubregionGenerator(object):
-    def __init__(self, full_region, tile_size_x=100, tile_size_y=100):
-        self.full_region = full_region
-        self.tile_size_x = tile_size_x
-        self.tile_size_y = tile_size_y
-        self.tile_index = self._create_tile_index()
-        
-    def get_tile_gridsize(self):
-    
-        maskX = self.full_region.mask.raster.RasterXSize
-        maskY = self.full_region.mask.raster.RasterYSize
-        
-        N_TILES_X = int(maskX / self.tile_size_x)
-        N_TILES_Y = int(maskY / self.tile_size_y)
-        
-        if maskX % self.tile_size_x > 0:
-            N_TILES_X += 1
-        
-        if maskX % self.tile_size_y > 0:
-            N_TILES_Y += 1
-        
-        return N_TILES_X, N_TILES_Y
-
-    def _create_tile_index(self):
-        '''
-        Chop a raster up into tiles.
-        Returns list of tile extent dictionaries. Each dict will have x, y, minx
-        and max (projection coords) and H and V indices in the tileset. And the
-        resolution.
-        '''
-        maskX = self.full_region.mask.raster.RasterXSize
-        maskY = self.full_region.mask.raster.RasterYSize
-    
-        aoiGT = self.full_region.mask.raster.GetGeoTransform()
-        geotransform = aoiGT
-        
-        minx = geotransform[0]
-        miny = geotransform[3]
-        maxx = minx + geotransform[1] * maskX
-        maxy = miny + geotransform[5] * maskY
-        aoi_extents = dict(minx=minx, miny=miny, maxx=maxx, maxy=maxy)
-    
-        
-    
-        N_tiles_X, N_tiles_Y = self.get_tile_gridsize()
-    
-        tile_extents = []
-    
-        for h in range(N_tiles_X):
-          for v in range(N_tiles_Y):
-    
-            tile_xmin = aoi_extents['minx'] + self.tile_size_x * h * aoiGT[1]
-            if (h+1) == len(range(N_tiles_X)):
-              tile_xmax = tile_xmin + (maskX % self.tile_size_x) * aoiGT[1]
-            else:
-              tile_xmax = tile_xmin + self.tile_size_x * aoiGT[1]
-    
-            tile_pixelXsize = aoiGT[1]
-            tile_pixelYsize = aoiGT[5]
-    
-            # Origin LOWER LEFT
-            tile_ymin = aoi_extents['miny'] + tile_pixelYsize * maskY \
-                        + self.tile_size_y * v * tile_pixelYsize * -1
-            if (v+1) == len(range(N_tiles_Y)):
-              tile_ymax = tile_ymin + (maskY % self.tile_size_y) * tile_pixelYsize * -1
-            else:
-              tile_ymax = tile_ymin + self.tile_size_y * tile_pixelYsize * -1 
-    
-            # # Origin UPPER LEFT 
-            # tile_ymin = aoi_extents['miny'] + TILE_SIZE_Y * v * aoiGT[5]
-            # if (v+1) == len(range(N_tiles_Y)):
-            #   tile_ymax = tile_ymin + (maskY % TILE_SIZE_Y) * aoiGT[5]
-            # else:
-            #   tile_ymax = tile_ymin + TILE_SIZE_Y * aoiGT[5]
-    
-            tile_extents.append(dict(
-                H=h, V=v, 
-                geometry = shapely.box(tile_xmin, tile_ymin, tile_xmax, tile_ymax),
-                )
+        Parameters
+        ----------
+        start_year: int
+            Inclusive start year for baseline
+        end_year: int
+            Inclusive end year for baseline
+        target: str
+            name to set baseline data to in `data`
+        source: str
+            An AnnualTimeseries item in `data` with 
+            `create_climate_baseline(start_year, end_year)` method
+        """
+        self.data[target] = dataset.TEMDataset(
+                self.data[source].create_climate_baseline(
+                start_year, end_year, **kwargs
             )
-
-        tile_index = gpd.GeoDataFrame(tile_extents, crs = self.full_region.boundary.crs)
-        return tile_index
-
-    def generate_tile(self, index):
-
-        tile_info = self.tile_index.loc[index]
-
-        minx, miny, maxx, maxy = self.tile_index.loc[0].geometry.bounds
-        
-        _, resx, _, _, _, resy =  self.full_region.mask.raster.GetGeoTransform()
-        
-        nx, ny = abs((maxx-minx)/resx), abs((maxy-miny)/resy)
-
-        proj = self.full_region.boundary.crs.to_wkt()
-        gt = minx, resx, 0, maxy, 0, resy
-        
-        new_mask = empty_dataset(
-            int(nx), int(ny), proj, gt, 
-            bands=1, gdal_type=gdal.GDT_Int16
         )
+
+    def calculate_correction_factors(
+            self, baseline_id, reference_id, variables, 
+            factor_id='correction-factors'
+        ):
+        """
+        Calculate correction factors based on baseline and reference datasets.
+
+        This method computes correction factors for specified variables by
+        applying user-defined functions to the baseline and reference datasets.
+        The resulting correction factors are stored in the `self.data`
+        dictionary under the specified `factor_id`.
+
+        Parameters
+        ----------
+        baseline_id : str
+            The key to access the baseline dataset in `self.data`.
+        reference_id : str
+            The key to access the reference dataset in `self.data`.
+        variables : dict
+            A dictionary where keys are variable names and values are
+            dictionaries containing the following keys:
+                - 'function' (str): The name of the function to apply, which
+                  must exist in `corrections.LOOKUP`. 
+                - 'name' (str): The name to assign to the resulting correction 
+                  factor.
+                - factor_id : str, optional. The key under which the resulting 
+                  correction factors will be stored in `self.data`. Defaults to
+                  'correction_factors'.
+
+        Raises
+        ------
+        KeyError
+            If `baseline_id` or `reference_id` is not found in `self.data`.
+        KeyError
+            If the specified function is not found in `corrections.LOOKUP`.
+
+        Returns
+        -------
+        None
+            The correction factors are stored in `self.data[factor_id]`.
+        """
+        reference = self.data[reference_id].dataset
+        baseline = self.data[baseline_id].dataset
+        temp = []
+
+
+        # for var, info in variables.items():
+        for var in variables:
+            func = corrections.LOOKUP[var]
+            self.logger.info(f'.. Calculating correction factor for {var} with {func}')
+
+            current = func(baseline[var], reference[var])
+            current.name = var
+            temp.append(current)
+           
+
+        correction_factors = xr.merge(temp)
+        self.data[factor_id] = dataset.TEMDataset(correction_factors)
+
+    def delta_downscale_year(self, year, source_id, correction_id, variables):
+        """Downscale a singe year of `data[source_id]` using corrections
+        in `data['correction_id]`, and configuration in variables
+
+
+        Variables example: 
+        variables = {
+            'tmax': {
+                'function': 'temperature', 
+                'temperature': 'tmax',
+                'correction_factor':'tmax', 
+                'name': 'tmax'
+            },
+            'prec': {
+                'function': 'precipitation', 
+                'precipitation': 'pre',
+                'correction_factor':'prec', 
+                'name': 'prec'
+            },
+        }
+
+        Parameters
+        ----------
+        year: int
+            the year to downscale
+        source_id: str
+            AnnualTimeseries item in `data`
+        correction_id: str
+            xr.dataset item in `data`
+        variables: dict
+            dictionary mapping variable names to variable configurations
+            each key 'var' has and dictionary item with... 
+            see example above
         
+        Returns
+        -------
+        xr.dataset
+            a single downscaled year
+
+        """
+        correction = self.data[correction_id].dataset
+        source = self.data[source_id][year].dataset
+        temp = []
+
+        for var in variables:
+            func = downscalers.LOOKUP[var]
+            self.logger.info(f'.. Downscaling {var} with {func}')
+            src = source[var]
+            try:
+                cf = correction[var]
+            except KeyError:
+                cf = 0 # not used
+            current = func(src, cf)
+            
+            
+            current.name = var
+            temp.append(current)
         
-        gdal.Warp(new_mask, self.full_region.mask.raster)
+        downscaled = xr.merge(temp)
+        downscaled.attrs['data_year'] = year
 
-        subregion = Region(self.tile_index.loc[[index]], new_mask)
+        
+        downscaled.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
+        downscaled.rio.write_crs(source.rio.crs, inplace=True)
+        downscaled.rio.write_coordinate_system(inplace=True) 
+        downscaled.rio.write_transform(source.rio.transform(), inplace=True)
 
-        for name, ds in self.full_region.data.items():
-            subregion.import_from_datasource(name, ds)
+        return dataset.YearlyDataset(year, downscaled)
 
-        return subregion
+    def delta_downscale_timeseries(self, downscaled_id, source_id, correction_id, variables, parallel=False):
+        """
+        Add downscaled to self.data dict as xarray dataset. 
+        """
+
+        if parallel:
+            results = Parallel()(
+                delayed(self.downscale_year)(year, source_id, correction_id, variables) for year in self.data[source_id].range()
+            )
+        else:
+            results = []
+            for year in self.data[source_id].range():
+                self.logger.info(f'Downscaling {year}')
+                data = self.downscale_year(year, source_id, correction_id, variables)
+                results.append(data)
+        
+        self.data[downscaled_id] = timeseries.YearlyTimeSeries(results)
+
