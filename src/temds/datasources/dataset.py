@@ -1955,7 +1955,7 @@ class YearlyDataset(TEMDataset):
             logger.debug(f'processing: {var_file}')
 
             data =  xr.open_dataset(var_file)
-
+            gt = data.rio.transform()
             ## Drop original encoding as we will redo this 
             ## to match our other data
             data = data.drop_encoding()
@@ -2019,8 +2019,9 @@ class YearlyDataset(TEMDataset):
         new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
             .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
             .rio.write_coordinate_system(inplace=True)
-        gt = (-180.0, 1.8617204339585491, 0.0, 83.75, 0.0, -1.8617204339523812)
-        new.dataset.rio.write_transform(Affine.from_gdal(*gt), inplace=True)
+        
+        # gt = (-180.0, 1.8617204339585491, 0.0, 83.75, 0.0, -1.8617204339523812)
+        new.dataset.rio.write_transform(gt, inplace=True)
 
         return new
 
