@@ -99,7 +99,15 @@ class Region(object):
 
         self.data = {} 
         self.logger = logger
+        self.name = kwargs['name'] if 'name' in kwargs else "Unnamed"
         self.check_mask_compatibility(self.mask)
+
+
+    def __repr__(self):
+        """String Representation"""
+        data = ', '.join(self.data.keys())
+        msg = f'Region: {self.name} (CRS: {self.crs.name}, Bounds: {self.boundary.total_bounds}, Resolution: {self.resolution}) with data for: {data}'
+        return msg
 
 
     def check_mask_compatibility(self, mask):
@@ -200,6 +208,7 @@ class Region(object):
 
         for item, _file in manifest['data'].items():
             in_path = Path(directory).joinpath(_file)
+            print(in_path)
             if in_path.is_dir():
                 new.data[item] = timeseries.YearlyTimeSeries(
                     in_path, 
@@ -253,7 +262,15 @@ class Region(object):
     def export_dataset(self, where, name, **kwargs):
         """Exports a item in `data` to a file (TEMDataset) or files (Timeseries)
         """
+        where = Path(where)
+
         self.data[name].save(where, **kwargs)
+
+    def export_timeseries(self, where, name, **kwargs):
+        """Exports a item in `data` to a file (TEMDataset) or files (Timeseries)
+        """
+        where = Path(where) / name
+        self.data[name].save(where, name+'-{year}.nc' , **kwargs)
        
     def export_boundary(self, where):
         self.boundary.to_file( where )
@@ -289,9 +306,16 @@ class Region(object):
         manifest['mask'] = mask_filename
 
         for name in to_save:
-            ds_where = where / f'{name}.nc' 
-            self.export_dataset(ds_where, name, **kwargs)
-            manifest['data'][name] = f'{name}.nc' 
+            
+            try:
+                ds_where = where / f'{name}.nc' 
+                self.export_dataset(ds_where, name, **kwargs)
+                manifest['data'][name] = f'{name}.nc' 
+            except TypeError:
+                ds_where = where 
+                self.export_timeseries(ds_where, name, **kwargs)
+                manifest['data'][name] = f'{name}'
+           
 
         manifest_file = where / manifest_filename
         if manifest_file.exists() and update_manifest:

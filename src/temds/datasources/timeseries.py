@@ -14,7 +14,7 @@ import xarray as xr
 import rioxarray
 import numpy as np
 
-from .dataset import YearlyDataset
+from .dataset import YearlyDataset, TEMDataset
 from . import errors
 from temds.logger import Logger
 
@@ -475,3 +475,17 @@ class YearlyTimeSeries(UserList):
         )
         gc.collect()
         return clim_ref
+
+
+    def to_TEMDataset(self):
+        """Converts data to a single dataset, for qdm methods
+
+        optional TODO: support subset of years?
+
+        Returns
+        -------
+        TEMDataset
+        """
+        full = xr.concat([ds.dataset for ds in self.data], dim='time')
+        del(full.attrs['data_year'])
+        return TEMDataset(full)
