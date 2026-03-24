@@ -219,6 +219,9 @@ class Tile(object):
             When true add buffer to tile data being clipped
         """
         self.logger.debug(f"{self.extent=}, {self.resolution=}, {self.crs.to_epsg()=}, {buffered=}")
+
+        print(f"Right at the beginning of import and normalize {name=}, {buffered=}")
+
         minx, miny, maxx, maxy = self.extent[
             ['minx', 'miny', 'maxx', 'maxy']
         ].iloc[0]
@@ -235,6 +238,8 @@ class Tile(object):
             minx, miny, maxx, maxy, self.crs, **kwargs
         )
         self.logger.debug(f"{self.data[name]=}")
+        #self.logger.debug(f"{self.data[name].extent=}")
+
         if callback is not None:
             if isinstance(self.data[name], dataset.TEMDataset ):
                 self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)
@@ -588,7 +593,7 @@ class Tile(object):
             raise ValueError(f"Can't find {downscaled_id}! Available keys are: {self.data.keys()}")
 
 
-        if downscaled_id == 'fri-fire':
+        if downscaled_id in ['fri', 'fri-fire', 'frifire']:
             self.logger.info("Converting FRI fire data to TEM format...")
             F = self.data[downscaled_id].dataset
             F['Y'] = np.arange(F.sizes['y'])
@@ -602,7 +607,7 @@ class Tile(object):
             F['X'] = np.arange(F.sizes['x'])
             return F
 
-        if downscaled_id == 'topo':
+        if downscaled_id in ['topography', 'topo']:
             self.logger.info("Converting topo data to TEM format...")
             T = self.data[downscaled_id].dataset.drop(['TPI', 'drainage_class'])
 
@@ -618,14 +623,14 @@ class Tile(object):
                 'drainage_data':D
                 }
 
-        if downscaled_id == 'veg':
+        if downscaled_id in ['vegetation', 'veg']:
             self.logger.info("Converting vegetation data to TEM format...")
             V = self.data[downscaled_id].dataset
             V['Y'] = np.arange(V.sizes['y'])
             V['X'] = np.arange(V.sizes['x'])
             return V
 
-        if downscaled_id == 'soiltex':
+        if downscaled_id in ['soil_texture', 'soiltex']:
             self.logger.info("Converting soil texture data to TEM format...")
             ST = self.data[downscaled_id].dataset
             ST['Y'] = np.arange(ST.sizes['y'])
