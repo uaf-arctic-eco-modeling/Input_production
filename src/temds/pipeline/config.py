@@ -30,12 +30,19 @@ class AOIConfig(BaseModel):
 
 class TileConfig(BaseModel):
     """Configuration for tile processing."""
-    process_tiles: bool = Field(False, description="Whether to process individual tiles")
-    tile_indices: Optional[List[str]] = Field(None, description="Specific tile indices to process (e.g., ['H01_V02'])")
-    all_tiles: bool = Field(False, description="Process all tiles in the index")
-    baseline_start_year: int = Field(1901, description="Start year for baseline calculation")
-    baseline_end_year: int = Field(1930, description="End year for baseline calculation")
-    downscale: bool = Field(True, description="Whether to perform downscaling")
+    process_tiles: bool = Field(False, description="Whether to process tiles")
+    tile_indices: Optional[List[str]] = Field(None, description="Specific tiles to process")
+    all_tiles: bool = Field(False, description="Process all tiles")
+    export_tiles: bool = Field(False, description="Whether to export tiles after processing")
+
+    # Per-step flags
+    import_data: bool = Field(True, description="Import AOI data into tiles")
+    calculate_baseline: bool = Field(True, description="Calculate baseline")
+    calculate_correction: bool = Field(True, description="Calculate correction factors")
+    downscale: bool = Field(True, description="Perform downscaling")
+
+    baseline_start_year: int = Field(1901, description="Baseline start year")
+    baseline_end_year: int = Field(1930, description="Baseline end year")
 
 
 class PipelineConfig(BaseModel):

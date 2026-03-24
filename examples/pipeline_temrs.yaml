@@ -67,7 +67,7 @@ steps:
     cache: true
   
   cru:
-    enabled: true  # Disabled by default (commented out in original script)
+    enabled: true 
     force: false
     cache: true
   
@@ -76,11 +76,15 @@ steps:
     force: false
     cache: true
 
-  tiles:
+  processes_tiles:
     enabled: true
     force: false
     cache: true
 
+  export_tiles:
+    enabled: true
+    force: false
+    cache: true
 
 # Tile processing configuration
 tile_config:
@@ -90,9 +94,10 @@ tile_config:
   all_tiles: false  # Set to true to process all tiles in the index
   baseline_start_year: 1970
   baseline_end_year: 2000
-  downscale: true  
   baseline: true
   correction: true
+  downscale: true
+  export_tiles: true
 
 # Logging
 verbose: true

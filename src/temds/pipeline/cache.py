@@ -1,10 +1,10 @@
 """Cache management for pipeline steps."""
 
-import os
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Dict, List
 import xarray as xr
 import yaml
+import geopandas as gpd
 
 
 class CacheManager:
@@ -32,6 +32,7 @@ class CacheManager:
         self.aoi_dir = self.base_dir / "01-aoi" / aoi_name
         self.data_dir = self.base_dir / f"02-{aoi_name}"
         self.tile_dir = self.base_dir / f"03-{aoi_name}"
+        self.export_dir = self.base_dir / f"04-{aoi_name}"
         
     def get_path(self, step_name: str, **kwargs) -> Path:
         """Get standardized cache path for a step.
@@ -72,10 +73,16 @@ class CacheManager:
         elif step_name == "setup_tiles":
             return self.tile_dir
 
-        elif step_name == "tile":
-            tile_index = kwargs.get('tile_index', 'H00_V00')
-            return self.tile_dir / "tiles" / tile_index / "manifest.yml"
-            
+        # if user passed the tile index, you get a path to that specific folder
+        # otherwise you get the general path to the tiles forlder.
+        elif step_name in ["process_tiles"]:
+            tile_index = kwargs.get('tile_index', '')
+            return self.tile_dir / "tiles" / tile_index
+
+        elif step_name == "export_tiles":
+            tile_index = kwargs.get('tile_index', '')
+            return self.export_dir / "tiles" / tile_index
+
         else:
             raise ValueError(f"Unknown step name: {step_name}")
     
@@ -91,7 +98,7 @@ class CacheManager:
         """
         path = self.get_path(step_name, **kwargs)
         
-        # For directories (like CRU timeseries)
+        # For directories (like CRU timeseries, or tiles...)
         if step_name == "cru":
             return path.is_dir() and any(path.glob("*.nc"))
 
@@ -100,7 +107,21 @@ class CacheManager:
             tile_index = path / "tile_index.geojson"
             has_tiles = path.is_dir() and any(path.glob("tiles/*/EPSG_6931.tiff"))
             return tile_index.exists() and has_tiles
-          
+        
+        if step_name == "process_tiles":
+
+            # make sure we have the containing structure.
+            if not path.exists() or not path.is_dir():
+                return False
+            else:
+                # Check that each tile directory has a manifest..
+                for tile_dir in path.glob("H*V*"):
+                    manifest_path = tile_dir / "manifest.yml"
+                    if manifest_path.exists():
+                        return True
+                    else:
+                        return False
+
         return path.exists()
     
     def validate(self, step_name: str, **kwargs) -> bool:
@@ -113,11 +134,14 @@ class CacheManager:
         Returns:
             True if cache is valid and readable
         """
+
+        # this is the basic check to see that the files exist
         if not self.exists(step_name, **kwargs):
             return False
             
         path = self.get_path(step_name, **kwargs)
         
+        # This is the more robust check to see that the data is readable...
         try:
             if step_name in ["worldclim", "vegetation", "topography", "soil_texture", "fri"]:
                 # Try opening NetCDF file
@@ -139,12 +163,6 @@ class CacheManager:
                 with open(path) as f:
                     data = json.load(f)
                 return isinstance(data, dict)
-                
-            elif step_name == "tile":
-                # YAML manifest
-                with open(path) as f:
-                    data = yaml.safe_load(f)
-                return isinstance(data, dict) and 'index' in data
                 
             elif step_name == "aoi_raster":
                 # Try opening with rioxarray
@@ -174,7 +192,36 @@ class CacheManager:
                 import rioxarray
                 with rioxarray.open_rasterio(tile_rasters[0]) as ds:
                     return True
-                    
+
+            elif step_name in ["process_tiles"]:
+
+                # There is a lot of stuff to validate here:
+                # 1. tile directory structure exists
+                # 2. each tile directory has a manifest.yml
+                # 3. each manifest.yml has the expected keys (e.g., 'data', 'cru-downscale')
+                # 4. optionally, check that the expected output files listed in the manifest actually exist and can be opened.
+
+
+                # Should make this operate on a single (passed in by kwarg) tile index.
+
+                # Check each tile directory to see that is has the manifest
+                # and that the manifest containes the right keys
+                for tile_dir in path.glob("H*V*"):
+                    manifest_path = tile_dir / "manifest.yml"
+                    with open(manifest_path) as f:
+                        manifest = yaml.safe_load(f)
+                    if 'data' not in manifest:
+                        return False
+                    if 'cru-downscaled' not in manifest['data']:
+                        return False
+                    # If we want to be more strict, we could also check that the downscaled file
+                    # actually exists and can be opened. For now we'll just check the manifest.
+
+            elif step_name == "export_tiles":
+                # Similar to process_tiles, but we would check for the presence
+                # of the final exported files (e.g., TEM input files) and that
+                # they can be opened.
+                return False
             else:
                 # Default: if file exists, consider it valid
                 return True
@@ -215,7 +262,9 @@ class CacheManager:
             "soil_texture",
             "fri",
             "cru",
-            "setup_tiles"
+            "setup_tiles",
+            "process_tiles",
+            "export_tiles",
         ]
         
         return {step: self.validate(step) for step in steps}

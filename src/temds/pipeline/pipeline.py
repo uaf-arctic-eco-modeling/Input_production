@@ -80,10 +80,14 @@ class Pipeline:
         "fri",
         "cru",
         "setup_tiles",
-        "baseline",
-        "correction",
-        "downscale",
-        "export_TEM",
+        "process_tiles", # includes import, baseline, correction and downscaling...
+        "export_tiles",  # includes resampling to TEM resolution...
+
+        # # --- Tile-based steps below ---
+        # "tile_import",      # Import AOI-level data into each tile
+        # "tile_baseline",    # Calculate baseline per tile
+        # "tile_correction",  # Calculate correction factors per tile
+        # "tile_downscale",   # Downscale timeseries per tile
     ]
     
     def __init__(self, config: PipelineConfig, logger: Optional[Logger] = None):
@@ -223,8 +227,11 @@ class Pipeline:
                 self._step_cru(aoi, cache_manager)
             elif step_name == "setup_tiles":
                 self._step_setup_tiles(aoi, cache_manager)
-            elif step_name == "baseline":
-                self._step_baseline(aoi, cache_manager)
+            elif step_name == "process_tiles":
+                self._step_process_tiles(aoi, cache_manager)
+                pdb.set_trace()
+            elif step_name == "export_tiles":
+                self._step_export_tiles(aoi, cache_manager)
             else:
                 self.logger.warn(f"Unknown step: {step_name}")
     
@@ -494,9 +501,9 @@ class Pipeline:
             self.stats['steps_skipped'] += 1
             return None
         
+        self.logger.debug(f"Loading CRU data from: {self.config.data_sources.cru}")
         cru_arctic = temds.datasources.timeseries.YearlyTimeSeries(
           Path(self.config.data_sources.cru),
-          #Path('working/02-arctic/cru-jra-fixed-temds/'),
           logger=self.logger,
           in_memory=False,
         )
@@ -566,8 +573,47 @@ class Pipeline:
         tile_index_path = Path(tile_root) / "tile_index.geojson"
         return tile_index_path
     
-    @pipeline_step("tiles")
-    def _step_tiles(self, aoi: AOIConfig, cache_manager: CacheManager) -> None:
+    @pipeline_step("export_tiles")
+    def _step_export_tiles(self, aoi: AOIConfig, cache_manager: CacheManager) -> None:
+        """Export tiles for the AOI.
+        
+        Args:
+            aoi: AOI configuration
+            cache_manager: Cache manager for this AOI
+        """
+        if not self.config.tile_config.export_tiles:
+            self.logger.info("Tile export disabled, skipping")
+            self.stats['steps_skipped'] += 1
+            return
+
+        # Get the tile index from the setup_tiles step
+        tile_dir = cache_manager.get_path("setup_tiles")
+        tile_index_path = tile_dir / "tile_index.geojson"
+        if not tile_index_path.exists():
+            raise FileNotFoundError(f"Tile index not found: {tile_index_path}. Run setup_tiles step first.")
+    
+        # Load tile index to get available tiles
+        import geopandas as gpd
+        tile_index = gpd.read_file(tile_index_path)
+
+        # Determine which tiles to process
+        if self.config.tile_config.tile_indices:
+            tiles_to_process = self.config.tile_config.tile_indices
+        elif self.config.tile_config.all_tiles:
+            # Use 'tile_id' column which has format like 'H01_V02'
+            tiles_to_process = tile_index['tile_id'].tolist()
+        else:
+            self.logger.info("No tiles specified for processing")
+            return
+        
+        self.logger.info(f"Processing {len(tiles_to_process)} tile(s)")
+        
+        # Process each tile
+        for tile_idx in tiles_to_process:
+            self._export_single_tile(aoi, cache_manager, tile_idx, tile_index)
+
+    @pipeline_step("process_tiles")
+    def _step_process_tiles(self, aoi: AOIConfig, cache_manager: CacheManager) -> None:
         """Check config to see if tile processing is enabled. If so, 
         open the tile index and then loop over the tiles in it, processing each
         if it is specified in the config.
