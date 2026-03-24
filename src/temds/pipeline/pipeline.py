@@ -514,17 +514,25 @@ class Pipeline:
         # Get extent from AOI raster
         import rioxarray as rxr
         with rxr.open_rasterio(cache_manager.get_path("aoi_raster")) as aoi_ds:
-            bounds = aoi_ds.rio.bounds()
+            #bounds = aoi_ds.rio.bounds()
             extent_crs = aoi_ds.rio.crs
-        
-        # Subset to AOI extent
+
+        ### Steal this part from the soil data set creation...
+        print(f'Pipeline._step_cru(): Using extent from {cache_manager.get_path("aoi_raster")}')
+        from osgeo import gdal
+        er = gdal.Open(cache_manager.get_path("aoi_raster"))
+        # Get the extent from the extent raster
+        er_gt = er.GetGeoTransform()
+        er_minx = er_gt[0]
+        er_miny = er_gt[3]
+        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
+        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
         cru_subset = cru_arctic.get_by_extent(
-            minx=bounds[0], miny=bounds[1],
-            maxx=bounds[2], maxy=bounds[3],
-            extent_crs=extent_crs,
+            minx=er_minx, maxx=er_maxx, miny=er_miny, maxy=er_maxy,
+            extent_crs = extent_crs,
             resolution=self.config.resolution,
-            in_memory=True
-        )
+            in_memory=True)
+ 
         
         output_path = cache_manager.get_path("cru")
         output_path.mkdir(parents=True, exist_ok=True)
