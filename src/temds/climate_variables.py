@@ -7,6 +7,9 @@ Metadata Management for TEM climate Variables
 
 In the context of this file standard units refers
 to the units used in downscaling process
+
+TODO:
+    - finish type hints
 """
 # from collections import namedtuple
 from dataclasses import dataclass, field
@@ -64,7 +67,7 @@ CLIMATE_VARIABLES = {
     'elevation': ClimateVariable('Elevation', 'elevation', Unit('m'))
 }
 
-
+## Lookup table for methods of calculating climate baseline
 BASELINE_LOOKUP = {
     'tair_min': 'mean',
     'tair_max': 'mean',
@@ -75,11 +78,13 @@ BASELINE_LOOKUP = {
     'wind': 'mean',
 }
 
+## Temporal resampling methods lookup table, mostly for CRUJRA 6hourly -> daily
 RESAMPLE_METHODS  = {
     'mean': lambda x: x.resample(time='1D').mean(),
     'sum':  lambda x: x.resample(time='1D').sum(skipna = False), ## TEST this (the skipna), this should fix summing integer issues
 }
 
+## These variables are downscale safe with delta downscaling
 DOWNSCALE_SAFE = ['tair_avg', 'tair_max', 'tair_min', 'prec', 'nirr', 'wind', 'vapo']
 
 def register(cv, source, alias):

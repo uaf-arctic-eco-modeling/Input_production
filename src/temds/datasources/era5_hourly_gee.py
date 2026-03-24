@@ -6,7 +6,7 @@ metadata for ERA5 hourly data via GEE
 
 This meta data was for the cloud dataset (Google Earth Engine) version 
 of preprocessing hourly data into daily data in GEE, and we are NOT maintaining 
-it after the changes to the GEE quotas. The development was in a pretty rough
+this after the changes to the GEE quotas. The development was in a pretty rough
 state, so beware.
 
 """
