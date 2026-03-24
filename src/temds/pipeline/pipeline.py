@@ -655,7 +655,6 @@ class Pipeline:
     
     def _process_single_tile(
         self,
-        aoi: AOIConfig,
         cache_manager: CacheManager,
         tile_idx: str,
         tile_index_gdf
@@ -669,14 +668,19 @@ class Pipeline:
             tile_index_gdf: GeoDataFrame containing tile index
         """
         self.logger.info(f"  Processing tile {tile_idx}")
-        
+
         # Check if tile already processed (has valid manifest)
         step_config = self.config.get_step_config("tiles")
         if step_config.cache and not step_config.force and not self.force_all:
-            if cache_manager.validate("tile", tile_index=tile_idx):
+
+            # TODO: fix this once we have a better sense of how to validate 
+            # tile cache...for now we pass here if we pass --force-all
+            if cache_manager.validate("process_tiles", tile_index=tile_idx):
                 self.logger.info(f"  ✓ Tile {tile_idx} already processed (cache hit)")
                 return
         
+        # Tile not in cache, (or cache invalid), so we need to process it
+
         # Get tile extent from index
         tile_row = tile_index_gdf[tile_index_gdf['tile_id'] == tile_idx]
         if tile_row.empty:
@@ -684,59 +688,170 @@ class Pipeline:
             return
         
         extent = tile_row.iloc[0].geometry.bounds  # (minx, miny, maxx, maxy)
+        self.logger.info(f"  Tile {tile_idx} extent: {extent}")
+
+        def convert(x):
+            # Convert 'H01_V02' to (1, 2)
+            parts = x.split('_')
+            h = int(parts[0][1:])  # Remove 'H' and convert to int
+            v = int(parts[1][1:])  # Remove 'V' and convert to int
+            return (h, v)
         
         # Create tile object
         tile = Tile(
-            index=tile_idx,
+            index=convert(tile_idx),
             extent=extent,
             resolution=self.config.resolution,
             crs=self.config.crs,
+            buffer_px=0,
             logger=self.logger
         )
-        
-        # Import datasets into tile
-        self._import_datasets_to_tile(tile, cache_manager)
-        
-        # Perform baseline correction and downscaling if requested
+
+        print("Pipeline:_process_single_tile(..), right before import and normalize")
+        requirements = {
+            "worldclim": temds.datasources.dataset.TEMDataset(cache_manager.get_path("worldclim")),
+            "vegetation": temds.datasources.dataset.TEMDataset(cache_manager.get_path("vegetation")),
+            "topography": temds.datasources.dataset.TEMDataset(cache_manager.get_path("topography")),
+            "soil_texture": temds.datasources.dataset.TEMDataset(cache_manager.get_path("soil_texture")),
+            "fri": temds.datasources.dataset.TEMDataset(cache_manager.get_path("fri")),
+            "cru": temds.datasources.timeseries.YearlyTimeSeries(cache_manager.get_path("cru"))
+        }
+        for req_k, req_v in requirements.items():
+            tile.import_and_normalize(req_k, datasource=req_v)  
+
+
+        # at this point there are several options:
+        # 1. tile directory exists with manifest and data -> validate manifest and load data
+        # 2. tile directory exists but manifest is missing or invalid -> re-process and overwrite
+        # 3. tile directory does not exist -> process and create
+        # 4. tile directoy exists and some data is present, but not all data is 
+        #     present (i.e. baseline exists, correction and downscaled missing)
+        #     -> re-process and overwrite, but log what was missing
+
         if self.config.tile_config.downscale:
             self._downscale_tile(tile, cache_manager)
         
         # Save tile
-        tile_output_dir = cache_manager.get_path("tile", tile_index=tile_idx).parent
+        #tile_output_dir = cache_manager.get_path("process_tiles", tile_index=tile_idx).parent
+        tile_output_dir = cache_manager.get_path("process_tiles", tile_index=tile_idx)
         tile_output_dir.mkdir(parents=True, exist_ok=True)
-        tile.save(str(tile_output_dir))
+        tile.save(str(tile_output_dir), overwrite=True)
         
         self.logger.info(f"  ✓ Tile {tile_idx} complete")
-    
-    def _import_datasets_to_tile(self, tile: Tile, cache_manager: CacheManager) -> None:
-        """Import all datasets into a tile.
+
+    def _export_single_tile(self,
+            aoi: AOIConfig,
+            cache_manager: CacheManager,
+            tile_idx: str,
+            tile_index_gdf
+    ) -> None:
+        """Export a tile to a specific format (e.g. TEM, ELM, etc.) for use in modeling."""
         
-        Args:
-            tile: Tile object
-            cache_manager: Cache manager for this AOI
-        """
-        datasets = {
-            "worldclim": "worldclim",
-            "veg": "vegetation",
-            "topo": "topography",
-            "soiltex": "soil_texture",
-            "fri-fire": "fri"
-        }
+
+        self.logger.info(f"  Exporting {tile_idx}")
+        # three possibilities:
+        # 1. tile is in cache with valid manifest -> skip
+        # 2. tile is in cache but manifest is invalid -> re-process
+        # 3. tile is not in cache at all -> process
+        # Check if tile already processed (has valid manifest)
+        step_config = self.config.get_step_config("tiles")
+        if step_config.cache and not step_config.force and not self.force_all:
+
+            # TODO: fix this once we have a better sense of how to validate 
+            # tile cache...for now we pass here if we pass --force-all
+            if cache_manager.validate("export_tiles", tile_index=tile_idx):
+                self.logger.info(f"  ✓ Tile {tile_idx} already exported (cache hit)")
+                return
         
-        for tile_name, step_name in datasets.items():
-            dataset_path = cache_manager.get_path(step_name)
-            if dataset_path.exists():
-                self.logger.info(f"    Importing {tile_name}")
-                tile.import_and_normalize(tile_name, str(dataset_path), buffered=True)
-            else:
-                self.logger.warn(f"    Skipping {tile_name} (not found)")
+        # Tile not in cache, (or cache invalid), so we need to process it
+
+        # Get tile extent from index
+        tile_row = tile_index_gdf[tile_index_gdf['tile_id'] == tile_idx]
+        if tile_row.empty:
+            self.logger.warn(f"  Tile {tile_idx} not found in index")
+            return
         
-        # Import CRU timeseries
-        cru_path = cache_manager.get_path("cru")
-        if cru_path.exists() and cru_path.is_dir():
-            self.logger.info(f"    Importing CRU timeseries")
-            tile.import_and_normalize("cru", str(cru_path), buffered=True)
-    
+        extent = tile_row.iloc[0].geometry.bounds  # (minx, miny, maxx, maxy)
+        self.logger.info(f"  Tile {tile_idx} extent: {extent}")
+
+        def convert(x):
+            # Convert 'H01_V02' to (1, 2)
+            parts = x.split('_')
+            h = int(parts[0][1:])  # Remove 'H' and convert to int
+            v = int(parts[1][1:])  # Remove 'V' and convert to int
+            return (h, v)
+        
+        # Need to load existing data from the tile directory and then export it...
+        # Create tile object
+        tile = Tile(
+            index=convert(tile_idx),
+            extent=extent,
+            resolution=self.config.resolution,
+            crs=self.config.crs,
+            buffer_px=0,
+            logger=self.logger
+        )
+
+        # THis can take a bit of time...would be nice to be able to 
+        # do it in memory...but that might be tricky with the way the pipeline
+        # is currently structured...we might need to refactor the pipeline to 
+        # be more memory oriented rather than file oriented if we want to avoid
+        # all this reading and writing to disk...
+        tile.load_from_directory(cache_manager.get_path("process_tiles", tile_index=tile_idx))
+
+        # SMALL PROBLEM HERE: need to figure out a way to make the names more
+        # standardized or more flexible...right now the tile needs to have
+        # data loaded with exactly the right "downscaled_id" (the name of the
+        # dataset in the tile....)
+
+        self.logger.debug(f"Creating export directory for tile {tile_idx}...")
+        cache_manager.get_path("export_tiles", tile_index=tile_idx).mkdir(parents=True, exist_ok=True)
+
+        self.logger.debug(f"Exporting co2 for tile {tile_idx} to TEM format...")
+        co2 = tile.to_TEM('co2')
+        co2.to_netcdf(cache_manager.get_path("export_tiles", tile_index=tile_idx) / "co2.nc", mode='w')
+
+        self.logger.debug(f"Exporting topography for tile {tile_idx} to TEM format...")
+        T = tile.to_TEM('topography')
+        T['topo_data'].to_netcdf(cache_manager.get_path("export_tiles", tile_index=tile_idx) / "topo.nc", mode='w')
+        T['drainage_data'].to_netcdf(cache_manager.get_path("export_tiles", tile_index=tile_idx) / "drainage.nc", mode='w')
+
+        self.logger.debug(f"Exporting vegetation for tile {tile_idx} to TEM format...")
+        V = tile.to_TEM('vegetation')
+        V.to_netcdf(cache_manager.get_path("export_tiles", tile_index=tile_idx) / "vegetation.nc", mode='w')
+
+        self.logger.debug(f"Exporting soil texture for tile {tile_idx} to TEM format...")
+        S = tile.to_TEM('soil_texture')
+        S.to_netcdf(cache_manager.get_path("export_tiles", tile_index=tile_idx) / "soil-texture.nc", mode='w')
+
+        self.logger.debug(f"Exporting climate for tile {tile_idx} to TEM format...")
+        H = tile.to_TEM('cru-downscaled')
+        H.dataset['Y'] = np.arange(H.dataset.sizes['y'])
+        H.dataset['X'] = np.arange(H.dataset.sizes['x'])  
+        H.save(cache_manager.get_path("export_tiles", tile_index=tile_idx) / "historic-climate.nc", overwrite=True)
+
+        F = tile.to_TEM('fri')
+        F.to_netcdf(cache_manager.get_path("export_tiles", tile_index=tile_idx) / "fri-fire.nc", mode='w')
+
+        from IPython import embed; embed()
+        # HEF = tile.to_TEM('historic-ef')
+        # HEF['time'] = H.dataset['time']
+        # HEF.to_netcdf(Path(DIR, 'historic-explicit-fire.nc'))
+
+        # import pandas as pd
+        # P = H.dataset.copy()
+        # P['time'] = H.dataset['time'] + pd.Timedelta(days=365)*(H.dataset['time'].size/12)
+        # P.to_netcdf(Path(DIR, 'projected-climate.nc'))
+
+        # PEF = HEF.copy()
+        # PEF['time'] = HEF['time'] + pd.Timedelta(days=365)*(HEF['time'].size/12)
+        # PEF.to_netcdf(Path(DIR, 'projected-explicit-fire.nc'))    
+
+
+
+
+
+        
     def _downscale_tile(self, tile: Tile, cache_manager: CacheManager) -> None:
         """Perform baseline correction and downscaling on a tile.
         
@@ -744,6 +859,12 @@ class Pipeline:
             tile: Tile object
             cache_manager: Cache manager for this AOI
         """
+
+        # This one needs to check the cache
+        #  - if in the cache, proceed
+        #  - if not in the cache, then try to load it (import and normalize)
+        #  - or try to calculate it if the source data is available (in the cache)
+        
         # Calculate baseline
         self.logger.info(f"    Calculating baseline")
         tile.calculate_climate_baseline(
@@ -754,20 +875,20 @@ class Pipeline:
         )
         
         # Calculate correction factors
-        self.logger.info(f"    Calculating correction factors")
+        self.logger.info("    Calculating correction factors")
         tile.calculate_correction_factors(
-            baseline_id='cru-baseline',
-            reference_id='worldclim',
-            variables=['tair', 'prec'],
-            factor_id='cru-correction'
+            'cru-baseline',
+            'worldclim', 
+            temds.climate_variables.DOWNSCALE_SAFE, 
+            'cru-delta-cf'
         )
-        
-        # Downscale timeseries
-        self.logger.info(f"    Downscaling timeseries")
+
+        self.logger.info("    Downscaling timeseries")
+        variables_ds = ['tair_avg', 'tair_max', 'tair_min', 'prec', 'nirr', 'wind', 'vapo', 'winddir']
         tile.downscale_timeseries(
-            downscaled_id='cru-downscaled',
-            source_id='cru',
-            correction_id='cru-correction',
-            variables=['tair', 'prec'],
+            downscaled_id='cru-downscaled', 
+            source_id='cru', 
+            correction_id='cru-delta-cf', 
+            variables=variables_ds, 
             parallel=False
         )
