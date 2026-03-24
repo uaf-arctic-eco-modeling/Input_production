@@ -15,7 +15,8 @@ NAME = 'Download'
 
 @app.command()
 def era5_daily(
-        where: Annotated[Path, Argument(help="location to save downloaded files to")],
+        where: Annotated[Path, Argument(help="location to save final files to")],
+        temp_dir: Annotated[Path, Option(help="location to save downloaded files to")]=None,
         log_file: Annotated[Path, Option(help="path to logger file")]=None,
     ):
     log = logger.Logger(verbose_levels=logger.INFO)
@@ -24,7 +25,9 @@ def era5_daily(
         range(1940,2026), 
         cdsapi_tools.DEFAULT_BOUNDS, 
         cdsapi_tools.DEFAULT_VARIABLES, 
-        logger=log
+        logger=log,
+        temp_dir=temp_dir,
+        keep_temp=True
     )
     if log_file:
         log.write(log_file)

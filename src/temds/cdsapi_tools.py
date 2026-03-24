@@ -7,6 +7,10 @@ tools for downloading CDS API data(i.e. era5, cmip6)
 from pathlib import Path
 
 from ecmwf.datastores import Client
+import xarray as xr
+from .datasources import dataset, era5
+from . import climate_variables
+from .constants import SECONDS_PER_DAY, ZERO_C_IN_K
 
 DEFAULT_VARIABLES = {
     "2m_dewpoint_temperature":  "daily_mean",
@@ -21,14 +25,66 @@ def download(where, collection_id,  request):
     client.retrieve(collection_id, request, target=where) 
 
 
-def download_era5_daily(where, years, bounds, variables, logger=None):
+
+def merge_yearly(year, files, cleanup=True):
+    yearly_data = [xr.open_dataset(file) for file in files]
+    merged = xr.merge(yearly_data)
+
+
+    source = era5.NAME
+    for stn, era5_name in climate_variables.aliases_for(source, 'dict').items():
+        if climate_variables.has_conversion(stn, source):
+            # logger.info(f'{func_name}: converting units for {era5_name} to {stn}')
+            merged[era5_name].values = climate_variables.to_std_units(
+                merged[era5_name].values, stn, source
+            )
+            cv = climate_variables.lookup_alias(era5.NAME, era5_name)
+            unit = cv.std_unit.name
+            v_name = cv.name
+            merged[era5_name].attrs.update(units=unit, name=v_name)
+
+    
+
+    rename_dict = climate_variables.aliases_for(era5.NAME, 'dict_r')
+    rename_dict.update({'longitude':'lon', 'latitude':'lat'})
+    merged = merged.rename(rename_dict)
+    merged = merged.rename(
+            climate_variables.aliases_for(era5.NAME, 'dict_r')
+        )
+    
+    d2m = merged['dewpoint']
+    merged['vapo'] = era5.calculate_vapo_from_dewpoint(d2m)
+    unit = climate_variables.CLIMATE_VARIABLES['vapo'].std_unit.name
+    v_name = climate_variables.CLIMATE_VARIABLES['vapo'].name
+    merged['vapo'].attrs.update(units=unit, name=v_name)
+
+
+    merged.rio.write_crs('EPSG:4326',inplace=True)\
+        .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)
+
+
+
+    merged = dataset.YearlyDataset(year, merged)
+
+    [ds.close() for ds in yearly_data]
+    if cleanup:
+        [file.unlink(file) for file in files]
+    return merged
+
+
+def download_era5_daily(where, years, bounds, variables, overwrite=False, logger=None, temp_dir = None, keep_temp=False):
     collection_id = "derived-era5-single-levels-daily-statistics"
     where = Path(where)
+    if temp_dir is None:
+        temp_dir = where
+    temp_dir = Path(temp_dir)
+
     print(f'Downloading {collection_id }')
     for year in years:
         print(f'.. for {year}')
+        yearly_files = []
         for var, stat in variables.items():
-            print(f'.... for {var} - {stat}')
+            
             request = {
                 "product_type": ["reanalysis"],
                 "variable": [var],
@@ -42,4 +98,15 @@ def download_era5_daily(where, years, bounds, variables, logger=None):
                 "data_format": "netcdf",
                 # "download_format": "zip",
             }
-            download(where/f'{year}-{var}.nc', collection_id, request)
+            save_to = temp_dir/f'{year}-{var}.nc'
+            if not save_to.exists() or overwrite:
+                print(f'.... for {var} - {stat}') 
+                download(save_to, collection_id, request)
+            else:
+                print(f'.... for {var} - {stat} - file exists skipping download')
+                yearly_files.append(save_to)
+        merged = merge_yearly(year, yearly_files, not keep_temp)
+        
+        merged.save(where/f'daily-ERA5-{year}.nc', overwrite=overwrite)
+
+        

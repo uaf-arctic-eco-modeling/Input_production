@@ -54,6 +54,8 @@ CLIMATE_VARIABLES = {
     'pres': ClimateVariable('Pressure', 'pres', Unit('Pa')),
     'psl': ClimateVariable('Sea Level Pressure ', 'psl', Unit('Pa')),
 
+    'dewpoint':  ClimateVariable('Dew point', 'dewpoint', Unit('celsius')),
+
     # These aren't climate variables, maybe someday this class/module will
     # get refactored to a more general name...
     'slope': ClimateVariable('Slope', 'slope', Unit('degree')),
