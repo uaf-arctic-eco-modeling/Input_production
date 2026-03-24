@@ -52,7 +52,7 @@ CLIMATE_VARIABLES = {
     'vgrd': ClimateVariable('Meridional component of wind speed', 'vgrd', Unit('m/s')),
     'spfh': ClimateVariable('Specific humidity', 'spfh', Unit('kg/kg')),
     'pres': ClimateVariable('Pressure', 'pres', Unit('Pa')),
-    'psl': ClimateVariable('Sea Level Pressure ', 'psl', Unit('Pa')),
+    'psl': ClimateVariable('Sea Level Pressure', 'psl', Unit('Pa')),
 
     'dewpoint':  ClimateVariable('Dew point', 'dewpoint', Unit('celsius')),
 

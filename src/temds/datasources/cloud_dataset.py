@@ -1,3 +1,11 @@
+"""
+Cloud Dataset
+-------------
+
+Provided an interface to create datasets from Google Earth Engine.
+We are NOT maintaining it after the changes to the GEE quotas. The development 
+was in a pretty rough state, so beware.
+"""
 from .dataset import TEMDataset, YearlyDataset
 from temds.logger import Logger
 from temds import gcloud_tools
@@ -17,7 +25,7 @@ import ee
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
-from . import era5
+from . import era5_hourly_gee as era5
 
 from temds.constants import SECONDS_PER_DAY, ZERO_C_IN_K
 

@@ -26,31 +26,26 @@ def download(where, collection_id,  request):
 
 
 
-def merge_yearly(year, files, cleanup=True):
+def merge_for_year(year, files, source=era5.NAME, cleanup=True, logger=None):
+    
     yearly_data = [xr.open_dataset(file) for file in files]
     merged = xr.merge(yearly_data)
 
 
-    source = era5.NAME
-    for stn, era5_name in climate_variables.aliases_for(source, 'dict').items():
-        if climate_variables.has_conversion(stn, source):
-            # logger.info(f'{func_name}: converting units for {era5_name} to {stn}')
-            merged[era5_name].values = climate_variables.to_std_units(
-                merged[era5_name].values, stn, source
+    for std_name, src_name in climate_variables.aliases_for(source, 'dict').items():
+        if climate_variables.has_conversion(std_name, source):
+            # logger.info(f'{func_name}: converting units for {src_name} to {std_name}')
+            merged[src_name].values = climate_variables.to_std_units(
+                merged[src_name].values, std_name, source
             )
-            cv = climate_variables.lookup_alias(era5.NAME, era5_name)
+            cv = climate_variables.lookup_alias(source, src_name)
             unit = cv.std_unit.name
             v_name = cv.name
-            merged[era5_name].attrs.update(units=unit, name=v_name)
+            merged[src_name].attrs.update(units=unit, name=v_name)
 
-    
-
-    rename_dict = climate_variables.aliases_for(era5.NAME, 'dict_r')
+    rename_dict = climate_variables.aliases_for(source, 'dict_r')
     rename_dict.update({'longitude':'lon', 'latitude':'lat'})
     merged = merged.rename(rename_dict)
-    merged = merged.rename(
-            climate_variables.aliases_for(era5.NAME, 'dict_r')
-        )
     
     d2m = merged['dewpoint']
     merged['vapo'] = era5.calculate_vapo_from_dewpoint(d2m)
@@ -61,8 +56,6 @@ def merge_yearly(year, files, cleanup=True):
 
     merged.rio.write_crs('EPSG:4326',inplace=True)\
         .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)
-
-
 
     merged = dataset.YearlyDataset(year, merged)
 
@@ -105,8 +98,10 @@ def download_era5_daily(where, years, bounds, variables, overwrite=False, logger
             else:
                 print(f'.... for {var} - {stat} - file exists skipping download')
                 yearly_files.append(save_to)
-        merged = merge_yearly(year, yearly_files, not keep_temp)
+
         
-        merged.save(where/f'daily-ERA5-{year}.nc', overwrite=overwrite)
+        # merged = merge_yearly(year, yearly_files, not keep_temp)
+        
+        # merged.save(where/f'daily-ERA5-{year}.nc', overwrite=overwrite)
 
         
