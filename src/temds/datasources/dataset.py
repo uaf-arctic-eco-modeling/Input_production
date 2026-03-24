@@ -187,6 +187,12 @@ class TEMDataset(object):
     def __repr__(self):
         """string representation"""
         return(f"{type(self).__module__}.{type(self).__name__}")
+    
+    def __del__(self):
+        """Explicitly close each dataset to hopefully avoid memory leaks"""
+        # print('__del__')
+        if self.in_memory:
+            self.dataset.close()
 
     @staticmethod
     def from_raster_extent(
