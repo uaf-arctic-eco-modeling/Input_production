@@ -34,7 +34,7 @@ def ERA5_daily(
         years_as_range: Annotated[bool, Option(help="Flag to use years as range. Only check if 2 years are provided to --years")]=False,
         overwrite: Annotated[bool, Option(help="Flag to overwrite existing data")]=True,
         cleanup: Annotated[bool, Option(help="Flag to cleanup downloads by removing them")]=False,
-        log_file: Annotated[Path, Option(help="path to logger file")]=None,
+        log_file: Annotated[Path, Option(help="Optional path to save log to")]=None,
         silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False
     ):
     """Downloads ERA5 daily data from ECMWF. This is a slow process.
@@ -90,15 +90,24 @@ def ERA5_daily(
 @app.command()
 def CMIP6_daily(
         where: Annotated[Path, Argument(help="location to save final files to")],
-        experiment: Annotated[str, Argument(help="")],
-        source_model: Annotated[str, Argument(help="")],
-        # start_year: Annotated[int, Argument(help="")],
-        # end_year: Annotated[int, Argument(help="")],
-        ensemble: Annotated[str, Option(help="")] = cmip6.DEFAULT_ENSEMBLE ,
-        log_file: Annotated[Path, Option(help="path to logger file")]=None,
+        experiment: Annotated[str, Argument(help=f"Name of CMIP6 experiment from {cmip6.EXPERIMENTS}")],
+        source_model: Annotated[str, Argument(help="Name of CMIP6 model that provides daily data (i.e. CESM2)")],
+        start_year: Annotated[int, Option(help="Start year to save data for.")] = None,
+        end_year: Annotated[int, Option(help="End year to save data for.")] = None,
+        ensemble: Annotated[str, Option(help=f"CMIP6 ensemble/member_id (i.e. {cmip6.DEFAULT_ENSEMBLE})")] = cmip6.DEFAULT_ENSEMBLE ,
+        log_file: Annotated[Path, Option(help="Optional path to save log to")]=None,
         silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False
     ):
-    """download cmip6 daily data"""
+    """download cmip6 daily data
+    
+    Note on --start-year and --end-year
+        - For historical experiments these values must be between 1850 and 2014 inclusive.
+        - For projected experiments these values must be between 2015 and 2100 inclusive.
+        - --start-year must be less than or equal to --end-year
+        - When not provided values will default to the appropriate minimum or maximum value. 
+
+    
+    """
     log = logger.Logger(verbose_levels=logger.INFO, write_to=log_file)
     if silent: log.suspend()
 
@@ -106,11 +115,28 @@ def CMIP6_daily(
         log.error(f'bad experiment try one of {cmip6.EXPERIMENTS} ')
         return
 
-    start_year = 2016
-    end_year =  2101
     if experiment == 'historical':
-        start_year=1901
-        end_year = 2015
+        start_year = 1901 if start_year is None else start_year
+        end_year = 2014 if end_year is None else end_year
+        if start_year < 1850:
+            log.error("--start-year must be greater than or equal to  1850 for historical experiments.")
+            return
+        if start_year > 2014:
+            log.error("--end-year must be less than or equal to than 2014 for historical experiments.")
+            return
+
+    else:
+        start_year = 2016 if start_year is None else start_year
+        end_year =  2100 if end_year is None else end_year
+        if start_year < 2015:
+            log.error("--start-year must be greater than or equal to  2015 for projected (ssp) experiments.")
+            return
+        if start_year > 2100:
+            log.error("--end-year must be less than or equal to than 2100 for projected (ssp) experiments.")
+            return
+    if start_year > end_year:
+        log.error("--start-year must be less than or equal to --end-year.")
+        return
     log.info(f'For years {start_year} - {end_year}')
     time_bounds = (
         cftime.DatetimeNoLeap(start_year, 1, 1),
