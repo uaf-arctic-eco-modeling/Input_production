@@ -103,8 +103,6 @@ def calculate_vapo_from_dewpoint(d2m):
     """
     return 0.1 * 6.1078 * 10 ** ((d2m * 7.5)/(d2m + 237.3))
 
-
-
 def download_variable_for_year(
         where: Path | str, variable: str, year: int, 
         bounds:tuple=DEFAULT_BOUNDS, overwrite:bool=False

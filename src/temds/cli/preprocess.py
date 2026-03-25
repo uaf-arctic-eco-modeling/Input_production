@@ -29,11 +29,13 @@ def era5_daily(
         overwrite: Annotated[bool, Option(help="Flag to overwrite existing data")]=True,
         cleanup: Annotated[bool, Option(help="Flag to cleanup downloads by removing them")]=False,
         log_file: Annotated[Path, Option(help="Optional file to save log as")]=None,
+        silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False
     ):
     """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
     formatted to be read as a YearlyDataset.
     """
-    log = logger.Logger(verbose_levels=logger.INFO)
+    log = logger.Logger(verbose_levels=logger.INFO, write_to=log_file)
+    if silent: log.suspend()
     
     where = Path(where)
     if downloads is None:

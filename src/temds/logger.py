@@ -31,10 +31,15 @@ class MalformedLogMsgError(Exception):
     pass
 
 class Logger(UserList):
-    def __init__(self, data: list = [], verbose_levels = []):
+    def __init__(self, data: list = [], verbose_levels = [], write_to=None):
         self.data = data
         self.verbose_levels = verbose_levels
         self._suspended_levels = []
+        self.write_to = write_to
+
+    def __del__(self):
+        if self.write_to:
+            self.write(self.write_to)
 
     def suspend(self):
         self._suspended_levels = self.verbose_levels

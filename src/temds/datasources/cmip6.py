@@ -7,8 +7,10 @@ metadata for cmip6 data
 import numpy as np
 from cf_units import Unit
 
-from temds import climate_variables 
-from temds.constants import SECONDS_PER_DAY
+from .. import climate_variables 
+from ..constants import SECONDS_PER_DAY
+
+from .. import pangeo_tools
 
 
 NAME = 'CMIP 6'
@@ -35,10 +37,10 @@ climate_variables.register_source_unit('prec', NAME, Unit(f'{SECONDS_PER_DAY} mm
 VARS = climate_variables.aliases_for(NAME)
 SOURCE_VARS = [v for v in VARS if v not in []]
 
-
-DEFAULT_EXPERIMENTS = ['historical', 'ssp126', 'ssp245', 'ssp370', 'ssp585']
-DEFAULT_ENSEMBLES = ['r1i1p1f1']  # was 'r1i1p1f1_gn' what is gn?
-DEFAULT_MODELS=['ACCESS-CM2','MRI-ESM2-0']
+EXPERIMENTS = ['historical', 'ssp126', 'ssp245', 'ssp370', 'ssp585']
+# DEFAULT_EXPERIMENTS = EXPERIMENTS
+DEFAULT_ENSEMBLE = "r4i1p1f1" 
+DEFAULT_MODELS=['ACCESS-CM2','MRI-ESM2-0', 'CESM2']
 
 def callback_psl_to_vapo(dataset, logger, **kwargs):
     func_name = 'cmip6.callback_psl_to_vapo'
@@ -63,3 +65,15 @@ def callback_psl_to_vapo(dataset, logger, **kwargs):
     dataset['vapo'].attrs.update(units=unit, name=v_name)
     return dataset
     
+
+def search_pangeo(source_model, experiment, ensemble):
+    parameters = {
+        "experiment_id": [experiment],
+        "table_id": ["day"],
+        "variable_id": climate_variables.aliases_for('CMIP 6'),
+        "member_id": [ensemble],
+        "source_id": [source_model],
+    }
+    cat = pangeo_tools.connect()
+    items = pangeo_tools.search(cat, parameters).df
+    return items

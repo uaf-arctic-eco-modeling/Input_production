@@ -100,7 +100,7 @@ def download(save_to, zstore, time_bounds, spatial_bounds, **kwargs):
     sidx_y =  np.logical_and(ds.lat >= miny, ds.lat <= maxy)
     spatial_idx = np.logical_and(sidx_x, sidx_y)
 
-
+    print('clipping to extents')
     ds = ds.where(np.logical_and(time_idx, spatial_idx), drop=True)
 
     def lookup(kw, ke, de):
@@ -124,7 +124,9 @@ def download(save_to, zstore, time_bounds, spatial_bounds, **kwargs):
 
     for var in ds.data_vars:
         ds[var].rio.update_encoding(climate_enc, inplace=True)
-
+    ds.rio.write_crs('EPSG:4326',inplace=True)\
+        .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)
+    print('saving')
     if  not Path(save_to).exists() or overwrite:
         Path(save_to).parent.mkdir(parents=True, exist_ok=True)
         Path(save_to).unlink(missing_ok=True)
