@@ -103,8 +103,10 @@ def calculate_vapo_from_dewpoint(d2m):
     """
     return 0.1 * 6.1078 * 10 ** ((d2m * 7.5)/(d2m + 237.3))
 
-def download_variable_for_year(
-        where: Path | str, variable: str, year: int, 
+
+
+def download_variable_for_year_month(
+        where: Path | str, variable: str, year: int, month: int,
         bounds:tuple=DEFAULT_BOUNDS, overwrite:bool=False
     ):
     """Download data for a variable and year from ecmwf using api
@@ -117,6 +119,8 @@ def download_variable_for_year(
         TEMDS standard variable name in API_VARIABLES
     year: int 
         a year from 1940 to present
+    month: int
+        month from 1 - 12 
     bounds: tuple, default DEFAULT_BOUNDS
         bounds as a tuple in format [max lat, min lon, min lat, max lon]
     overwrite: Bool, default False 
@@ -128,7 +132,6 @@ def download_variable_for_year(
         Path is path to file.
         status, is complete, skipped, or failed
     """
-    
     where = Path(where)
     api_var = API_VARIABLES[variable]['name']
     api_stat = API_VARIABLES[variable]['statistic']
@@ -136,7 +139,7 @@ def download_variable_for_year(
         "product_type": ["reanalysis"],
         "variable": [api_var],
         "year": [f"{year}"],
-        "month": [f'{mn:02}' for mn in range(1,13)],
+        "month": [f'{month:02}'],
         "day": [f'{d:02}' for d in range(1,32)],
         "daily_statistic": api_stat,
         "time_zone": "utc+00:00",
@@ -145,7 +148,7 @@ def download_variable_for_year(
         "data_format": "netcdf",
         # "download_format": "zip",
     }
-    save_to = where/f'{year}-{api_var}.nc'
+    save_to = where/f'{year}-{month:02}-{api_var}.nc'
     try:
         if not save_to.exists() or overwrite:
             cdsapi_tools.download(save_to, COLLECTION_ID, request)
