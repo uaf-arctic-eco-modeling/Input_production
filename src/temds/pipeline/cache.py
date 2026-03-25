@@ -66,7 +66,10 @@ class CacheManager:
             
         elif step_name == "fri":
             return self.data_dir / f"{self.aoi_name}_fri-fire.nc"
-            
+
+        elif step_name == "historic_explicit_fire":
+            return self.data_dir / f"{self.aoi_name}_historic_explicit_fire.nc"
+
         elif step_name == "cru":
             return self.data_dir / f"{self.aoi_name}_cru"
             
@@ -201,6 +204,10 @@ class CacheManager:
                 # 3. each manifest.yml has the expected keys (e.g., 'data', 'cru-downscale')
                 # 4. optionally, check that the expected output files listed in the manifest actually exist and can be opened.
 
+                # three possibilities:
+                # 1. tile is in cache with valid manifest -> skip
+                # 2. tile is in cache but manifest is invalid -> re-process
+                # 3. tile is not in cache at all -> process
 
                 # Should make this operate on a single (passed in by kwarg) tile index.
 
@@ -222,6 +229,7 @@ class CacheManager:
                 # of the final exported files (e.g., TEM input files) and that
                 # they can be opened.
                 return False
+
             else:
                 # Default: if file exists, consider it valid
                 return True

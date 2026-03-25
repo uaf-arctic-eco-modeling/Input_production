@@ -208,7 +208,7 @@ class Pipeline:
         
         # Determine which steps to run
         steps_to_run = self._get_steps_to_run(from_step, to_step, only_step)
-        
+
         # Run each step in order
         for step_name in steps_to_run:
             if step_name == "aoi_raster":
@@ -229,7 +229,6 @@ class Pipeline:
                 self._step_setup_tiles(aoi, cache_manager)
             elif step_name == "process_tiles":
                 self._step_process_tiles(aoi, cache_manager)
-                pdb.set_trace()
             elif step_name == "export_tiles":
                 self._step_export_tiles(aoi, cache_manager)
             else:
@@ -659,7 +658,7 @@ class Pipeline:
         
         # Process each tile
         for tile_idx in tiles_to_process:
-            self._process_single_tile(aoi, cache_manager, tile_idx, tile_index)
+            self._process_single_tile(cache_manager, tile_idx, tile_index)
     
     def _process_single_tile(
         self,
@@ -841,10 +840,26 @@ class Pipeline:
         F = tile.to_TEM('fri')
         F.to_netcdf(cache_manager.get_path("export_tiles", tile_index=tile_idx) / "fri-fire.nc", mode='w')
 
-        from IPython import embed; embed()
-        # HEF = tile.to_TEM('historic-ef')
-        # HEF['time'] = H.dataset['time']
-        # HEF.to_netcdf(Path(DIR, 'historic-explicit-fire.nc'))
+        # OK, this is ridiculous, but here it is. We are just synthesizing
+        # this data so we haven't filled out the eariler parts of the process
+        # and it is therefore not included in the process tile step.
+        # So here we make it, basing the time axis off the historic climate time
+        hef = temds.datasources.dataset.TEMDataset.from_historic_explicit_fire(
+            synthetic=H.dataset['time'],
+            extent_raster_path=cache_manager.get_path("aoi_raster"),
+            logger=self.logger,
+        )
+        # We don't really need to save this - if we are saving it, then it 
+        # should probably go in the 02 folder, but it seems strange to put it
+        # there in this step (04, export). So this is here for debugging purposes.
+        # hef.save(cache_manager.get_path("historic_explicit_fire"),
+        #         overwrite=True, fill_value=np.int32(-9999), missing_value=np.int32(-9999))
+
+        # Add the dataset to the tile, then run it thru the export and save it.
+        tile.import_and_normalize('historic-ef', datasource=hef)
+        HEF = tile.to_TEM('historic-ef')
+        HEF.to_netcdf(cache_manager.get_path("export_tiles", tile_index=tile_idx) / "historic-explicit-fire.nc", mode='w')
+ 
 
         # import pandas as pd
         # P = H.dataset.copy()
