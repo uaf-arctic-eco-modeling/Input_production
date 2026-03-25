@@ -21,5 +21,5 @@ def download(where: Path, collection_id: str,  request: dict):
     request: dict
         api request
     """
-    client = Client()
+    client = Client(progress=False, cleanup=True, sleep_max=30)
     client.retrieve(collection_id, request, target=where) 
