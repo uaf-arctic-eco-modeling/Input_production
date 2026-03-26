@@ -1,6 +1,7 @@
 """Cache management for pipeline steps."""
 
 from pathlib import Path
+import shutil
 from typing import Dict, List
 import xarray as xr
 import yaml
@@ -113,17 +114,19 @@ class CacheManager:
         
         if step_name == "process_tiles":
 
-            # make sure we have the containing structure.
             if not path.exists() or not path.is_dir():
                 return False
-            else:
-                # Check that each tile directory has a manifest..
-                for tile_dir in path.glob("H*V*"):
-                    manifest_path = tile_dir / "manifest.yml"
-                    if manifest_path.exists():
-                        return True
-                    else:
-                        return False
+
+            # Tile-specific path (`.../tiles/H01_V02`)
+            tile_manifest = path / "manifest.yml"
+            if tile_manifest.exists():
+                return True
+
+            # Container path (`.../tiles`) with multiple tile folders
+            tile_dirs = list(path.glob("H*V*"))
+            if not tile_dirs:
+                return False
+            return all((tile_dir / "manifest.yml").exists() for tile_dir in tile_dirs)
 
         return path.exists()
     
@@ -211,18 +214,30 @@ class CacheManager:
 
                 # Should make this operate on a single (passed in by kwarg) tile index.
 
-                # Check each tile directory to see that is has the manifest
-                # and that the manifest containes the right keys
-                for tile_dir in path.glob("H*V*"):
-                    manifest_path = tile_dir / "manifest.yml"
+                manifest_paths = []
+
+                # Tile-specific path (`.../tiles/H01_V02`)
+                tile_manifest = path / "manifest.yml"
+                if tile_manifest.exists():
+                    manifest_paths = [tile_manifest]
+                else:
+                    # Container path (`.../tiles`) with multiple tile folders
+                    manifest_paths = [tile_dir / "manifest.yml" for tile_dir in path.glob("H*V*")]
+
+                if not manifest_paths:
+                    return False
+
+                for manifest_path in manifest_paths:
+                    if not manifest_path.exists():
+                        return False
                     with open(manifest_path) as f:
-                        manifest = yaml.safe_load(f)
+                        manifest = yaml.safe_load(f) or {}
                     if 'data' not in manifest:
                         return False
                     if 'cru-downscaled' not in manifest['data']:
                         return False
-                    # If we want to be more strict, we could also check that the downscaled file
-                    # actually exists and can be opened. For now we'll just check the manifest.
+
+                return True
 
             elif step_name == "export_tiles":
                 # Similar to process_tiles, but we would check for the presence
@@ -247,13 +262,11 @@ class CacheManager:
         """
         path = self.get_path(step_name, **kwargs)
         
-        if step_name == "cru" and path.is_dir():
-            # Remove all files in directory
-            import shutil
-            if path.exists():
+        if path.exists():
+            if path.is_dir():
                 shutil.rmtree(path)
-        elif path.exists():
-            path.unlink()
+            else:
+                path.unlink()
     
     def get_all_steps(self) -> Dict[str, bool]:
         """Get cache status for all standard steps.
@@ -276,3 +289,36 @@ class CacheManager:
         ]
         
         return {step: self.validate(step) for step in steps}
+
+    # def _tile_has_data(self, tile_idx: str, 
+    #                required_datasets: List[str]) -> bool:
+    #     """Check if tile has specific datasets in its manifest."""
+    #     tile_dir = self.tile_dir / "tiles" / tile_idx
+    #     manifest_path = tile_dir / "manifest.yml"
+    
+    #     if not manifest_path.exists():
+    #         return False
+    
+    #     with open(manifest_path) as f:
+    #         manifest = yaml.safe_load(f)
+    
+    #     return all(ds in manifest.get('data', {}) for ds in required_datasets)
+
+    # def _load_tile_index(self):
+    #     """Load tile index GeoDataFrame."""
+    #     tile_dir = self.get_path("setup_tiles")
+    #     tile_index_path = tile_dir / "tile_index.geojson"
+    
+    #     if not tile_index_path.exists():
+    #         raise FileNotFoundError(f"Tile index not found. Run setup_tiles first.")
+    
+    #     return gpd.read_file(tile_index_path)
+
+    # def _get_tiles_to_process(self, tile_index_gdf) -> List[str]:
+    #     """Determine which tiles to process based on config."""
+    #     if self.config.tile_config.tile_indices:
+    #         return self.config.tile_config.tile_indices
+    #     elif self.config.tile_config.all_tiles:
+    #         return tile_index_gdf['tile_id'].tolist()
+    #     else:
+    #         return []

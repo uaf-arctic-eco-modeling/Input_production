@@ -54,12 +54,12 @@ class TestCacheManager:
         
         assert path == tmp_path / "02-test_aoi" / "test_aoi_cru"
     
-    def test_get_path_tile(self, tmp_path):
-        """Test get_path for tile."""
+    def test_get_path_process_tiles(self, tmp_path):
+        """Test get_path for process_tiles tile directory."""
         cache = CacheManager(tmp_path, "test_aoi")
-        path = cache.get_path("tile", tile_index="H01_V02")
-        
-        assert path == tmp_path / "03-test_aoi" / "tiles" / "H01_V02" / "manifest.yml"
+        path = cache.get_path("process_tiles", tile_index="H01_V02")
+
+        assert path == tmp_path / "03-test_aoi" / "tiles" / "H01_V02"
     
     def test_get_path_invalid_step(self, tmp_path):
         """Test get_path with invalid step name."""
@@ -98,6 +98,17 @@ class TestCacheManager:
         # With a file - should be True
         (cru_path / "1901.nc").touch()
         assert cache.exists("cru")
+
+    def test_exists_process_tiles_tile_directory(self, tmp_path):
+        """Test exists for a processed tile directory."""
+        cache = CacheManager(tmp_path, "test_aoi")
+
+        tile_path = cache.get_path("process_tiles", tile_index="H01_V02")
+        tile_path.mkdir(parents=True, exist_ok=True)
+        assert not cache.exists("process_tiles", tile_index="H01_V02")
+
+        (tile_path / "manifest.yml").write_text("data:\n  cru-downscaled: output.nc\n")
+        assert cache.exists("process_tiles", tile_index="H01_V02")
     
     def test_validate_netcdf(self, tmp_path):
         """Test validate for NetCDF file."""
@@ -124,6 +135,19 @@ class TestCacheManager:
         wc_path.write_text("not a netcdf file")
         
         assert not cache.validate("worldclim")
+
+    def test_validate_process_tiles_manifest(self, tmp_path):
+        """Test validate for process_tiles with valid manifest."""
+        cache = CacheManager(tmp_path, "test_aoi")
+
+        tile_path = cache.get_path("process_tiles", tile_index="H01_V02")
+        tile_path.mkdir(parents=True, exist_ok=True)
+        (tile_path / "manifest.yml").write_text(
+            "data:\n"
+            "  cru-downscaled: output.nc\n"
+        )
+
+        assert cache.validate("process_tiles", tile_index="H01_V02")
     
     def test_invalidate(self, tmp_path):
         """Test invalidate removes cached file."""
@@ -140,6 +164,18 @@ class TestCacheManager:
         cache.invalidate("worldclim")
         
         assert not wc_path.exists()
+
+    def test_invalidate_process_tiles_directory(self, tmp_path):
+        """Test invalidate removes processed tile directory."""
+        cache = CacheManager(tmp_path, "test_aoi")
+
+        tile_path = cache.get_path("process_tiles", tile_index="H01_V02")
+        tile_path.mkdir(parents=True, exist_ok=True)
+        (tile_path / "manifest.yml").write_text("data:\n  cru-downscaled: output.nc\n")
+
+        assert tile_path.exists()
+        cache.invalidate("process_tiles", tile_index="H01_V02")
+        assert not tile_path.exists()
     
     def test_get_all_steps(self, tmp_path):
         """Test get_all_steps returns status dict."""
