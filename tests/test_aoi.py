@@ -8,9 +8,20 @@ from temds import aoitools
 from temds import tileindex
 
 
-def test_aoi_download():
-  aoimask = aoitools.AOIMask(root = "working")
-  aoimask._download()
+@pytest.mark.parametrize(
+  "url",
+  [
+    aoitools.AOIMask.politic_map_url,
+    aoitools.AOIMask.eco_map_url,
+  ],
+)
+def test_aoi_political_eco_maps_available(url):
+  headers = {"Range": "bytes=0-1023"}
+
+  with requests.get(url, headers=headers, stream=True, timeout=(5, 30)) as response:
+    assert response.status_code in (200, 206), f"Unexpected status code {response.status_code} for {url}"
+    first_chunk = next(response.iter_content(chunk_size=256), b"")
+    assert first_chunk, f"No bytes received when starting download from {url}"
 
 def test_aoi_unzip():
   aoimask = aoitools.AOIMask(root = "working")
