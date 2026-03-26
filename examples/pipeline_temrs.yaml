@@ -1,6 +1,6 @@
 # Example Pipeline Configuration for TEM-RS Inputs Processing
 # This configuration defines a repeatable workflow for processing climate and
-# environmental data for TEM (Terrestrial Ecosystem Model) Regional Setup.
+# environmental data for TEM (Terrestrial Ecosystem Model) Remote Sensing Project.
 
 # List of Areas of Interest (AOIs) to process
 aois:
