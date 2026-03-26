@@ -8,4 +8,6 @@ __pycache__/
 # don't track the generated assets
 working/
 
+hg-samples/**
+
 local_test_data/*
