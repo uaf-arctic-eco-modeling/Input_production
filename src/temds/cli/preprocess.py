@@ -8,12 +8,12 @@ TODO:
 """
 from pathlib import Path
 
-from typer import Typer, Argument, Option
+from typer import Typer, Argument, Option, Context
 from typing_extensions import Annotated
 import xarray as xr
 
 from .. import datasources
-from .. import logger
+from . import common
 
 HELP = """Tools to preprocess data"""
 
@@ -23,27 +23,27 @@ NAME = 'Preprocess'
 
 @app.command()
 def era5_daily(
-        where: Annotated[Path, Argument(help="Output file directory")],
-        downloads: Annotated[Path, Option(help="Optional alternate directory where downloads are.")]=None,
-        years: Annotated[list[int], Option(help="Years to preprocess, if not provided utility will attempt to process from 1940-2025")]=None,
-        overwrite: Annotated[bool, Option(help="Flag to overwrite existing data")]=True,
-        cleanup: Annotated[bool, Option(help="Flag to cleanup downloads by removing them")]=False,
-        log_file: Annotated[Path, Option(help="Optional file to save log as")]=None,
-        silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False
-    ):
+        context: Context,
+        destination: common.DESTINATION_DIR,
+        source: common.SOURCE_DIR,
+        years: common.ERA5_YEARS = None,
+        years_as_range: common.YEAR_RANGE_FLAG =False,
+        overwrite: common.OVERWRITE_FLAG = True,
+        cleanup: common.CLEANUP_FLAG = False,
+     ):
     """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
     formatted to be read as a YearlyDataset.
     """
-    log = logger.Logger(verbose_levels=logger.INFO, write_to=log_file)
-    if silent: log.suspend()
-    
-    where = Path(where)
-    if downloads is None:
-        downloads = where
+    log = context.obj.log
+
+    destination = Path(destination)
+
+    downloads = source
     downloads = Path(downloads)
 
-    if years is None:
-        years = range(1940,2026)
+    years = common.years_as_range_check(years, years_as_range, [1940,2025])
+    
+    log.info(f'Running for {years}')
 
     for year in years:
         log.info(f'Preprocessing year: {year}')
@@ -52,16 +52,15 @@ def era5_daily(
         log.info(f'.. Files found {[f.name for f in yearly_files]}.')
 
         yearly_data = [xr.open_dataset(file) for file in yearly_files]
+        log.info(f'.. Merging')
         merged = datasources.era5_daily.merge_for_year(year, yearly_data)
 
-        save_to = where/f'daily-ERA5-{year}.nc'
+        save_to = destination/f'daily-ERA5-{year}.nc'
+        log.info(f'.. Saving to {save_to}.')
         merged.save(save_to, overwrite=overwrite)
-        log.info(f'.. Merge and save to {save_to}.')
 
         [ds.close() for ds in yearly_data]
         if cleanup:
-            log.info(f'.. Cleanup: removing {[f.name for f in yearly_files]}.')
+            log.info(f'.. Cleanup. removing {[f.name for f in yearly_files]}.')
             [file.unlink(file) for file in yearly_files]
     log.info('Complete!')
-    if log_file:
-        log.write(log_file)

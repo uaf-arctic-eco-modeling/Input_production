@@ -31,11 +31,14 @@ class MalformedLogMsgError(Exception):
     pass
 
 class Logger(UserList):
-    def __init__(self, data: list = [], verbose_levels = [], write_to=None):
-        self.data = data
+    def __init__(self, data: list = None, verbose_levels = [], write_to=None):
+        if data is None:
+            self.data = []
+        else:
+            self.data = data
         self.verbose_levels = verbose_levels
         self._suspended_levels = []
-        self.write_to = write_to
+        self.write_to = Path(write_to) if write_to else None
 
     def __del__(self):
         if self.write_to:
@@ -53,8 +56,8 @@ class Logger(UserList):
         self.data = []
 
     def write(self, path: Path, mode: str = 'w', clear: bool = True):
-
-        with path.open(mode) as fd:
+        print(mode)
+        with path.open(mode=mode) as fd:
             for item in self:
                 fd.write(f'{item.msg_type.name.upper():>7} [{item.time.strftime("%Y-%m-%d %H:%M:%S")}]: {item.text}\n')
 
@@ -63,10 +66,10 @@ class Logger(UserList):
     def append(self, item):
         if not isinstance(item, LogMsg):
             raise MalformedLogMsgError('Only LogMsg Items may be appended')
-        else:
-            if item.msg_type in self.verbose_levels:
-                print(f'{item.msg_type.name.upper():>5} [{item.time.strftime("%Y-%m-%d %H:%M:%S")}]: {item.text}')
-            super().append(item)
+        
+        if item.msg_type in self.verbose_levels:
+            print(f'{item.msg_type.name.upper():>5} [{item.time.strftime("%Y-%m-%d %H:%M:%S")}]: {item.text}')
+        self.data.append(item)
 
     def log(self, text, msg_type=MsgType.info):
         self.append(LogMsg(text, msg_type))

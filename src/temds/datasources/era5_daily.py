@@ -191,7 +191,7 @@ def merge_for_year(year: int, datasets: list[xr.Dataset]):
             merged[src_name].attrs.update(units=unit, name=v_name)
 
     rename_dict = climate_variables.aliases_for(source, 'dict_r')
-    rename_dict.update({'longitude':'lon', 'latitude':'lat'})
+    rename_dict.update({'longitude':'lon', 'latitude':'lat', 'valid_time':'time'})
     merged = merged.rename(rename_dict)
     
     d2m = merged['dewpoint']

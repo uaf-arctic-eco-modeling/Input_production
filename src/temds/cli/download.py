@@ -10,7 +10,7 @@ TODO:
 """
 from pathlib import Path
 
-from typer import Typer, Argument, Option
+from typer import Typer, Argument, Option, Context
 from typing_extensions import Annotated
 import xarray as xr
 import cftime
@@ -21,35 +21,35 @@ from .. import logger
 from .. import climate_variables 
 from .. import pangeo_tools
 
+from . import common
+
 HELP = """Tools to download data"""
 
 app = Typer(help=HELP, no_args_is_help=True)
 
 NAME = 'Download'
 
+
+
 @app.command()
 def ERA5_daily(
-        where: Annotated[Path, Argument(help="location to save final files to")],
-        years: Annotated[list[int], Option(help="years")]=None,
-        years_as_range: Annotated[bool, Option(help="Flag to use years as range. Only check if 2 years are provided to --years")]=False,
-        overwrite: Annotated[bool, Option(help="Flag to overwrite existing data")]=True,
-        cleanup: Annotated[bool, Option(help="Flag to cleanup downloads by removing them")]=False,
-        log_file: Annotated[Path, Option(help="Optional path to save log to")]=None,
-        silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False
+        context: Context,
+        destination: common.DESTINATION_DIR,
+        years: common.ERA5_YEARS=None,
+        years_as_range: common.YEAR_RANGE_FLAG =False,
+        overwrite: common.OVERWRITE_FLAG = True,
+        cleanup: common.CLEANUP_FLAG = False,
     ):
     """Downloads ERA5 daily data from ECMWF. This is a slow process.
     """
-    log = logger.Logger(verbose_levels=logger.INFO, write_to=log_file)
-    if silent: log.suspend()
+    log = context.obj.log
 
-    if years is None:
-        years = range(1940,2026)
+
+    years = common.years_as_range_check(years, years_as_range, [1940,2025])
     
-    if len(years) == 2 and years_as_range:
-        years = range(years[0], years[1]+1)
-
 
     log.info(f'Processing years: {years}')
+    # return
 
     log.info(f'Downloading from { era5_daily.COLLECTION_ID }.')
     for year in years:
@@ -57,14 +57,14 @@ def ERA5_daily(
         for variable in era5_daily.API_VARIABLES:
             yearly_files = []
             api_var = era5_daily.API_VARIABLES[variable]['name']
-            save_to_final = where/f'{year}-{api_var}.nc'
+            save_to_final = destination/f'{year}-{api_var}.nc'
             log.info(f'.. Downloading {variable} for {year}.')
             if save_to_final.exists() and not overwrite:
                 log.info(f'.... Yearly file exists, download skipped.')
             for month in range(1, 13):
                 log.info(f'.... Downloading partial {variable} for {year}-{month:02}.')
                 file, status = era5_daily.download_variable_for_year_month(
-                    where, variable, year, month, overwrite=False
+                    destination, variable, year, month, overwrite=False
                 )
                 if status == 'skipped':
                     log.info(f'...... File exists, download skipped.')
@@ -89,60 +89,61 @@ def ERA5_daily(
 
 @app.command()
 def CMIP6_daily(
-        where: Annotated[Path, Argument(help="location to save final files to")],
+        context: Context,
+        destination: common.DESTINATION_DIR,
         experiment: Annotated[str, Argument(help=f"Name of CMIP6 experiment from {cmip6.EXPERIMENTS}")],
         source_model: Annotated[str, Argument(help="Name of CMIP6 model that provides daily data (i.e. CESM2)")],
-        start_year: Annotated[int, Option(help="Start year to save data for.")] = None,
-        end_year: Annotated[int, Option(help="End year to save data for.")] = None,
+        years: Annotated[tuple[int, int], Argument(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
+        # start_year: Annotated[int, Option(help="Start year to save data for.")] = None,
+        # end_year: Annotated[int, Option(help="End year to save data for.")] = None,
         ensemble: Annotated[str, Option(help=f"CMIP6 ensemble/member_id (i.e. {cmip6.DEFAULT_ENSEMBLE})")] = cmip6.DEFAULT_ENSEMBLE ,
-        log_file: Annotated[Path, Option(help="Optional path to save log to")]=None,
-        silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False
     ):
     """download cmip6 daily data
     
-    Note on --start-year and --end-year
+    Note on `years`
         - For historical experiments these values must be between 1850 and 2014 inclusive.
         - For projected experiments these values must be between 2015 and 2100 inclusive.
-        - --start-year must be less than or equal to --end-year
+        - The start year must be less than or equal to end year
         - When not provided values will default to the appropriate minimum or maximum value. 
 
     
     """
-    log = logger.Logger(verbose_levels=logger.INFO, write_to=log_file)
-    if silent: log.suspend()
+    log = context.obj.log
 
     if experiment not in cmip6.EXPERIMENTS:
         log.error(f'bad experiment try one of {cmip6.EXPERIMENTS} ')
         return
+    
 
+
+    start_year, end_year = years if years else (None, None)
     if experiment == 'historical':
         start_year = 1901 if start_year is None else start_year
         end_year = 2014 if end_year is None else end_year
         if start_year < 1850:
-            log.error("--start-year must be greater than or equal to  1850 for historical experiments.")
+            log.error(f"Start year must be greater than or equal to  1850 for historical experiments. Was given {start_year}.")
             return
         if start_year > 2014:
-            log.error("--end-year must be less than or equal to than 2014 for historical experiments.")
+            log.error(f"End year must be less than or equal to than 2014 for historical experiments. Was given {end_year}.")
             return
 
     else:
         start_year = 2016 if start_year is None else start_year
         end_year =  2100 if end_year is None else end_year
         if start_year < 2015:
-            log.error("--start-year must be greater than or equal to  2015 for projected (ssp) experiments.")
+            log.error(f"Start year must be greater than or equal to  2015 for projected (ssp) experiments. Was given {start_year}.")
             return
         if start_year > 2100:
-            log.error("--end-year must be less than or equal to than 2100 for projected (ssp) experiments.")
+            log.error(f"End year must be less than or equal to than 2100 for projected (ssp) experiments. Was given {end_year}.")
             return
     if start_year > end_year:
-        log.error("--start-year must be less than or equal to --end-year.")
+        log.error(f"Start year must be less than or equal to End year. Start year was {start_year}, and end year {end_year}.")
         return
     log.info(f'For years {start_year} - {end_year}')
     time_bounds = (
         cftime.DatetimeNoLeap(start_year, 1, 1),
         cftime.DatetimeNoLeap(end_year+1, 1, 1)
     )
-
     log.info(f'Searching catalog for daily {source_model}, {experiment}, {ensemble}')
     items = cmip6.search_pangeo(source_model, experiment, ensemble)
     log.info(f'.. Found {len(items)} items.')
@@ -154,8 +155,8 @@ def CMIP6_daily(
         log.info(
             f"Downloading {meta['source_id']}-{meta['experiment_id']}-{meta['variable_id']}"
         )
-        save_to = where/f"cmip6-day-{meta['source_id']}-{meta['experiment_id']}-{meta['variable_id']}.nc"
-        print(save_to)
+        save_to = destination/f"cmip6-day-{meta['source_id']}-{meta['experiment_id']}-{meta['variable_id']}.nc"
+        log.info(f'.. saving to {save_to}')
         if not save_to.exists():
             ds = pangeo_tools.download(
                 save_to,
@@ -165,3 +166,4 @@ def CMIP6_daily(
                 zlib= True, complevel= 9 
             )
             ds.close()
+    log.info('Complete!')
