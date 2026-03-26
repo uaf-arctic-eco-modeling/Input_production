@@ -11,6 +11,7 @@ from temds.pipeline.cache import CacheManager
 from temds.pipeline.config import PipelineConfig, AOIConfig, DataSourcePaths, StepConfig, TileConfig
 
 
+@pytest.mark.unit
 class TestCacheManager:
     """Tests for CacheManager class."""
     
@@ -195,6 +196,7 @@ class TestCacheManager:
         assert status["vegetation"] is False  # Doesn't exist
 
 
+@pytest.mark.unit
 class TestPipelineConfig:
     """Tests for PipelineConfig class."""
     
@@ -321,6 +323,7 @@ class TestPipelineConfig:
         assert "resolution" in yaml_data
 
 
+@pytest.mark.unit
 class TestPipelineStepFilters:
     """Tests for pipeline step filtering logic."""
     
@@ -416,6 +419,7 @@ class TestPipelineStepFilters:
             pipeline._get_steps_to_run(from_step="invalid_step", to_step=None, only_step=None)
 
 
+@pytest.mark.integration
 class TestPipelineIntegration:
     """Integration tests for pipeline."""
     

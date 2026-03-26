@@ -44,4 +44,12 @@ dependencies = [
 Homepage = "https://github.com/uaf-arctic-eco-modeling/Input_production"
 
 [project.scripts]
-TEMdownscale = "temds.cli:app"
+#TEMdownscale = "temds.cli:app"
+temds = "temds.cli:app"
+
+[tool.pytest.ini_options]
+addopts = "-m 'not integration'"
+markers = [
+  "unit: fast unit tests",
+  "integration: integration tests requiring full data/toolchain",
+]

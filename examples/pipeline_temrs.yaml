@@ -76,7 +76,7 @@ steps:
     force: false
     cache: true
 
-  processes_tiles:
+  process_tiles:
     enabled: true
     force: false
     cache: true

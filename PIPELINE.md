@@ -79,8 +79,9 @@ The pipeline executes steps in this order:
 5. **soil_texture** - Load soil texture data
 6. **fri** - Load or generate FRI fire data
 7. **cru** - Load CRU-JRA timeseries data
-8. **setup_tiles** - Creates a folder hierarchy for all the tiles and a tile index vector file
-9. **tiles** - Process individual tiles (optional)
+8. **setup_tiles** - Create tile index and tile folder hierarchy
+9. **process_tiles** - Process per-tile inputs, baseline/correction, and downscaling
+10. **export_tiles** - Export final tile outputs
 
 Each step:
 - Creates standardized outputs in `working/` directory
