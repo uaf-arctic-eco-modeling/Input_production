@@ -9,7 +9,7 @@ import numpy as np
 import temds
 
 from ..logger import Logger
-from ..aoitools import AOIMask, TileIndex
+from ..aoitools import TileIndex
 from ..datasources.dataset import TEMDataset
 from ..datasources.timeseries import YearlyTimeSeries
 from ..tile import Tile
