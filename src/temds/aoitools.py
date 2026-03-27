@@ -241,9 +241,9 @@ class AOIMask(object):
     return instance
 
   @staticmethod
-  def load_raster(raster_file):
+  def load_raster(raster_file, mask_value=1):
 
-    gdf = gdal_dataset_to_geopandas(gdal.Open(raster_file,gdal.gdalconst.GA_ReadOnly), mask_value=1)
+    gdf = gdal_dataset_to_geopandas(gdal.Open(raster_file,gdal.gdalconst.GA_ReadOnly), mask_value=mask_value)
 
     dissolved = gdf.dissolve()
     aoi = dissolved.geometry
