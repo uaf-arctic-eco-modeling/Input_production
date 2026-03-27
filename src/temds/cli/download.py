@@ -11,7 +11,7 @@ TODO:
 from pathlib import Path
 
 from typer import Typer, Argument, Option, Context
-from typing_extensions import Annotated
+from typing import Annotated
 import xarray as xr
 import cftime
 

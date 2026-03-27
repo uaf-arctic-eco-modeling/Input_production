@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 from typer import Typer, Context, Argument, Option
-from typing_extensions import Annotated
+from typing import Annotated
 
 from . import download
 from . import preprocess

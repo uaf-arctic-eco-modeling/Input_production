@@ -8,8 +8,8 @@ TODO:
 """
 from pathlib import Path
 
-from typer import Typer, Argument, Option, Context
-from typing_extensions import Annotated
+from typer import Typer, Context
+
 import xarray as xr
 
 from .. import datasources
