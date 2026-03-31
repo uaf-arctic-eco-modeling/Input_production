@@ -16,10 +16,7 @@ from temds.pipeline import Pipeline, PipelineConfig, CacheManager
 from temds.pipeline.config import AOIConfig, DataSourcePaths, TileConfig
 import temds.logger
 
-
-
-
-HELP = """Tools to run processing pipelines. Chains of steps of data production."""
+HELP = """Tools to run processing pipelines and cache results."""
 
 app = typer.Typer(help=HELP, no_args_is_help=True)
 
@@ -80,14 +77,14 @@ def pipeline_run(
 
 
 @app.command()
-def pipeline_list_steps(
+def list_steps(
     config_file: Annotated[Optional[str], typer.Argument(help="Path to pipeline YAML configuration file")] = None,
 ):
     """List available pipeline steps in execution order.
     
     Examples:
-        temds pipeline-list-steps
-        temds pipeline-list-steps pipeline.yaml  # Show which steps are enabled
+        temds pipeline list-steps
+        temds pipeline list-steps pipeline.yaml  # Show which steps are enabled
     """
     
     typer.echo("Available pipeline steps (in execution order):")
@@ -108,15 +105,15 @@ def pipeline_list_steps(
 
 
 @app.command()
-def pipeline_cache_status(
+def cache_status(
     config_file: Annotated[str, typer.Argument(help="Path to pipeline YAML configuration file")],
     aoi: Annotated[Optional[str], typer.Option("--aoi", "-a", help="Specific AOI to check")] = None,
 ):
     """Show cache status for pipeline steps.
     
     Examples:
-        temds pipeline-cache-status pipeline.yaml
-        temds pipeline-cache-status pipeline.yaml --aoi temrs_path_0
+        temds pipeline cache-status pipeline.yaml
+        temds pipeline cache-status pipeline.yaml --aoi temrs_path_0
     """
     config = PipelineConfig.from_yaml(config_file)
     
@@ -150,17 +147,18 @@ def pipeline_cache_status(
 
 
 @app.command()
-def pipeline_init(
+def init(
     output_file: Annotated[str, typer.Argument(help="Path for new configuration file")] = "pipeline.yaml",
 ):
     """Create a sample pipeline configuration file.
     
     Examples:
-        temds pipeline-init
-        temds pipeline-init my-pipeline.yaml
+        temds pipeline init
+        temds pipeline init my-pipeline.yaml
     """
     
     
+    # TODO: I think some of the default values in here are not ideal...
     # Create sample configuration
     config = PipelineConfig(
         aois=[
