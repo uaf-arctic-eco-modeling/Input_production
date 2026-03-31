@@ -14,7 +14,7 @@ import xarray as xr
 import rioxarray
 import numpy as np
 
-from .dataset import YearlyDataset
+from .dataset import YearlyDataset, TEMDataset
 from . import errors
 from temds.logger import Logger
 
@@ -139,7 +139,7 @@ class YearlyTimeSeries(UserList):
                         raise errors.ContinuityError(f'{type(self).__name__}: expected {yr} but found {d_yr} off by {d_yr - yr}')
                     # break
         msg = 'Data is continuous'
-        if continuous:
+        if not continuous:
             msg = 'Data not is continuous'
         self.logger.info(msg)
 
@@ -321,8 +321,71 @@ class YearlyTimeSeries(UserList):
             verified = v and verified
             reasons += r
         return verified, reasons
+
+    def calculate_daily_average(self, var, start, end):
+        temp_sum = None
+        c = 0
+        for year in range(start, end+1):
+            # print(year,self[year].dataset[var].values[0][0][-1])
+            if temp_sum is None:
+                temp_sum = deepcopy(self[year].dataset[var].values)
+            else:
+                temp_sum += self[year].dataset[var].values
+            c+=1
+        return temp_sum / c
+    
+    def calculate_daily_std_dev(self, var, start, end):
+        mean = self.calculate_daily_average(var, start, end)
+        
+        temp_sum = None
+        c = 0
+        for year in range(start, end+1):
+            if temp_sum is None:
+                temp_sum = (deepcopy(self[year].dataset[var].values) - mean) ** 2
+            else:
+                temp_sum += ((self[year].dataset[var].values - mean) ** 2)
+            c+=1
+            
+        return (temp_sum / c)**.5
+    
+    def check_dataset_with_nan_mask(self, mask):
+        checked=[]
+        for year in self.range():
+            checked.append((self[year].check_dataset_with_nan_mask(mask)[0], year))
+
+        return bool(np.array([c[0] for c in checked]).all()), checked
+    
+    def check_number_timesteps(self, expected=365):
+        checked=[]
+        for year in self.range():
+            checked.append(self[year].check_number_timesteps(expected))
+
+        return bool(np.array([c[0] for c in checked]).all()), checked
+    
+    def fill_outliers(self, var, mean, std, n_std=5):
+
+        for year in self.range():
+            self[year].fill_outliers(var, mean, std, n_std)
+
+    def fill_out_of_bounds(self, var, value, which, fill):
+        for year in self.range():
+            self[year].fill_out_of_bounds(var, value, which, fill)
+
+    def drop_leap_days(self):
+        for year in self.range():
+            self[year].drop_leap_days()
+
+
+    def convert_range_to_single_dataset(self, variables, start_year, end_year):
+        """
+        """
+        period = self[start_year: end_year+1]
+        temp = [period[yr].dataset[variables ] for yr in period.range()]
+
+        merged = xr.concat(temp, dim='time').convert_calendar("noleap")
+        return merged
              
-    def create_climate_baseline(self, start_year, end_year, parallel=False):
+    def create_climate_baseline(self, start_year, end_year, parallel=False, variables=None):
         """Create baseline climate variables for dataset; uses
         the methods defined in CRUJRA_BASELINE_LOOKUP Based on original 
         downscaling.sh line 77-80. Here calculations are split up by var
@@ -359,7 +422,14 @@ class YearlyTimeSeries(UserList):
         doy = [constants.MONTH_START_DAYS[mn] for mn in range(12)]
 
         var_dict = {}
-        for var, method  in climate_variables.BASELINE_LOOKUP.items():
+        if variables is None:
+            variables = climate_variables.BASELINE_LOOKUP
+        else:
+            variables = {var: climate_variables.BASELINE_LOOKUP[var] for var in variables}
+
+        for var, method  in variables.items():
+            if not var in self[start_year].dataset.data_vars:
+                continue
             self.logger.info(f'creating baseline for {var} with  {method}')
             ts = [self[yr].dataset[var].values for yr in range(start_year, end_year)]
             ts = np.array(ts)
@@ -404,3 +474,17 @@ class YearlyTimeSeries(UserList):
         )
         gc.collect()
         return clim_ref
+
+
+    def to_TEMDataset(self):
+        """Converts data to a single dataset, for qdm methods
+
+        optional TODO: support subset of years?
+
+        Returns
+        -------
+        TEMDataset
+        """
+        full = xr.concat([ds.dataset for ds in self.data], dim='time')
+        del(full.attrs['data_year'])
+        return TEMDataset(full)

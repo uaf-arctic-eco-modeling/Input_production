@@ -8,6 +8,7 @@ Objects to manage data for TEMDS project
 import os
 from pathlib import Path
 from copy import deepcopy
+import operator
 import gc
 import pathlib
 import shapely.geometry # for .box function
@@ -22,7 +23,8 @@ from osgeo import gdal
 from affine import Affine
 from pyproj import CRS
 from cf_units import Unit
-# dapper.met is lazy loaded because it is quite slow to import...
+
+# lazy load dapper.met; it is quite slow to import and only use in a couple places.
 
 
 import temds.datasources.vegetation
@@ -186,6 +188,12 @@ class TEMDataset(object):
     def __repr__(self):
         """string representation"""
         return(f"{type(self).__module__}.{type(self).__name__}")
+    
+    def __del__(self):
+        """Explicitly close each dataset to hopefully avoid memory leaks"""
+        # print('__del__')
+        if self.in_memory:
+            self.dataset.close()
 
     @staticmethod
     def from_raster_extent(
@@ -1253,9 +1261,10 @@ class TEMDataset(object):
         update_kw('warp_no_data_as_array', False)
         update_kw('gdal_type', gdal.GDT_Float32) ### Probably covert to lookup table, so types are inferred from the dataset
         update_kw('prime_warp', True)
+        update_kw('dest_gt', None)
         
         ## general kwarg
-        update_kw('resolution', self.resolution[0])
+        update_kw('resolution', self.resolution)
 
         resolution = kwargs['resolution']
         if resolution is None:
@@ -1310,8 +1319,10 @@ class TEMDataset(object):
         resolution = kwargs['resolution']
         nd_as_array = kwargs['warp_no_data_as_array']
         gdal_type = kwargs['gdal_type']
+        # print( gdal_type )
         run_primer = kwargs['prime_warp']
         resample_alg = kwargs['resample_alg']
+        dest_gt = kwargs['dest_gt']
 
         ## Clipping with gdal ensures alignment
         ##  1) set up scratch gdal datasets in memory
@@ -1323,76 +1334,98 @@ class TEMDataset(object):
         ##  2) use gdal warp to clip each var
         ## 
         ##  3) save all to new clipped xr.dataset
-        driver = gdal.GetDriverByName("MEM")
+
+        
+
+        # driver = gdal.GetDriverByName("MEM")
 
         ## clipped shape, and geotransform
-        c_x, c_y = int((maxx-minx)/resolution), int((maxy-miny)/resolution)
-        #c_gt = minx, resolution, 0.0, miny, 0.0, resolution
-        print(c_x, c_y)
-        x_sign, y_sign = 1, 1
-        if c_x<0:
-            x_sign = -1
-        if c_y < 0:
-            y_sign = -1
+        dest_x, dest_y = abs(int((maxx-minx)/resolution[0])), abs(int((maxy-miny)/resolution[1]))
+        #dest_gt = minx, resolution, 0.0, miny, 0.0, resolution
+        # print(dest_x, dest_y)
+        # x_sign, y_sign = 1, 1
+        # if dest_x<0:
+        #     x_sign = -1
+        # if dest_y < 0:
+        #     y_sign = -1
 
-        c_gt = minx, x_sign*resolution, 0.0, miny, 0.0, x_sign*resolution
-
+        # dest_gt = minx, x_sign*resolution, 0.0, miny, 0.0, y_sign*resolution
+        if dest_gt is None:
+            # NOTE: assumes north up
+            dest_gt = minx, resolution[0], 0.0, maxy, 0.0, resolution[1]    
 
         if hasattr(working_dataset, 'lat') and hasattr(working_dataset, 'lon'):
-            s_x = working_dataset.lon.shape[0]
-            s_y = working_dataset.lat.shape[0]
+            source_x = working_dataset.lon.shape[0]
+            source_y = working_dataset.lat.shape[0]
         else: # x and y 
-            s_x = working_dataset.x.shape[0]
-            s_y = working_dataset.y.shape[0]
+            source_x = working_dataset.x.shape[0]
+            source_y = working_dataset.y.shape[0]
 
         ## read GT from dataset, extra step is to keep resolution positive
         ## which may not be needed on all datasets, so be wary in in future
-        s_gt = working_dataset.rio.transform()
-        s_gt = s_gt.c, abs(s_gt.a), s_gt.b, s_gt.f, s_gt.d, abs(s_gt.e)
+       
+        source_gt = working_dataset.rio.transform()
+        # source_gt = source_gt.c, abs(source_gt.a), source_gt.b, source_gt.f, source_gt.d, abs(source_gt.e)
+        source_gt = source_gt.c, source_gt.a, source_gt.b, source_gt.f, source_gt.d, source_gt.e
+        print(source_gt)
 
         # gdal wants things in order, x, y, band count
-        source_dim_sizes = [s_x, s_y]
-        #dest_dim_sizes = [c_x, c_y]
-        dest_dim_sizes = [abs(c_x), abs(c_y)]
+        # source_dim_sizes = [source_x, source_y]
+        # #dest_dim_sizes = [dest_x, dest_y]
+        # dest_dim_sizes = [abs(dest_x), abs(dest_y)]
 
         # N time steps
         if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
             n_ts = working_dataset['time'].shape[0]
-            source_dim_sizes.append(n_ts)
-            dest_dim_sizes.append(n_ts)
+            # source_dim_sizes.append(n_ts)
+            # dest_dim_sizes.append(n_ts)
         else:
             n_ts = 1 # not a time step; in GDAL's view always at least 1 Band.
-            dest_dim_sizes.append(1)
-            source_dim_sizes.append(1)
-
-    
-        self.logger.debug(f'{funcname}: source dimensions (for each Variable): x={s_x}, y={s_y}, time={n_ts}')
-        self.logger.debug(f'{funcname}: source GeoTransform: {s_gt}')
-        self.logger.debug(f'{funcname}: destination dimensions (for each Variable): x={c_x}, y={c_y}, time={n_ts}')
-        self.logger.debug(f'{funcname}: destination GeoTransform: {c_gt}')
+            # dest_dim_sizes.append(1)
+            # source_dim_sizes.append(1)
+        self.logger.debug(f'{funcname}: source dimensions (for each Variable): x={source_x}, y={source_y}, time={n_ts}')
+        self.logger.debug(f'{funcname}: source GeoTransform: {source_gt}')
+        self.logger.debug(f'{funcname}: destination dimensions (for each Variable): x={dest_x}, y={dest_y}, time={n_ts}')
+        self.logger.debug(f'{funcname}: destination GeoTransform: {dest_gt}')
         self.logger.debug(f'{funcname}: Resampling Algorithm: {resample_alg}')
 
 
         dest_crs = extent_crs.to_wkt()
 
         # setup dest and soruce
-        dest = driver.Create("", *dest_dim_sizes, gdal_type)
-        dest.SetProjection(dest_crs)
-        dest.SetGeoTransform(c_gt)
-        dest.FlushCache()
+        # dest = driver.Create("", *dest_dim_sizes, gdal_type)
+        # dest.SetProjection(dest_crs)
+        # dest.SetGeoTransform(dest_gt)
+        # dest.FlushCache()
+        print(dest_gt)
+        print(dest_x, dest_y, n_ts)
+        dest = gdal_tools.empty_dataset(
+            dest_x, dest_y, dest_crs, dest_gt, n_ts, gdal_type
+        )
+        driver = gdal.GetDriverByName('GTiff')
+        driver.CreateCopy('sample-dest.tif', dest)
 
         source_crs = working_dataset.rio.crs.to_wkt()
-        source = driver.Create("", *source_dim_sizes, gdal_type)
-        source.SetProjection(source_crs)
-        source.SetGeoTransform(s_gt)
-        source.FlushCache() # this should work just once, but when working in 
-                            # the interpreter, you often have to call it 
-                            # multiple times.
+        # source = driver.Create("", *source_dim_sizes, gdal_type)
+        # source.SetProjection(source_crs)
+        # source.SetGeoTransform(source_gt)
+        # source.FlushCache() # this should work just once, but when working in 
+        #                     # the interpreter, you often have to call it 
+        #                     # multiple times.
+        source = gdal_tools.empty_dataset(
+            source_x, source_y, source_crs, source_gt, n_ts, gdal_type
+        )
+
+        # driver = gdal.GetDriverByName('GTiff')
+        driver.CreateCopy('sample-source.tif', source)
 
         ## option 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         self.logger.debug(f"{funcname}: deleting vars_dict")
+
+        driver.CreateCopy('sample-dest.tif', dest)
+        driver.CreateCopy('sample-source.tif', source)
         del(vars_dict)
 
         # Option 1
@@ -1435,17 +1468,22 @@ class TEMDataset(object):
             
         ## we want these to be the center of the pixels so for x and y the range
         self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
-        x_coords = np.arange(minx+resolution/2, minx + c_x * resolution, resolution) 
-        #y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution) 
+        res_x = resolution[0]
+        x_coords = np.arange(minx+res_x/2, minx + dest_x * res_x, res_x) 
+        #y_coords = np.arange(miny+resolution/2, miny + dest_y * resolution, resolution) 
 
-        print(miny,maxy, resolution)
-        if miny < maxy:
-            # print('a')
-            y_coords = np.arange(miny+resolution/2, miny + c_y * resolution, resolution)
+        # print(miny,maxy, resolution)
+        res_y = resolution[1]
+        # y_coords = np.arange(miny+res_y/2, miny + dest_y * res_y, res_y)
+        if res_y > 0:
+            print('a')
+            y_coords = np.arange(minx+res_y/2, miny + dest_y * res_y, res_y)
         else: 
-            # print('b')
-            y_coords = np.arange(maxy+resolution/2, maxy + abs(c_y) * resolution, resolution)
+            print('b')
+            y_coords = np.arange(maxy+res_y/2, maxy + abs(dest_y) * res_y, res_y)
         # print(y_coords)
+
+
 
 
         coords={
@@ -1475,7 +1513,7 @@ class TEMDataset(object):
             inplace=True
         )
         self.logger.debug(f"{funcname}: writing coordinate system to Dataset in place")
-        tile.rio.write_transform(Affine.from_gdal(*c_gt), inplace=True)
+        tile.rio.write_transform(Affine.from_gdal(*dest_gt), inplace=True)
 
         self.logger.debug(f"{funcname}: cleaning up gdal source and dest datasets")
         del(source)
@@ -1502,7 +1540,7 @@ class TEMDataset(object):
 
         """
         working_dataset = self.dataset
-        resolution = kwargs['resolution']
+        resolution = kwargs['resolution'][0] # only use one here
 
         if extent_crs != working_dataset.rio.crs:
             local_dataset = working_dataset.rio.reproject(extent_crs)
@@ -1650,7 +1688,9 @@ class TEMDataset(object):
         self.dataset.attrs.update(TEMDS_version = Version())
         self.dataset.attrs.update(extra_attrs)
 
-            
+        unlimited_dims = None    
+        if 'unlimited_dims' in kwargs:
+            unlimited_dims = kwargs['unlimited_dims']
 
         if  not Path(out_file).exists() or overwrite:
             
@@ -1660,7 +1700,7 @@ class TEMDataset(object):
                     out_file, 
                     # encoding=encoding, 
                     engine="netcdf4",
-                    # unlimited_dims={'time':True}
+                    unlimited_dims=unlimited_dims
                 )
         else:
             raise FileExistsError(
@@ -1752,6 +1792,7 @@ class TEMDataset(object):
                 in_dataset = in_dataset.reindex(lon=in_dataset.lon[::-1])
             in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
 
+                
         if transform.f > s_miny:
             transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
             if y_dim == 'y':
@@ -1759,6 +1800,7 @@ class TEMDataset(object):
             else:
                 in_dataset = in_dataset.reindex(lat=in_dataset.lat[::-1])
             in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+        
 
 
         in_dataset = \
@@ -1806,7 +1848,43 @@ class TEMDataset(object):
                 reasons.append(f'{var} has units {units} but needs {std_units}')
 
         return verified, reasons
+    
+    def check_dataset_with_nan_mask(self, mask):
+        matches = {}
+        for var in self.dataset.data_vars:
+            matches[var] = bool((np.isnan(self.dataset[var].sum(axis=0, skipna=False)) == mask).all().values)
+        return bool(np.array([v for k, v in matches.items()]).all()), matches
+    
+    def check_number_timesteps(self, expected=365):
+        correct = self.dataset.time.shape[0] == expected
+        missing = []
+        if not correct:
+            missing = [] # TODO
+        return correct, missing
 
+    def fill_outliers(self, var, mean, std, n_std):
+        in_range_ix = ~(
+            (self.dataset[var] > mean + n_std * std) | \
+            (self.dataset[var] < mean - n_std * std)
+        )
+        # keeps values were idx is true, replaces others with mean
+        updated = self.dataset[var].where(in_range_ix, mean) 
+        self.dataset[var] = updated
+
+    def fill_out_of_bounds(self, var, value, which, fill):
+        if which == 'lower':
+            op = operator.lt
+        else:
+            op = operator.gt
+        ix = op(self.dataset[var], value) 
+        # return ix
+        if ix.any():
+            # print('filling')
+            updated = self.dataset[var].where(
+                ix | np.isnan(self.dataset[var]), # don't fill nans
+                fill 
+            ) 
+            self.dataset[var] = updated
 
 class YearlyDataset(TEMDataset):
     """This sub class of TEMDataset represents daily data
@@ -1961,50 +2039,53 @@ class YearlyDataset(TEMDataset):
         logger.debug(f'dapper Params: {params}')
         
 
-        available = cmip_utils.find_available_data(params)
-        logger.info(f'YearlyDataset.from_cmip6: found {available.shape[0]} datasets')
-        if available.shape[0] == 0:
-            msg = (
-                'YearlyDataset.from_cmip6: requested cmip6 datasets not found.'
-                'Check your arguments for models, expiremnts, etc.'
-            )
-            logger.error(msg)
-            raise errors.YearlyTimeSeriesError(msg)
+        # available = cmip_utils.find_available_data(params)
+        # logger.info(f'YearlyDataset.from_cmip6: found {available.shape[0]} datasets')
+        # if available.shape[0] == 0:
+        #     msg = (
+        #         'YearlyDataset.from_cmip6: requested cmip6 datasets not found.'
+        #         'Check your arguments for models, expiremnts, etc.'
+        #     )
+        #     logger.error(msg)
+        #     raise errors.YearlyTimeSeriesError(msg)
 
 
-        lat_bounds=None
-        lon_bounds=None
-        if not extent is None:
-            lon_bounds = (extent.minx, extent.maxx)
-            lat_bounds = (extent.miny, extent.maxy)
-        # print(lon_bounds)
+        # lat_bounds=None
+        # lon_bounds=None
+        # if not extent is None:
+        #     lon_bounds = (extent.minx, extent.maxx)
+        #     lat_bounds = (extent.miny, extent.maxy)
 
-        if download:
-            cmip_utils.download_pangeo(
-                available, data_path, lat_bounds=lat_bounds, lon_bounds=lon_bounds
-            )
+        # if download:
+        #     cmip_utils.download_pangeo(
+        #         available, data_path, lat_bounds=lat_bounds, lon_bounds=lon_bounds
+        #     )
+
+        
+
 
         ready_variables = []
         for var_file in Path(data_path).glob('*.nc'):
             # logger.debug(f'checking: {var_file}')
-            var, model, experiment, ensamble = var_file.stem.split('_')
-            if not var in variables:
-                # print('var')
-                continue
-            if models != [] and not model in models:
-                # print('model')
-                continue
-            if experiments != [] and not experiment in experiments:
-                # print('exp')
-                continue
-            if ensambles != [] and not ensamble in ensambles:
-                # print(ensamble, ensambles)
-                # print('ens', ensambles != [],not ensamble in ensambles)
-                continue
+            # var, model, experiment, ensamble = var_file.stem.split('_')
+            var =  var_file.stem.split('-')[-1]
+            # if not var in variables:
+            #     # print('var')
+            #     continue
+            # if models != [] and not model in models:
+            #     # print('model')
+            #     continue
+            # if experiments != [] and not experiment in experiments:
+            #     # print('exp')
+            #     continue
+            # if ensambles != [] and not ensamble in ensambles:
+            #     # print(ensamble, ensambles)
+            #     # print('ens', ensambles != [],not ensamble in ensambles)
+            #     continue
             logger.debug(f'processing: {var_file}')
 
             data =  xr.open_dataset(var_file)
-
+            gt = data.rio.transform()
             ## Drop original encoding as we will redo this 
             ## to match our other data
             data = data.drop_encoding()
@@ -2012,11 +2093,15 @@ class YearlyDataset(TEMDataset):
             ## this does change lon_bnds as well, but why?
             data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
             data = data.sortby(data.lon)
+            
 
             ready_variables.append(data)
         logger.info(f'YearlyDataset.from_cmip6: datasets open = {len(ready_variables)}')
         
-        data = xr.merge(ready_variables)
+        try:
+            data = xr.merge(ready_variables)
+        except xr.MergeError:   # needs this sometimes?
+            data = xr.merge(ready_variables, compat='override')
         # return data
         data = data.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
         # return data
@@ -2068,8 +2153,9 @@ class YearlyDataset(TEMDataset):
         new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
             .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
             .rio.write_coordinate_system(inplace=True)
-        gt = (-180.0, 1.8617204339585491, 0.0, 83.75, 0.0, -1.8617204339523812)
-        new.dataset.rio.write_transform(Affine.from_gdal(*gt), inplace=True)
+        
+        # gt = (-180.0, 1.8617204339585491, 0.0, 83.75, 0.0, -1.8617204339523812)
+        new.dataset.rio.write_transform(gt, inplace=True)
 
         return new
 
@@ -2292,6 +2378,8 @@ class YearlyDataset(TEMDataset):
         else:
             kwargs['extra_attrs'] = {'data_year': self.year}
 
+        kwargs['unlimited_dims'] = ['time']
+
         super().save(out_file, **kwargs)
 
 
@@ -2395,3 +2483,9 @@ class YearlyDataset(TEMDataset):
             super().get_by_extent(minx, miny, maxx, maxy, extent_crs, **kwargs),
             self.year
         ) 
+
+    
+    def drop_leap_days(self):
+        idx = ~((self.dataset.time.dt.month == 2) & (self.dataset.time.dt.day == 29))
+        temp = self.dataset.sel(time=idx)
+        self.dataset = temp

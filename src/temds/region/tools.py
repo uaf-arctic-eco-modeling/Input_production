@@ -7,8 +7,6 @@ import geopandas as gpd
 import shapely
 from osgeo import ogr, osr
 
-
-
 def align_to_resolution(vector, resolution):
     
     minx, miny, maxx, maxy = vector.bounds.iloc[0]
@@ -86,8 +84,13 @@ def geopandas_to_ogr_dataset(geoseries, layer_name="layer"):
     return ds, layer 
 
 
-def arctic_mask_from_political_and_ecoregion_maps(global_political_map, eco_region_map, crs=6931, buffer=5000):
-    print(f"Opening {eco_region_map=}...")
+def arctic_mask_from_political_and_ecoregion_maps(global_political_map, eco_region_map, crs=6931, buffer=5000, log=None):
+    
+    msg = f"Opening {eco_region_map=}..."
+    if log == True:
+        print(msg)
+    elif log:
+        log.info(msg)
     erm = gpd.read_file(eco_region_map)
 
     eco_tundra = erm[(erm['BIOME_NAME'] == 'Tundra') | (erm['BIOME_NAME'] == 'Boreal Forests/Taiga')]
@@ -97,7 +100,12 @@ def arctic_mask_from_political_and_ecoregion_maps(global_political_map, eco_regi
     eco_north = eco_north.dissolve() 
 
     # Read the global map, 
-    print(f"Opening {global_political_map=}...")
+    msg = f"Opening {global_political_map=}..."
+    if log == True:
+        print(msg)
+    elif log:
+        log.info(msg)
+
     gpm = gpd.read_file(global_political_map)
     ak_greenland = gpm[(gpm['shapeName']=='Alaska') | (gpm['shapeGroup']=='GRL')]
     ak_greenland = ak_greenland.dissolve()
@@ -107,3 +115,25 @@ def arctic_mask_from_political_and_ecoregion_maps(global_political_map, eco_regi
     aoi = aoi.to_crs(epsg=crs)
     aoi = aoi.buffer(buffer)
     return aoi
+
+def mask_boundary_compatibility_report(mask, boundary):
+
+
+    crs_check = boundary.crs == mask.crs
+
+    resolution = mask.resolution
+    bounds = boundary.bounds.iloc[0]
+    shape_boundary= (
+        int((bounds['maxx'] - bounds['minx'])//np.abs(resolution[0])),
+        int((bounds['maxy'] - bounds['miny'])//np.abs(resolution[1]))
+    )
+    shape_mask = mask.shape
+
+    shape_check = shape_boundary == shape_mask
+
+    b_gt = (bounds['minx'], resolution[0], 0, bounds['maxy'], 0, resolution[1])
+
+    gt_check = mask.transform  == b_gt
+
+    return crs_check, shape_check, gt_check
+

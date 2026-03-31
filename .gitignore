@@ -11,3 +11,9 @@ working/
 hg-samples/**
 
 local_test_data/*
+
+*.nc
+*.xml
+*.tif
+#*.ipynb
+

@@ -1,1 +1,3 @@
 # dynamically generating version with versioningit...
+from importlib.metadata import version
+__version__ = version('temds')
