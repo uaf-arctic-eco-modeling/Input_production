@@ -7,6 +7,7 @@ from typing import Annotated
 from . import download
 from . import preprocess
 from . import common
+from . import pipeline
 
 from ..__init__ import __version__
 
@@ -15,6 +16,8 @@ HELP = """Main CLI entry point for TEMDS tools"""
 app = Typer(help=HELP, no_args_is_help=True)
 app.add_typer(download.app, name='download')
 app.add_typer(preprocess.app, name='preprocess')
+app.add_typer(pipeline.app, name='pipeline')
+
 
 def version_callback(arg):
     if arg:
