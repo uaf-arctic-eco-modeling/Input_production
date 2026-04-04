@@ -17,6 +17,34 @@ from ..tile import Tile
 from .config import PipelineConfig, AOIConfig
 from .cache import CacheManager
 
+def get_aoi_info(cache_manager: CacheManager, logger: Optional[Logger] = None)-> tuple[float, float, float, float, str]:
+    '''This needs a better name or maybe should be part of the aoi class??
+    But at least here it is reusable across steps, so 'till we think of a 
+    something better....'''
+
+    # Read the extent from the aoi raster file 
+    import rioxarray as rxr
+    with rxr.open_rasterio(cache_manager.get_path("aoi_raster")) as aoi_ds:
+        #bounds = aoi_ds.rio.bounds()
+        extent_crs = aoi_ds.rio.crs
+
+    if logger:
+        logger.debug(f'Pipeline.get_aoi_info(): Using extent from {cache_manager.get_path("aoi_raster")}')
+
+
+    # Steal this part from the soil data set creation...
+    from osgeo import gdal
+    er = gdal.Open(cache_manager.get_path("aoi_raster"))
+    # Get the extent from the extent raster
+    er_gt = er.GetGeoTransform()
+    er_minx = er_gt[0]
+    er_miny = er_gt[3]
+    er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)
+    er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
+
+    return er_minx, er_maxx, er_miny, er_maxy, extent_crs
+
+
 
 def pipeline_step(step_name: str):
     """Decorator to register and track pipeline steps.
@@ -507,27 +535,9 @@ class Pipeline:
           in_memory=False,
         )
 
-        # New implementation - simply read the extent from the aoi raster file 
-        # and subset the CRU data to that extent. This should be more flexible 
-        # and work with any rasterized AOI, not just those created by aoitools.
-        # Get extent from AOI raster
-        import rioxarray as rxr
-        with rxr.open_rasterio(cache_manager.get_path("aoi_raster")) as aoi_ds:
-            #bounds = aoi_ds.rio.bounds()
-            extent_crs = aoi_ds.rio.crs
-
-        ### Steal this part from the soil data set creation...
-        print(f'Pipeline._step_cru(): Using extent from {cache_manager.get_path("aoi_raster")}')
-        from osgeo import gdal
-        er = gdal.Open(cache_manager.get_path("aoi_raster"))
-        # Get the extent from the extent raster
-        er_gt = er.GetGeoTransform()
-        er_minx = er_gt[0]
-        er_miny = er_gt[3]
-        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
-        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
+        minx, maxx, miny, maxy, extent_crs = get_aoi_info()
         cru_subset = cru_arctic.get_by_extent(
-            minx=er_minx, maxx=er_maxx, miny=er_miny, maxy=er_maxy,
+            minx=minx, maxx=maxx, miny=miny, maxy=maxy,
             extent_crs = extent_crs,
             resolution=self.config.resolution,
             in_memory=True)
