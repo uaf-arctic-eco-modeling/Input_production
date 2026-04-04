@@ -107,6 +107,7 @@ class Pipeline:
         "soil_texture",
         "fri",
         "cru",
+        "cmip6",
         "setup_tiles",
         "process_tiles", # includes import, baseline, correction and downscaling...
         "export_tiles",  # includes resampling to TEM resolution...
@@ -253,6 +254,8 @@ class Pipeline:
                 self._step_fri(aoi, cache_manager)
             elif step_name == "cru":
                 self._step_cru(aoi, cache_manager)
+            elif step_name == "cmip6":
+                self._step_cmip6(aoi, cache_manager)
             elif step_name == "setup_tiles":
                 self._step_setup_tiles(aoi, cache_manager)
             elif step_name == "process_tiles":
@@ -556,6 +559,51 @@ class Pipeline:
 
         return output_path
     
+    @pipeline_step("cmip6")
+    def _step_cmip6(self, aoi: AOIConfig, cache_manager: CacheManager) -> Path:
+        """Load and cache CMIP6 timeseries data for AOI extent."""
+
+        import temds.datasources
+
+        aoi_raster = cache_manager.get_path("aoi_raster")
+        if not aoi_raster.exists():
+            raise FileNotFoundError(f"AOI raster not found: {aoi_raster}. Run aoi_raster step first.")
+
+        source_id = 'cmip6'
+        time_frequency = 'day'
+        experimemt_id = 'historical'
+
+        cmiphist = []
+        ssp245 = []
+
+        for year in range(1950, 2015):
+            self.logger.info(f"Loading CMIP6 historical data for year {year}...")
+            cmiphist.append(
+                temds.datasources.timeseries.YearlyDataset.from_cmip6(year, 'working/00-download/cmip6/', logger=self.logger)
+            )
+        cmiphist = temds.datasources.timeseries.YearlyTimeSeries(cmiphist, logger=self.logger)
+        from IPython import embed; embed()
+
+        cmiphist.save('working/00-download/cmip6-preprocess/cmip6-CESM2-hist/', 'hist-{year}.nc', overwrite=True, complevel=1)
+
+
+        for year in range(2015, 2040):
+            self.logger.info(f"Loading CMIP6 SSP245 data for year {year}...")
+            ssp245.append(
+                temds.datasources.timeseries.YearlyDataset.from_cmip6(year, 'working/00-download/cmip6/', logger=self.logger)
+            )
+
+        self.logger.info("CMIP6 YearlyDatasets loaded, creating YearlyTimeSeries objects...")
+        ssp245 = temds.datasources.timeseries.YearlyTimeSeries(ssp245, logger=self.logger)
+        cmiphist = temds.datasources.timeseries.YearlyTimeSeries(cmiphist, logger=self.logger)
+
+
+        # Use above method to create, then save here...        
+        self.logger.info("Saving CMIP6 YearlyTimeSeries to cache...")
+        ssp245.save('working/00-download/cmip6-preprocess/cmip6-CESM2-ssp245/', 'ssp245-2015-2040.nc')
+        #cmiphist.save('working/00-download/cmip6-preprocess/cmip6-CESM2-hist/', 'hist-1950-2015.nc')
+
+
     @pipeline_step("setup_tiles")
     def _step_setup_tiles(self, aoi: AOIConfig, cache_manager: CacheManager) -> Path:
         """Chops the AOI into tiles and makes a directory for each tile, with a

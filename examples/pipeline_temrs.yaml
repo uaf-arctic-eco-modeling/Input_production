@@ -32,6 +32,7 @@ data_sources:
   soil_texture: working/00-download/soiltexture/
   fri: synthetic  # Use "synthetic" to generate, or path to real data
   cru: working/02-arctic/cru-jra-fixed-temds/
+  cmip6: working/02-
 
 # Step-by-step configuration
 # Each step can be enabled/disabled, forced to re-run, or cached
@@ -45,7 +46,12 @@ steps:
     enabled: true
     force: false
     cache: true
-  
+
+  cmip6:
+    enabled: true
+    force: false
+    cache: true  
+
   vegetation:
     enabled: true
     force: false

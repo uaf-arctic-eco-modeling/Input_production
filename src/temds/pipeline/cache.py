@@ -55,7 +55,7 @@ class CacheManager:
         elif step_name == "worldclim":
             crs_code = self.crs.split(':')[1]
             return self.data_dir / f"{self.aoi_name}_wc_{crs_code}_{self.resolution}m.nc"
-            
+
         elif step_name == "vegetation":
             return self.data_dir / f"{self.aoi_name}_veg.nc"
             
@@ -74,6 +74,10 @@ class CacheManager:
         elif step_name == "cru":
             return self.data_dir / f"{self.aoi_name}_cru"
             
+        elif step_name == "cmip6":
+            # TODO: need more specifiers in name for ssp, model, etc
+            return self.data_dir / f"{self.aoi_name}_cmip6.nc"
+
         elif step_name == "setup_tiles":
             return self.tile_dir
 
@@ -283,6 +287,7 @@ class CacheManager:
             "soil_texture",
             "fri",
             "cru",
+            "cmip6",
             "setup_tiles",
             "process_tiles",
             "export_tiles",
