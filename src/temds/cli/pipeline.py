@@ -28,7 +28,7 @@ NAME = 'pipeline'
 # ============================================================================
 
 @app.command()
-def pipeline_run(
+def run(
     config_file: Annotated[str, typer.Argument(help="Path to pipeline YAML configuration file")],
     aoi: Annotated[Optional[List[str]], typer.Option("--aoi", "-a", help="Specific AOI(s) to process")] = None,
     from_step: Annotated[Optional[str], typer.Option("--from-step", help="Start from this step (inclusive)")] = None,
@@ -41,19 +41,19 @@ def pipeline_run(
     
     Examples:
         # Run full pipeline for all AOIs
-        temds pipeline-run pipeline.yaml
+        temds pipeline run pipeline.yaml
         
         # Run only for specific AOI
-        temds pipeline-run pipeline.yaml --aoi temrs_path_0
+        temds pipeline run pipeline.yaml --aoi temrs_path_0
         
         # Run specific step only
-        temds pipeline-run pipeline.yaml --only-step worldclim
+        temds pipeline run pipeline.yaml --only-step worldclim
         
         # Run from step to end
-        temds pipeline-run pipeline.yaml --from-step cru
+        temds pipeline run pipeline.yaml --from-step cru
         
         # Force re-run ignoring cache
-        temds pipeline-run pipeline.yaml --force-all
+        temds pipeline run pipeline.yaml --force-all
     """
     # Configure logger based on verbose flag
     log_level = temds.logger.DEBUG if verbose else temds.logger.INFO
