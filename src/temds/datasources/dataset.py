@@ -2022,9 +2022,6 @@ class YearlyDataset(TEMDataset):
         func_name = "YearlyDataset.from_cmip6"
         table=['day']
 
-        # Dynamic import - only load dapper when actually needed
-        from dapper.met import cmip_utils
-
         if variables=='all':
             variables = cmip6.SOURCE_VARS
 
@@ -2037,7 +2034,7 @@ class YearlyDataset(TEMDataset):
 
         }
         logger.debug(f'dapper Params: {params}')
-        
+
 
         # available = cmip_utils.find_available_data(params)
         # logger.info(f'YearlyDataset.from_cmip6: found {available.shape[0]} datasets')
@@ -2061,11 +2058,14 @@ class YearlyDataset(TEMDataset):
         #         available, data_path, lat_bounds=lat_bounds, lon_bounds=lon_bounds
         #     )
 
-        
-
+        sourceid = 'cmip6'
+        time_frequency = 'day'
+        experimentid = 'historical'
 
         ready_variables = []
-        for var_file in Path(data_path).glob('*.nc'):
+        files = list(Path(data_path).glob(f'{sourceid}-{time_frequency}-CESM2-{experimentid}*.nc'))
+        logger.info(f'YearlyDataset.from_cmip6: found {len(files)} files in {data_path} matching pattern')
+        for var_file in files:
             # logger.debug(f'checking: {var_file}')
             # var, model, experiment, ensamble = var_file.stem.split('_')
             var =  var_file.stem.split('-')[-1]
@@ -2083,28 +2083,27 @@ class YearlyDataset(TEMDataset):
             #     # print('ens', ensambles != [],not ensamble in ensambles)
             #     continue
             logger.debug(f'processing: {var_file}')
+            with xr.open_dataset(var_file, engine="netcdf4", chunks={'time': 365}) as ds:
+                data = ds.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
 
-            data =  xr.open_dataset(var_file)
             gt = data.rio.transform()
-            ## Drop original encoding as we will redo this 
-            ## to match our other data
+
             data = data.drop_encoding()
 
-            ## this does change lon_bnds as well, but why?
             data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
+
             data = data.sortby(data.lon)
-            
 
             ready_variables.append(data)
-        logger.info(f'YearlyDataset.from_cmip6: datasets open = {len(ready_variables)}')
-        
+
+        logger.info(f'{func_name}: datasets prepared = {len(ready_variables)}')
+
         try:
             data = xr.merge(ready_variables)
-        except xr.MergeError:   # needs this sometimes?
+        except xr.MergeError as e:   # needs this sometimes?
+            logger.warn(f'MergeError: {e}')
             data = xr.merge(ready_variables, compat='override')
-        # return data
-        data = data.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
-        # return data
+
         ## we use 'noleap' calender
         data = data.convert_calendar('noleap')
         if data.time.size != 365:
@@ -2117,10 +2116,12 @@ class YearlyDataset(TEMDataset):
             logger.error(msg)
             raise errors.YearlyTimeSeriesError(msg)
 
-        
-
-
         new = YearlyDataset(year, data, logger=logger)
+
+        # This is sort of a hack - it should somehow be checked / vetted, and
+        # synced up with the setting of the CRS down below...
+        if 'spatial_ref' in new.dataset:
+            new.dataset = new.dataset.drop_vars('spatial_ref')
 
         source = cmip6.NAME
         for std_var, var in climate_variables.aliases_for(source, 'dict').items():
@@ -2142,9 +2143,10 @@ class YearlyDataset(TEMDataset):
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(cmip6.NAME, 'dict_r')
         )
+
         verified, reasons = new.verify()
         if not verified:
-            logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
+            logger.warn(f'YearlyDataset.from_cmip6: verificaion issues: {reasons}')
 
         # data is in wgs84; is it always though?
         new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
@@ -2157,6 +2159,8 @@ class YearlyDataset(TEMDataset):
         # gt = (-180.0, 1.8617204339585491, 0.0, 83.75, 0.0, -1.8617204339523812)
         new.dataset.rio.write_transform(gt, inplace=True)
 
+        logger.info(f'{func_name}: Garbage collection...')
+        gc.collect()
         return new
 
         
