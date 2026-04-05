@@ -2028,28 +2028,6 @@ class YearlyDataset(TEMDataset):
         if variables=='all':
             variables = cmip6.SOURCE_VARS
 
-        params = {
-            'models': models,
-            'variables': variables,
-            'experiment': experiments,
-            'table': table,
-            'ensemble': ensambles,
-
-        }
-        logger.debug(f'dapper Params: {params}')
-
-
-        # available = cmip_utils.find_available_data(params)
-        # logger.info(f'YearlyDataset.from_cmip6: found {available.shape[0]} datasets')
-        # if available.shape[0] == 0:
-        #     msg = (
-        #         'YearlyDataset.from_cmip6: requested cmip6 datasets not found.'
-        #         'Check your arguments for models, expiremnts, etc.'
-        #     )
-        #     logger.error(msg)
-        #     raise errors.YearlyTimeSeriesError(msg)
-
-
         # lat_bounds=None
         # lon_bounds=None
         # if not extent is None:
