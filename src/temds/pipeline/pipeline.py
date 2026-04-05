@@ -571,7 +571,6 @@ class Pipeline:
 
         source_id = 'cmip6'
         time_frequency = 'day'
-        experimemt_id = 'historical'
 
         cmiphist = []
         ssp245 = []
@@ -579,7 +578,12 @@ class Pipeline:
         for year in range(1950, 2015):
             self.logger.info(f"Loading CMIP6 historical data for year {year}...")
             cmiphist.append(
-                temds.datasources.timeseries.YearlyDataset.from_cmip6(year, 'working/00-download/cmip6/', logger=self.logger)
+                temds.datasources.timeseries.YearlyDataset.from_cmip6(
+                    year, 
+                    'working/00-download/cmip6/', 
+                    experimentid='historical', # <- must match name in downloaded files.
+                    logger=self.logger
+                )
             )
         cmiphist = temds.datasources.timeseries.YearlyTimeSeries(cmiphist, logger=self.logger)
         from IPython import embed; embed()
@@ -590,18 +594,26 @@ class Pipeline:
         for year in range(2015, 2040):
             self.logger.info(f"Loading CMIP6 SSP245 data for year {year}...")
             ssp245.append(
-                temds.datasources.timeseries.YearlyDataset.from_cmip6(year, 'working/00-download/cmip6/', logger=self.logger)
+                temds.datasources.timeseries.YearlyDataset.from_cmip6(
+                    year, 
+                    'working/00-download/cmip6/', 
+                    experimentid='ssp245', 
+                    logger=self.logger
+                )
             )
 
         self.logger.info("CMIP6 YearlyDatasets loaded, creating YearlyTimeSeries objects...")
         ssp245 = temds.datasources.timeseries.YearlyTimeSeries(ssp245, logger=self.logger)
-        cmiphist = temds.datasources.timeseries.YearlyTimeSeries(cmiphist, logger=self.logger)
+        ssp245.save('working/00-download/cmip6-preprocess/cmip6-CESM2-ssp245/', 'ssp245-{year}.nc', overwrite=True, complevel=0)
 
 
-        # Use above method to create, then save here...        
-        self.logger.info("Saving CMIP6 YearlyTimeSeries to cache...")
-        ssp245.save('working/00-download/cmip6-preprocess/cmip6-CESM2-ssp245/', 'ssp245-2015-2040.nc')
-        #cmiphist.save('working/00-download/cmip6-preprocess/cmip6-CESM2-hist/', 'hist-1950-2015.nc')
+
+        cru = temds.datasources.timeseries.YearlyTimeSeries(Path("working/02-arctic/cru-jra-fixed-temds/"))
+
+
+        # And  load saved data here...
+        ssp245 = temds.datasources.timeseries.YearlyTimeSeries(Path('working/00-download/cmip6-preprocess/cmip6-CESM2-ssp245/'), logger=self.logger)
+        cmiphist = temds.datasources.timeseries.YearlyTimeSeries(Path('working/00-download/cmip6-preprocess/cmip6-CESM2-hist/'), logger=self.logger)
 
 
     @pipeline_step("setup_tiles")

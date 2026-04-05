@@ -1967,7 +1967,7 @@ class YearlyDataset(TEMDataset):
             download=False,
             variables = 'all',
             models=[],
-            experiments=[],
+            experimentid=None,
             ensambles=[],
             extent=None,
             logger=Logger(),
@@ -2022,6 +2022,9 @@ class YearlyDataset(TEMDataset):
         func_name = "YearlyDataset.from_cmip6"
         table=['day']
 
+        if experimentid not in ['historical', 'ssp245']:
+            raise ValueError(f"{func_name}: experiment {experimentid} is not supported!, Must be one of 'historical' or 'ssp245'.")
+
         if variables=='all':
             variables = cmip6.SOURCE_VARS
 
@@ -2060,7 +2063,6 @@ class YearlyDataset(TEMDataset):
 
         sourceid = 'cmip6'
         time_frequency = 'day'
-        experimentid = 'historical'
 
         ready_variables = []
         files = list(Path(data_path).glob(f'{sourceid}-{time_frequency}-CESM2-{experimentid}*.nc'))
