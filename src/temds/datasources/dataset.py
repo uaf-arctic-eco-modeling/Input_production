@@ -1340,6 +1340,17 @@ class TEMDataset(object):
         # driver = gdal.GetDriverByName("MEM")
 
         ## clipped shape, and geotransform
+        if resolution is None:
+            raise errors.TEMDatasetMissingResolutionError((
+                'get_by_extent_gdal needs a resolution, either from kwargs or with '
+                'class attribute `resolution` != None'
+            ))
+        if isinstance(resolution, (int, float)):
+            self.logger.debug(f'{funcname}: resolution provided as single value, using for both x and y')
+            resolution = (resolution, resolution)
+        elif isinstance(resolution, tuple) and len(resolution) == 2:
+            pass
+
         dest_x, dest_y = abs(int((maxx-minx)/resolution[0])), abs(int((maxy-miny)/resolution[1]))
         #dest_gt = minx, resolution, 0.0, miny, 0.0, resolution
         # print(dest_x, dest_y)
