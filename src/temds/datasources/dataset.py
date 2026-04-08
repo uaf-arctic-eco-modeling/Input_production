@@ -1750,9 +1750,16 @@ class TEMDataset(object):
         chunks = lookup(kwargs, 'chunks', None)
 
         self.logger.debug(f'{func_name}: loading dataset {chunks=}')
-        in_dataset = xr.open_dataset(
-            in_path, engine="netcdf4", chunks=chunks
-        )
+        try:
+            in_dataset = xr.open_dataset(
+                in_path, engine="netcdf4", chunks=chunks
+            )
+        except ValueError as e:
+            self.logger.error(f'{func_name}: Failed to open dataset with xr.open_dataset: {e}')
+            self.logger.info(f'{func_name}: Trying again with decode_cf=False')
+            in_dataset = xr.open_dataset(
+                in_path, engine="netcdf4", chunks=chunks, decode_cf=False
+            )
 
         if 'spatial_ref' in in_dataset:
             if 'crs_wkt' in in_dataset['spatial_ref'].attrs:
