@@ -219,7 +219,7 @@ class Region(object):
                     in_path, logger = new.logger
                 )
         return new
-
+    
     def import_datasource(self, name, datasource, callback = None, **kwargs):
         """Loads an item to `data` as name from a datasource. Each datasource 
         may be a ...

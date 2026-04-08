@@ -92,6 +92,7 @@ class Mask(object):
         """
         if align_extent_to_resolution:
             extent_gpd = tools.align_to_resolution(extent_gpd, resolution)
+
         bounds = extent_gpd.bounds.iloc[0]
         rds = gdal_tools.empty_dataset(
             int((bounds['maxx'] - bounds['minx'])//resolution),

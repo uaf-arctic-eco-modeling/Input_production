@@ -30,11 +30,12 @@ def era5_daily(
         years_as_range: common.YEAR_RANGE_FLAG =False,
         overwrite: common.OVERWRITE_FLAG = True,
         cleanup: common.CLEANUP_FLAG = False,
-     ):
+    ):
     """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
     formatted to be read as a YearlyDataset.
     """
     log = context.obj.log
+
 
     destination = Path(destination)
 

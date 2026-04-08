@@ -13,6 +13,7 @@ from typing import Annotated
 from typer import Argument, Option
 
 from ..logger import Logger, INFO
+from ..region.region import Region
 
 @dataclass
 class GlobalConfiguration:
@@ -32,7 +33,9 @@ class GlobalConfiguration:
     log_file: Path = None
     log_level: str = 'TODO'
     silent: bool = False
+    region_directory: Path = None
     log: Logger = field(init=False)
+    region: Region = field(init=False)
 
     def __post_init__(self):
         """Used to set up `log` with users options
@@ -40,6 +43,13 @@ class GlobalConfiguration:
         self.log = Logger(verbose_levels=INFO, write_to=self.log_file)
         if self.silent:
             self.log.suspend()
+
+        if self.region_directory:
+            self.region = self.region.Region.from_directory(
+                self.region_directory, self.log
+            )
+        else:
+            self.region = None
 
 def years_as_range_check(years: list[int], as_range: bool, default_range: list[int]) -> list | range:
     """Core function set up years uniformly among commands. When years has

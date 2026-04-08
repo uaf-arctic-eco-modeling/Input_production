@@ -1,14 +1,33 @@
 """
+Tools
+-----
+
+Tools for region creation and manipulation
 """
-
-
 import numpy as np
 import geopandas as gpd
+from pathlib import Path
 import shapely
 from osgeo import ogr, osr
 
-def align_to_resolution(vector, resolution):
-    
+from .mask import Mask
+from ..logger import Logger
+
+
+def align_to_resolution(vector: gpd.GeoSeries | gpd.GeoDataFrame, resolution: float | int) -> gpd.GeoSeries:
+    """Align the first feature in a GeoSeries to a resolution
+
+    Parameters
+    ----------
+    vector: gpd.GeoSeries | gpd.GeoDataFrame
+        vector dataset with on feature
+    resolution:
+        crs grid unit resolution to align bounds to
+
+    Returns
+    -------
+    gpd.GeoSeries
+    """
     minx, miny, maxx, maxy = vector.bounds.iloc[0]
     minx = resolution * np.floor(minx/resolution).astype(int)
     miny = resolution * np.floor(miny/resolution).astype(int)
@@ -18,7 +37,7 @@ def align_to_resolution(vector, resolution):
     return aligned
 
 
-def geopandas_to_ogr_dataset(geoseries, layer_name="layer"):
+def geopandas_to_ogr_dataset(geoseries: gpd.GeoSeries, layer_name: str ="layer") -> ogr.Dataset:
     """Convert GeoPandas GeoSeries to OGR vector dataset (in-memory)
 
     Parameters
@@ -76,13 +95,35 @@ def geopandas_to_ogr_dataset(geoseries, layer_name="layer"):
     return ds, layer 
 
 
-def arctic_mask_from_political_and_ecoregion_maps(global_political_map, eco_region_map, crs=6931, buffer=5000, log=None):
+def arctic_mask_from_political_and_ecoregion_maps(
+        global_political_map: Path, 
+        eco_region_map: Path,
+        crs: int=6931, 
+        buffer: int =5000, 
+        log: Logger= Logger()
+    ) -> gpd.GeoSeries:
+    """Create arctic mask as GeoSeries from political map and ecoregion map
+
+    Parameters
+    ----------
+    global_political_map: Path
+        ... Vector file
+    eco_region_map: Path
+        ... Vector file
+    crs: int
+        EPSG crs number
+    buffer: int 
+        buffer in pixels
+    log: Logger
+        Logger object
+
     
+    Returns
+    -------
+    gpd.GeoSeries
+    """
     msg = f"Opening {eco_region_map=}..."
-    if log == True:
-        print(msg)
-    elif log:
-        log.info(msg)
+    log.info(msg)
     erm = gpd.read_file(eco_region_map)
 
     eco_tundra = erm[(erm['BIOME_NAME'] == 'Tundra') | (erm['BIOME_NAME'] == 'Boreal Forests/Taiga')]
@@ -93,10 +134,7 @@ def arctic_mask_from_political_and_ecoregion_maps(global_political_map, eco_regi
 
     # Read the global map, 
     msg = f"Opening {global_political_map=}..."
-    if log == True:
-        print(msg)
-    elif log:
-        log.info(msg)
+    log.info(msg)
 
     gpm = gpd.read_file(global_political_map)
     ak_greenland = gpm[(gpm['shapeName']=='Alaska') | (gpm['shapeGroup']=='GRL')]
@@ -108,9 +146,21 @@ def arctic_mask_from_political_and_ecoregion_maps(global_political_map, eco_regi
     aoi = aoi.buffer(buffer)
     return aoi
 
-def mask_boundary_compatibility_report(mask, boundary):
+def mask_boundary_compatibility_report(mask: Mask, boundary: gpd.GeoSeries | gpd.GeoDataFrame) -> tuple[bool, bool, bool]:
+    """Checks the compatibility of a Mask, and the first item in a GeoSeries 
+    for the purpose of creating a Region
 
+    Parameters
+    ----------
+    mask: Mask
+        A mask object to check
+    boundary:  gpd.GeoSeries | gpd.GeoDataFrame
+        A GeoSeries to check, Only the first item is checked
 
+    Returns
+    -------
+    tuple[bool, bool, bool]
+    """
     crs_check = boundary.crs == mask.crs
 
     resolution = mask.resolution
