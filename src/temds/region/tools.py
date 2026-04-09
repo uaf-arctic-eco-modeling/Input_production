@@ -8,9 +8,9 @@ import numpy as np
 import geopandas as gpd
 from pathlib import Path
 import shapely
-from osgeo import ogr, osr
+from osgeo import ogr, osr, gdal
 
-from .mask import Mask
+# from .mask import Mask
 from ..logger import Logger
 
 
@@ -36,8 +36,15 @@ def align_to_resolution(vector: gpd.GeoSeries | gpd.GeoDataFrame, resolution: fl
     aligned =  gpd.GeoSeries(shapely.box(minx, miny, maxx, maxy ), [0], vector.crs)
     return aligned
 
+def total_extent_as_geoseries(vector: gpd.GeoSeries | gpd.GeoDataFrame, align_to=None):
+    
+    minx, miny, maxx, maxy = vector.total_bounds
+    extent =  gpd.GeoSeries(shapely.box(minx, miny, maxx, maxy ), [0], vector.crs)
+    if align_to:
+        extent = align_to_resolution(extent, align_to)
+    return extent
 
-def geopandas_to_ogr_dataset(geoseries: gpd.GeoSeries, layer_name: str ="layer") -> ogr.Dataset:
+def geopandas_to_ogr_dataset(geoseries: gpd.GeoSeries, layer_name: str ="layer") -> gdal.Dataset:
     """Convert GeoPandas GeoSeries to OGR vector dataset (in-memory)
 
     Parameters
@@ -146,7 +153,7 @@ def arctic_mask_from_political_and_ecoregion_maps(
     aoi = aoi.buffer(buffer)
     return aoi
 
-def mask_boundary_compatibility_report(mask: Mask, boundary: gpd.GeoSeries | gpd.GeoDataFrame) -> tuple[bool, bool, bool]:
+def mask_boundary_compatibility_report(mask: "Mask", boundary: gpd.GeoSeries | gpd.GeoDataFrame) -> tuple[bool, bool, bool]:
     """Checks the compatibility of a Mask, and the first item in a GeoSeries 
     for the purpose of creating a Region
 
@@ -172,10 +179,12 @@ def mask_boundary_compatibility_report(mask: Mask, boundary: gpd.GeoSeries | gpd
     shape_mask = mask.shape
 
     shape_check = shape_boundary == shape_mask
+    # print(shape_boundary,shape_mask)
 
     b_gt = (bounds['minx'], resolution[0], 0, bounds['maxy'], 0, resolution[1])
 
     gt_check = mask.transform  == b_gt
+    # print(mask.transform, b_gt)
 
     return crs_check, shape_check, gt_check
 

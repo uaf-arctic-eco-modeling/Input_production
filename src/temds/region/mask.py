@@ -1,9 +1,12 @@
 """
 """
 from pathlib import Path
+from copy import deepcopy
 
 from osgeo import gdal
 import pyproj
+import shapely
+from affine import Affine
 
 from . import tools
 from .. import gdal_tools
@@ -85,11 +88,13 @@ class Mask(object):
         return cls(rds)
 
     @classmethod
-    def from_extent(cls, extent_gpd, resolution, align_extent_to_resolution=True):
+    def from_extent(cls, extent_gpd, resolution, align_extent_to_resolution=True, fill_uniform=False):
         """create mask from extent, all values are set to 1(good)
 
         Assumes grid resolution is uniform (1000m by 1000m)
         """
+        init_boundary = deepcopy(extent_gpd)
+
         if align_extent_to_resolution:
             extent_gpd = tools.align_to_resolution(extent_gpd, resolution)
 
@@ -103,7 +108,21 @@ class Mask(object):
             gdal.GDT_Int16
         )  
         as_np = rds.ReadAsArray()
-        as_np[:] = 1
+        if fill_uniform:
+            as_np[:] = 1
+        else:
+            as_np[:] = 0
+            _,res_x, _, _, _, res_y = rds.GetGeoTransform()
+            gt = Affine.from_gdal(*rds.GetGeoTransform())
+            for col in range(rds.RasterYSize):
+                for row in range(rds.RasterXSize):
+                    minx, maxy = gt * (row, col)
+                    maxx = minx+res_x
+                    miny = maxy+res_y
+                    box = shapely.box(minx, miny, maxx, maxy)
+                    is_in = init_boundary.iloc[[0]].geometry.intersects(box).values[0]
+                    if is_in:
+                        as_np[col, row] = 1
         rds.WriteArray(as_np)
 
         return cls(rds)

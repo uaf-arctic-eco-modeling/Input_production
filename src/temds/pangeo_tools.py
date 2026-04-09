@@ -126,6 +126,9 @@ def download(save_to, zstore, time_bounds, spatial_bounds, **kwargs):
         ds[var].rio.update_encoding(climate_enc, inplace=True)
     ds.rio.write_crs('EPSG:4326',inplace=True)\
         .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)
+    
+    ds.coords['lon'] = (ds.coords['lon'] + 180) % 360 - 180
+    ds.coords['lon_bnds'] = (ds.coords['lon_bnds'] + 180) % 360 - 180
     print('saving')
     if  not Path(save_to).exists() or overwrite:
         Path(save_to).parent.mkdir(parents=True, exist_ok=True)
@@ -135,5 +138,4 @@ def download(save_to, zstore, time_bounds, spatial_bounds, **kwargs):
         raise FileExistsError(
             f'The file {save_to} exists and `overwrite` is False'
         )
-
     return ds

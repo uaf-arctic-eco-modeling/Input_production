@@ -30,7 +30,7 @@ from ..datasources import dataset, timeseries
 
 from .mask import Mask
 from .manifest import Manifest
-from .tools import mask_boundary_compatibility_report
+from .tools import mask_boundary_compatibility_report, total_extent_as_geoseries
 
 class MaskBoundaryCompatibilityError(Exception):
     """Exception for region mask and  boundary incompatibility errors
@@ -90,7 +90,11 @@ class Region(object):
             Will be raised if the CRS, transform or shapes, of the 
             boundary or mask are incompatible
         """
-        self.boundary = boundary.reset_index()
+        try:
+            self.boundary = boundary.reset_index()
+        except: # index is already reset
+            self.boundary = boundary
+        del(self.boundary['level_0'])
         if mask:
             self.mask = mask
         else:
@@ -100,7 +104,9 @@ class Region(object):
         self.data = {} 
         self.logger = logger
         self.name = kwargs['name'] if 'name' in kwargs else "Unnamed"
-        self.check_mask_compatibility(self.mask)
+
+        if not('bypass_checks' in kwargs and kwargs['bypass_checks'] == True):
+            self.check_mask_compatibility(self.mask)
 
 
     def __repr__(self):
@@ -108,6 +114,15 @@ class Region(object):
         data = ', '.join(self.data.keys())
         msg = f'Region: {self.name} (CRS: {self.crs.name}, Bounds: {self.boundary.total_bounds}, Resolution: {self.resolution}) with data for: {data}'
         return msg
+
+    def get_extent(self, crs=None, align_to=None):
+
+        boundary = self.boundary
+        if crs:
+            boundary = boundary.to_crs(crs)
+
+        return total_extent_as_geoseries(boundary, align_to).total_bounds
+
 
 
     def check_mask_compatibility(self, mask):

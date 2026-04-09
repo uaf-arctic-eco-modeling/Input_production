@@ -17,6 +17,7 @@ import cftime
 
 # from .. import cdsapi_tools
 from ..datasources import era5_daily, cmip6
+from ..region.region import Region
 from .. import logger
 from .. import climate_variables 
 from .. import pangeo_tools
@@ -97,6 +98,7 @@ def CMIP6_daily(
         # start_year: Annotated[int, Option(help="Start year to save data for.")] = None,
         # end_year: Annotated[int, Option(help="End year to save data for.")] = None,
         ensemble: Annotated[str, Option(help=f"CMIP6 ensemble/member_id (i.e. {cmip6.DEFAULT_ENSEMBLE})")] = cmip6.DEFAULT_ENSEMBLE ,
+        region: Annotated[Path, Option(help=f"")] = None
     ):
     """download cmip6 daily data
     
@@ -148,8 +150,16 @@ def CMIP6_daily(
     items = cmip6.search_pangeo(source_model, experiment, ensemble)
     log.info(f'.. Found {len(items)} items.')
 
-
     spatial_bounds = (0, 30, 360, 90)
+    if region:
+        area = Region.from_directory(region)
+
+        spatial_bounds = area.get_extent(4326, 1)
+        spatial_bounds[0]+=360
+        spatial_bounds[2]+=360
+        spatial_bounds = tuple(spatial_bounds)
+
+    log.info(f'Target bounds are {spatial_bounds}')
     for row in items.index:
         meta = items.loc[row].to_dict() 
         log.info(

@@ -8,11 +8,13 @@ TODO:
 """
 from pathlib import Path
 
-from typer import Typer, Context
+from typer import Typer, Argument, Option, Context
+from typing import Annotated
 
 import xarray as xr
 
 from .. import datasources
+from ..region.region import Region
 from . import common
 
 HELP = """Tools to preprocess data"""
@@ -65,3 +67,60 @@ def era5_daily(
             log.info(f'.. Cleanup. removing {[f.name for f in yearly_files]}.')
             [file.unlink(file) for file in yearly_files]
     log.info('Complete!')
+
+@app.command()
+def cmip6_daily(
+        context: Context,
+        destination: common.DESTINATION_DIR,
+        source: common.SOURCE_DIR,
+        years: Annotated[tuple[int, int], Argument(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
+        source_match: Annotated[str, Option(help=f"")] = '*.nc',
+        name: Annotated[str, Option(help=f"")] = 'cmpi6',
+
+        region: Annotated[Path, Option(help='region folder with manifest.yml, this will supersede the default destination path')]= None,
+
+        overwrite: common.OVERWRITE_FLAG = False,
+        # cleanup: common.CLEANUP_FLAG = False
+    ):
+    log = context.obj.log
+    data = []
+
+    start_year = None
+    end_year = None
+    if years is None:
+        for var_file in Path(source).glob(source_match):
+            ds = xr.open_dataset(var_file)
+            start_year = ds.time.values[0].year
+            end_year = ds.time.values[-1].year
+    else:
+        start_year = years[0]
+        end_year = years[1]
+    log.info(f'Processing data from {start_year} to {end_year}')
+    for year in range(start_year, end_year+1):
+        log.info(f'.. processing {year}')
+        data.append(   
+            datasources.dataset.YearlyDataset.from_cmip6(
+                year, 
+                source,
+                file_name_match=source_match
+            )
+        )
+    log.info(f'saving')
+    data = datasources.timeseries.YearlyTimeSeries(data)
+
+    try: 
+        if region:
+            log.info('Preprocessing to region, Vapo not being calculated.')
+            area = Region.from_directory(region)
+            area.import_datasource(name, data)# callback=datasources.cmip6.callback_psl_to_vapo)
+            area.export_to_directory(region, to_save=[name], update_manifest=True, overwrite=overwrite)
+        else:
+            destination_format = name+'-{year}.nc'
+            data.save(destination, destination_format, overwrite=overwrite)
+    except FileExistsError:
+        log.error('Output files exist. Cannot save unless --overwrite is passed.')
+        return
+    log.info('Complete!')
+
+    
+    

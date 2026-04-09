@@ -156,7 +156,7 @@ class TEMDataset(object):
         Property for quick access to variables in dataset
         """
         # print('vars')
-        return list(self.dataset.data_vars)
+        return [v for v in self.dataset.data_vars if v != 'spatial_ref']
     
     @property
     def units(self):
@@ -1970,7 +1970,8 @@ class YearlyDataset(TEMDataset):
             ensambles=[],
             extent=None,
             logger=Logger(),
-            calcualte_vapo=False
+            calcualte_vapo=False,
+            file_name_match = '*.nc'
         ):
         func_name = "YearlyDataset.from_cmip6"
         table=['day']
@@ -2015,8 +2016,9 @@ class YearlyDataset(TEMDataset):
 
 
         ready_variables = []
-        for var_file in Path(data_path).glob('*.nc'):
+        for var_file in Path(data_path).glob(file_name_match ):
             # logger.debug(f'checking: {var_file}')
+            # print(var_file)
             # var, model, experiment, ensamble = var_file.stem.split('_')
             var =  var_file.stem.split('-')[-1]
             # if not var in variables:
@@ -2035,6 +2037,7 @@ class YearlyDataset(TEMDataset):
             logger.debug(f'processing: {var_file}')
 
             data =  xr.open_dataset(var_file)
+            data = data.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
             gt = data.rio.transform()
             ## Drop original encoding as we will redo this 
             ## to match our other data
@@ -2042,6 +2045,8 @@ class YearlyDataset(TEMDataset):
 
             ## this does change lon_bnds as well, but why?
             data.coords['lon'] = (data.coords['lon'] + 180) % 360 - 180
+            data.coords['lon_bnds'] = (data.coords['lon_bnds'] + 180) % 360 - 180
+
             data = data.sortby(data.lon)
             
 
@@ -2053,7 +2058,7 @@ class YearlyDataset(TEMDataset):
         except xr.MergeError:   # needs this sometimes?
             data = xr.merge(ready_variables, compat='override')
         # return data
-        data = data.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
+        
         # return data
         ## we use 'noleap' calender
         data = data.convert_calendar('noleap')
@@ -2067,9 +2072,6 @@ class YearlyDataset(TEMDataset):
             logger.error(msg)
             raise errors.YearlyTimeSeriesError(msg)
 
-        
-
-
         new = YearlyDataset(year, data, logger=logger)
 
         source = cmip6.NAME
@@ -2079,12 +2081,11 @@ class YearlyDataset(TEMDataset):
                 new.dataset[var].values = climate_variables.to_std_units(
                     new.dataset[var].values, std_var, source
                 )
-                cv = climate_variables.lookup_alias(source, var)
-                unit = str(cv.std_unit)
-                # print(unit)
-                v_name = cv.name
-                new.dataset[var].attrs.update(units=unit, name=v_name)
-
+            cv = climate_variables.lookup_alias(source, var)
+            unit = str(cv.std_unit)
+            # print(unit)
+            v_name = cv.name
+            new.dataset[var].attrs.update(units=unit, name=v_name)
 
         if calcualte_vapo:
             new.dataset = cmip6.callback_psl_to_vapo(new.dataset, logger, elevation=elevation)
@@ -2092,6 +2093,7 @@ class YearlyDataset(TEMDataset):
         new.dataset = new.dataset.rename(
             climate_variables.aliases_for(cmip6.NAME, 'dict_r')
         )
+  
         verified, reasons = new.verify()
         if not verified:
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')

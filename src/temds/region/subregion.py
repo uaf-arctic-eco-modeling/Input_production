@@ -22,10 +22,16 @@ from ..logger import Logger
 from ..datasources import dataset, timeseries
 
 from .mask import Mask
+from .region import Region
 from .tools import mask_boundary_compatibility_report
 
 class MaskBoundaryCompatibilityError(Exception):
     """Exception for region mask and  boundary incompatibility errors
+    """
+    pass
+
+class TileSizeTooBigError(Exception):
+    """
     """
     pass
 
@@ -74,6 +80,8 @@ class SubregionGenerator(object):
         
     
         N_tiles_X, N_tiles_Y = self.get_tile_gridsize()
+        if N_tiles_X == 1 and N_tiles_Y==1:
+           raise TileSizeTooBigError('Subdividing this region with input tile_size_x, and tile_size_y is unnecessary as it would only create 1 tile')
     
         tile_extents = []
     
@@ -117,7 +125,8 @@ class SubregionGenerator(object):
 
         tile_info = self.tile_index.loc[index]
 
-        minx, miny, maxx, maxy = self.tile_index.loc[0].geometry.bounds
+        # minx, miny, maxx, maxy = self.tile_index.loc[0].geometry.bounds
+        minx, miny, maxx, maxy = tile_info.geometry.bounds
         
         _, resx, _, _, _, resy =  self.full_region.mask.raster.GetGeoTransform()
         
@@ -125,7 +134,7 @@ class SubregionGenerator(object):
 
         proj = self.full_region.boundary.crs.to_wkt()
         gt = minx, resx, 0, maxy, 0, resy
-        
+        # print(gt)
         new_mask = empty_dataset(
             int(nx), int(ny), proj, gt, 
             bands=1, gdal_type=gdal.GDT_Int16
@@ -133,8 +142,9 @@ class SubregionGenerator(object):
         
         
         gdal.Warp(new_mask, self.full_region.mask.raster)
+        new_mask = Mask(new_mask)
 
-        subregion = Region(self.tile_index.loc[[index]], new_mask)
+        subregion = Region(self.tile_index.loc[[index]].reset_index(), new_mask)
 
         for name, ds in self.full_region.data.items():
             subregion.import_from_datasource(name, ds)
