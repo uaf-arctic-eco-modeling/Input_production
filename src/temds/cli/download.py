@@ -38,12 +38,14 @@ def ERA5_daily(
         destination: common.DESTINATION_DIR,
         years: common.ERA5_YEARS=None,
         years_as_range: common.YEAR_RANGE_FLAG =False,
-        overwrite: common.OVERWRITE_FLAG = True,
-        cleanup: common.CLEANUP_FLAG = False,
+        # overwrite: common.OVERWRITE_FLAG = True,
+        # cleanup: common.CLEANUP_FLAG = False,
     ):
     """Downloads ERA5 daily data from ECMWF. This is a slow process.
     """
     log = context.obj.log
+    overwrite = context.obj.overwrite
+    cleanup = context.obj.cleanup
 
 
     years = common.years_as_range_check(years, years_as_range, [1940,2025])

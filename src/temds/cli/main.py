@@ -29,10 +29,17 @@ def main(
     context: Context,
     version: Annotated[bool,Option(callback=version_callback, is_eager=True)] = False,
     log_file: Annotated[Path, Option(help="Optional path to save log to")]=None,
-    silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False
-    
+    log_level: Annotated[str, Option(help="Log level")]="INFO",
+    silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False,
+    use_region: Annotated[Path, Option(help="")]=None,
+    load_data:  Annotated[bool, Option(help="")]=True,
+    overwrite: common.OVERWRITE_FLAG = False,
+    cleanup: common.CLEANUP_FLAG = False,
     ):
-    context.obj = common.GlobalConfiguration(log_file, "", silent)
+    context.obj = common.GlobalConfiguration(
+        log_file, log_level, silent, overwrite, cleanup, 
+        region_directory=use_region, import_data=load_data
+    )
     # print(context.obj)
 
 if __name__ == "__main__":

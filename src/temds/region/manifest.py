@@ -46,6 +46,9 @@ class Manifest(UserDict):
         new = cls()
         with Path(where).open('r') as fd:
             new.data = yaml.load(fd, yaml.Loader)
+
+        if new.data['data'] is None:
+            new.data['data'] = {}
         return new
         
 

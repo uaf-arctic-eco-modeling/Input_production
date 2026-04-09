@@ -5,8 +5,10 @@ CLI tools for preprocessing
 TODO:
     - better configuration of output file name
     - options for save parameters
+    - callback support in import-data
 """
 from pathlib import Path
+import sys
 
 from typer import Typer, Argument, Option, Context
 from typing import Annotated
@@ -23,6 +25,8 @@ from ..region.subregion import SubregionGenerator, TileSizeTooBigError
 from ..region.region import MaskBoundaryCompatibilityError
 from ..region.tools import align_to_resolution, mask_boundary_compatibility_report
 from ..region.mask import Mask
+from ..datasources import dataset, timeseries
+
 
 HELP = """Tools for region management"""
 
@@ -128,8 +132,53 @@ def divide(
         log.info(f'.. exporting to  {hix},{vix}')
         subregion.export_to_directory(destination/f'H{hix}-V{vix}/')
 
-
-
-
-
     log.info('Complete!')
+
+@app.command()
+def import_data(
+    context: Context,
+    region_directory: common.DESTINATION_DIR,
+    source_path: Annotated[Path, Argument(help=f"path to input data")],
+    name: Annotated[str, Argument(help=f"path to input data")] = None,
+    # overwrite: common.OVERWRITE_FLAG = False,
+    ):
+    log = context.obj.log
+    overwrite = context.obj.overwrite
+    cleanup = context.obj.cleanup
+
+    if context.obj.region: 
+        log.info('Using region from context')
+        area = context.obj.region
+        region_directory = context.obj.region_directory
+    else:
+        log.info('Using region from argument')
+        area = Region.from_directory(region_directory)
+        
+
+    if source_path is None:
+        source = context.obj.runtime_data['source']
+    else:
+        if source_path.is_file():
+            source = dataset.TEMDataset(source_path)
+            if 'year' in source.dataset.attrs:
+                source = dataset.YearlyDataset.from_TEMDataset(
+                    source, source.dataset.attrs['year']
+                )
+        elif source_path.is_dir():
+            source = timeseries.YearlyTimeSeries(source_path)
+        else:
+            log.error('Cannot load source data.')
+            sys.exit(0)
+
+    if name is None:
+        name = source_path.stem     
+
+    log.info(f'Importing dat to region {area.name} as {name}')
+    area.import_datasource(name, source)
+    try:
+        area.export_to_directory(region_directory, items=[name], update_manifest=True, overwrite=overwrite)
+    except FileExistsError:
+        log.error('Output files exist. Cannot save unless --overwrite is passed.')
+        return
+    log.info('region import-data complete!')
+    return area

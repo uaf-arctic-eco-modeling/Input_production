@@ -16,6 +16,7 @@ import xarray as xr
 from .. import datasources
 from ..region.region import Region
 from . import common
+from .region import import_data
 
 HELP = """Tools to preprocess data"""
 
@@ -30,13 +31,15 @@ def era5_daily(
         source: common.SOURCE_DIR,
         years: common.ERA5_YEARS = None,
         years_as_range: common.YEAR_RANGE_FLAG =False,
-        overwrite: common.OVERWRITE_FLAG = True,
-        cleanup: common.CLEANUP_FLAG = False,
+        # overwrite: common.OVERWRITE_FLAG = True,
+        # cleanup: common.CLEANUP_FLAG = False,
     ):
     """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
     formatted to be read as a YearlyDataset.
     """
     log = context.obj.log
+    overwrite = context.obj.overwrite
+    cleanup = context.obj.cleanup
 
 
     destination = Path(destination)
@@ -77,12 +80,14 @@ def cmip6_daily(
         source_match: Annotated[str, Option(help=f"")] = '*.nc',
         name: Annotated[str, Option(help=f"")] = 'cmpi6',
 
-        region: Annotated[Path, Option(help='region folder with manifest.yml, this will supersede the default destination path')]= None,
+        # region_directory: Annotated[Path, Option(help='region folder with manifest.yml, this will supersede the default destination path')]= None,
 
-        overwrite: common.OVERWRITE_FLAG = False,
+        # overwrite: common.OVERWRITE_FLAG = False,
         # cleanup: common.CLEANUP_FLAG = False
     ):
     log = context.obj.log
+    overwrite = context.obj.overwrite
+    cleanup = context.obj.cleanup
     data = []
 
     start_year = None
@@ -109,18 +114,20 @@ def cmip6_daily(
     data = datasources.timeseries.YearlyTimeSeries(data)
 
     try: 
-        if region:
+        if context.obj.region:
             log.info('Preprocessing to region, Vapo not being calculated.')
-            area = Region.from_directory(region)
-            area.import_datasource(name, data)# callback=datasources.cmip6.callback_psl_to_vapo)
-            area.export_to_directory(region, to_save=[name], update_manifest=True, overwrite=overwrite)
+            context.obj.runtime_data['source'] = data
+            import_data(context, None, None, name)
+            # area = Region.from_directory(region)
+            # area.import_datasource(name, data)# callback=datasources.cmip6.callback_psl_to_vapo)
+            # area.export_to_directory(region, to_save=[name], update_manifest=True, overwrite=overwrite)
         else:
             destination_format = name+'-{year}.nc'
             data.save(destination, destination_format, overwrite=overwrite)
     except FileExistsError:
         log.error('Output files exist. Cannot save unless --overwrite is passed.')
         return
-    log.info('Complete!')
+    log.info('Preprocess cmip6-daily complete!')
 
     
     

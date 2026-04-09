@@ -12,7 +12,7 @@ from typing import Annotated
 
 from typer import Argument, Option
 
-from ..logger import Logger, INFO
+from ..logger import Logger, INFO, ERROR, WARN, DEBUG
 from ..region.region import Region
 
 @dataclass
@@ -31,25 +31,40 @@ class GlobalConfiguration:
         Logger for cli application
     """
     log_file: Path = None
-    log_level: str = 'TODO'
+    log_level: str = 'INFO'
     silent: bool = False
+    overwrite: bool = False
+    cleanup: bool = False
     region_directory: Path = None
+    import_data: bool = True
     log: Logger = field(init=False)
     region: Region = field(init=False)
+    runtime_data: dict = field(init=False)
 
     def __post_init__(self):
         """Used to set up `log` with users options
         """
-        self.log = Logger(verbose_levels=INFO, write_to=self.log_file)
+        verbose_levels = {
+            'ERROR': ERROR,
+            'WARN': WARN,  
+            'INFO': INFO,
+            'DEBUG': DEBUG,
+            'NONE': []
+        }[self.log_level.upper()]
+
+        self.log = Logger(verbose_levels=verbose_levels, write_to=self.log_file)
         if self.silent:
             self.log.suspend()
 
         if self.region_directory:
-            self.region = self.region.Region.from_directory(
-                self.region_directory, self.log
+            self.region = Region.from_directory(
+                self.region_directory, self.import_data, self.log
             )
         else:
             self.region = None
+        self.runtime_data = {}
+        
+
 
 def years_as_range_check(years: list[int], as_range: bool, default_range: list[int]) -> list | range:
     """Core function set up years uniformly among commands. When years has

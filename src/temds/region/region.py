@@ -94,7 +94,7 @@ class Region(object):
             self.boundary = boundary.reset_index()
         except: # index is already reset
             self.boundary = boundary
-        del(self.boundary['level_0'])
+        del(self.boundary['level_0']) # if this is there we don't want it
         if mask:
             self.mask = mask
         else:
@@ -202,7 +202,7 @@ class Region(object):
         pass
 
     @classmethod
-    def from_directory(cls, directory: Path, logger: Logger = Logger()):
+    def from_directory(cls, directory: Path, import_data: bool = True, logger: Logger = Logger()):
         """Create a Region from a directory containing a manifest file
 
         Parameters
@@ -221,18 +221,23 @@ class Region(object):
         mask = Mask.from_file(directory / manifest['mask'])
         new = cls(boundary, mask, logger)
 
-        for item, _file in manifest['data'].items():
-            in_path = Path(directory).joinpath(_file)
-            print(in_path)
-            if in_path.is_dir():
-                new.data[item] = timeseries.YearlyTimeSeries(
-                    in_path, 
-                    logger = new.logger
-                )
-            else:
-                new.data[item] = dataset.TEMDataset(
-                    in_path, logger = new.logger
-                )
+        if import_data:
+            logger.info('Importing data')
+            for item, _file in manifest['data'].items():
+                in_path = Path(directory).joinpath(_file)
+                print(in_path)
+                if in_path.is_dir():
+                    new.data[item] = timeseries.YearlyTimeSeries(
+                        in_path, 
+                        logger = new.logger
+                    )
+                else:
+                    new.data[item] = dataset.TEMDataset(
+                        in_path, logger = new.logger
+                    )
+        else:
+            logger.info('Skipping data import')
+
         return new
     
     def import_datasource(self, name, datasource, callback = None, **kwargs):
@@ -321,7 +326,7 @@ class Region(object):
         manifest['mask'] = mask_filename
 
         for name in to_save:
-            
+            print(name)
             try:
                 ds_where = where / f'{name}.nc' 
                 self.export_dataset(ds_where, name, **kwargs)
