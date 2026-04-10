@@ -9,6 +9,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
+import sys
 
 from typer import Argument, Option
 
@@ -21,14 +22,38 @@ class GlobalConfiguration:
 
     Attributes
     ----------
-    log_file: Path
-        Optional path to save final log file to
-    log_level: 
-        Reserved for future extension
-    silent: bool
+    log_file: Path, Defaults None
+        Optional path to save final log file to. By default no file is 
+        written.
+    log_level: str
+        Sting log level. Options are 'ERROR', 'WARN', 'INFO', 'DEBUG', or
+        'NONE'
+    silent: bool, defaults False
         Flag to disable printing log messages to console.
-    logger: Logger
+    overwrite: bool, defaults False
+        Flag to indicate that overwriting of output files is allowed
+    cleanup: bool, defaults False
+        See each command for how this flag is used
+    region_directory: path, defaults None
+        Path to a directory containing data for a region, and a manifest.yml
+        file. When provided, `region` is loaded, and commands should use the 
+        regions extent, and output directory when saving results instead
+        of their destination argument
+    import_data: bool, defaults True
+        Flag to pass to Region.from_directory, When true load all data,
+        when false skip loading data which is useful in preprocessing steps
+    save_enabled: bool, defaults True
+        This flag enables saving of output/intermediate data. When set to
+        False writing of data should be disabled, which is useful when commands
+        are called as part of a chain and not from the user interface level.
+
+    log: Logger
         Logger for cli application
+    region: Region
+        Region to use for cli commands
+    runtime_data: dict
+        This dict exists to store data to pass cli functions when not
+        being called directly at the user interface level. 
     """
     log_file: Path = None
     log_level: str = 'INFO'
@@ -37,6 +62,9 @@ class GlobalConfiguration:
     cleanup: bool = False
     region_directory: Path = None
     import_data: bool = True
+    save_enabled: bool = True
+    fail_on_warn: bool = False
+    in_memory: bool = True
     log: Logger = field(init=False)
     region: Region = field(init=False)
     runtime_data: dict = field(init=False)
@@ -56,6 +84,12 @@ class GlobalConfiguration:
         if self.silent:
             self.log.suspend()
 
+        if not self.overwrite:
+            self.log.warn('WARNING overwriting data is disabled') 
+            if self.fail_on_warn:
+                self.log.info('Exit on warnings has been enabled, goodbye!')
+                sys.exit(0)
+
         if self.region_directory:
             self.region = Region.from_directory(
                 self.region_directory, self.import_data, self.log
@@ -63,6 +97,25 @@ class GlobalConfiguration:
         else:
             self.region = None
         self.runtime_data = {}
+
+        
+    
+    def callback_export_region(self, items = 'all', **kwargs):
+        if self.save_enabled:   
+            self.log.info(f'Saving {items} to region at {self.region_directory}.')
+            try:
+                kwargs['update_manifest'] = True
+                kwargs['items'] = items
+                kwargs['overwrite']=self.overwrite
+                
+                self.region.export_to_directory(
+                    self.region_directory, **kwargs
+                )
+            except FileExistsError:
+                self.log.error('Output files exist. Cannot save unless --overwrite is passed.')
+                sys.exit(0)
+        else:
+            self.log.debug('Save has been disabled')
         
 
 
@@ -120,6 +173,7 @@ def dest_file_callback(p):
     """
     p.parent.mkdir(exist_ok=True, parents=True)
     return p
+
     
 ## Uniform type for argument destination where destination is a directory
 DESTINATION_DIR = Annotated[

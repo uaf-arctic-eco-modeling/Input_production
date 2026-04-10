@@ -5,7 +5,6 @@ CLI tools for preprocessing
 TODO:
     - better configuration of output file name
     - options for save parameters
-    - callback support in import-data
 """
 from pathlib import Path
 import sys
@@ -15,6 +14,7 @@ from typing import Annotated
 
 import geopandas as gpd
 from osgeo import gdal
+import joblib
 
 
 # from .. import datasources
@@ -93,7 +93,10 @@ def create(
         return
 
 
-    new.export_to_directory(destination)
+    context.obj.region = new
+    context.obj.region_directory = destination
+    context.obj.callback_export_region()
+    # new.export_to_directory(destination)
 
     log.info('Complete!')
 
@@ -139,12 +142,13 @@ def import_data(
     context: Context,
     region_directory: common.DESTINATION_DIR,
     source_path: Annotated[Path, Argument(help=f"path to input data")],
-    name: Annotated[str, Argument(help=f"path to input data")] = None,
+    name: Annotated[str, Argument(help=f"")] = None,
     # overwrite: common.OVERWRITE_FLAG = False,
     ):
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
+    parallel = False # TODO add to context
 
     if context.obj.region: 
         log.info('Using region from context')
@@ -174,11 +178,18 @@ def import_data(
         name = source_path.stem     
 
     log.info(f'Importing dat to region {area.name} as {name}')
-    area.import_datasource(name, source)
-    try:
-        area.export_to_directory(region_directory, items=[name], update_manifest=True, overwrite=overwrite)
-    except FileExistsError:
-        log.error('Output files exist. Cannot save unless --overwrite is passed.')
-        return
+
+    with joblib.parallel_config(backend="loky", n_jobs=24, verbose=1):
+        area.import_datasource(name, source, parallel=parallel)
+
+    ## this callback checks the save_enabled and overwrite flags and
+    ## saves data if necessary 
+    context.obj.callback_export_region([name], parallel=False)
+        
+        # try:
+        #     area.export_to_directory(region_directory, items=[name], update_manifest=True, overwrite=overwrite)
+        # except FileExistsError:
+        #     log.error('Output files exist. Cannot save unless --overwrite is passed.')
+        #     return
     log.info('region import-data complete!')
     return area

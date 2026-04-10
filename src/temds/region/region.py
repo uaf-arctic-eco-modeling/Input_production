@@ -11,6 +11,8 @@ TODO:
 - logger integration
 - document import_datasource kwargs
 - port other tile features over
+- saving should fail by default if at any point a file exists including
+        The region definition stuff?
 
 """
 from pathlib import Path
@@ -94,7 +96,10 @@ class Region(object):
             self.boundary = boundary.reset_index()
         except: # index is already reset
             self.boundary = boundary
-        del(self.boundary['level_0']) # if this is there we don't want it
+        try:
+            del(self.boundary['level_0']) # if this is there we don't want it
+        except KeyError:
+            pass
         if mask:
             self.mask = mask
         else:
@@ -310,13 +315,16 @@ class Region(object):
 
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
 
-        to_save = lookup(kwargs, 'items', self.data.keys())
+        to_save = lookup(kwargs, 'items', 'all')
         boundary_filename = lookup(kwargs, 'boundary_filename', 'boundary.geojson')
         mask_filename = lookup(kwargs, 'mask_filename', 'mask.tif')
         manifest_filename = lookup(kwargs, 'manifest_filename', 'manifest.yml')
         update_manifest = lookup(kwargs, 'update_manifest', False)
 
         manifest = Manifest()
+
+        if to_save == 'all':
+            to_save = list(self.data.keys())
 
         where.mkdir(exist_ok=True, parents=True)
 

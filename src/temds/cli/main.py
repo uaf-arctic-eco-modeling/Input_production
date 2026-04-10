@@ -35,10 +35,11 @@ def main(
     load_data:  Annotated[bool, Option(help="")]=True,
     overwrite: common.OVERWRITE_FLAG = False,
     cleanup: common.CLEANUP_FLAG = False,
+    fail_on_warn:  Annotated[bool, Option(help="Flag to halt program execution when a warning is generated")]=False,
     ):
     context.obj = common.GlobalConfiguration(
         log_file, log_level, silent, overwrite, cleanup, 
-        region_directory=use_region, import_data=load_data
+        region_directory=use_region, import_data=load_data, fail_on_warn=fail_on_warn
     )
     # print(context.obj)
 
