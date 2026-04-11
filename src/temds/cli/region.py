@@ -52,7 +52,7 @@ def create(
     formatted to be read as a YearlyDataset.
     """
     log = context.obj.log
-
+    log.info('Starting region create')
 
     boundary_gpd = gpd.read_file(boundary)
     if crs:
@@ -148,7 +148,13 @@ def import_data(
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
-    parallel = False # TODO add to context
+    parallel = True # TODO add to context
+    n_process = 12
+
+    if name is None:
+        name = source_path.stem 
+
+    log.info(f'Starting region import data for {name}')
 
     if context.obj.region: 
         log.info('Using region from context')
@@ -157,7 +163,8 @@ def import_data(
     else:
         log.info('Using region from argument')
         area = Region.from_directory(region_directory)
-        
+        context.obj.region = area
+        context.obj.region_directory = Path(region_directory)
 
     if source_path is None:
         source = context.obj.runtime_data['source']
@@ -174,17 +181,17 @@ def import_data(
             log.error('Cannot load source data.')
             sys.exit(0)
 
-    if name is None:
-        name = source_path.stem     
+        
 
     log.info(f'Importing dat to region {area.name} as {name}')
 
-    with joblib.parallel_config(backend="loky", n_jobs=24, verbose=1):
+    with joblib.parallel_config(backend="loky", n_jobs=n_process, verbose=1):
         area.import_datasource(name, source, parallel=parallel)
 
     ## this callback checks the save_enabled and overwrite flags and
     ## saves data if necessary 
-    context.obj.callback_export_region([name], parallel=False)
+    with joblib.parallel_config(backend="loky", n_jobs=n_process, verbose=1):
+        context.obj.callback_export_region([name], parallel=parallel)
         
         # try:
         #     area.export_to_directory(region_directory, items=[name], update_manifest=True, overwrite=overwrite)

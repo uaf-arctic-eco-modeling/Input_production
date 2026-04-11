@@ -1240,6 +1240,7 @@ class TEMDataset(object):
 
         """
         funcname = 'TEMDataset.get_by_extent'
+        self.logger.info(f'{funcname}: Clip by entent')
         self.logger.debug(f'{funcname}: Starting with extent {minx},{miny},{maxx},{maxy}')
         if self._dataset is None:
             raise errors.UninitializedError(
@@ -1311,6 +1312,7 @@ class TEMDataset(object):
 
         """
         funcname = 'TEMDataset.get_by_extent_gdal'
+        
         self.logger.debug(f'{funcname}: Starting with extent {minx},{miny},{maxx},{maxy}')
 
         working_dataset = self.dataset
@@ -1416,15 +1418,15 @@ class TEMDataset(object):
         )
 
         # driver = gdal.GetDriverByName('GTiff')
-        driver.CreateCopy('sample-source.tif', source)
+        # driver.CreateCopy('sample-source.tif', source)
 
         ## option 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         self.logger.debug(f"{funcname}: deleting vars_dict")
 
-        driver.CreateCopy('sample-dest.tif', dest)
-        driver.CreateCopy('sample-source.tif', source)
+        # driver.CreateCopy('sample-dest.tif', dest)
+        # driver.CreateCopy('sample-source.tif', source)
         del(vars_dict)
 
         # Option 1
