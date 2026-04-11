@@ -8,21 +8,24 @@ from . import download
 from . import preprocess
 from . import region
 from . import common
+from . import statistics
+from . import downscale
 
 from ..__init__ import __version__
 
 HELP = """Main CLI entry point for TEMDS tools"""
 
 app = Typer(help=HELP, no_args_is_help=True)
-app.add_typer(download.app, name='download')
+app.add_typer(region.app,     name='region')
+app.add_typer(download.app,   name='download')
 app.add_typer(preprocess.app, name='preprocess')
-app.add_typer(region.app, name='region')
+app.add_typer(region.app,     name='statistics')
+app.add_typer(region.app,     name='downscale')
 
 def version_callback(arg):
     if arg:
         print(__version__)
         sys.exit(0)
-
 
 @app.callback()
 def main(
