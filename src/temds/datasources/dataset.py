@@ -2079,6 +2079,13 @@ class YearlyDataset(TEMDataset):
             with xr.open_dataset(var_file, engine="netcdf4", chunks={'time': 365}) as ds:
                 data = ds.sel(time=slice(f'{year}-01-01', f'{year}-12-31'))
 
+                # Ensure that the data has a spatial_ref with a valid CRS,
+                # and that it is in EPSG:4326. Without this we have problems
+                # later.
+                existing_crs = CRS.from_wkt(data.spatial_ref.attrs['crs_wkt'])
+                #existing_crs = CRS.from_cf(data.spatial_ref.attrs) # <-- alternatively
+                assert existing_crs.to_epsg() == 4326, f"{func_name}: CRS of data is not EPSG:4326, found {existing_crs.to_epsg()}. Update code to handle this CRS or reproject data to EPSG:4326 before processing."
+
             gt = data.rio.transform()
 
             data = data.drop_encoding()
