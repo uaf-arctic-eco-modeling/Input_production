@@ -1434,10 +1434,10 @@ class TEMDataset(object):
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         self.logger.debug(f"{funcname}: deleting vars_dict")
+        del(vars_dict)
 
         driver.CreateCopy('sample-dest.tif', dest)
         driver.CreateCopy('sample-source.tif', source)
-        del(vars_dict)
 
         # Option 1
         # 
@@ -1479,6 +1479,7 @@ class TEMDataset(object):
             
         ## we want these to be the center of the pixels so for x and y the range
         self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
+
         res_x = resolution[0]
         res_y = resolution[1]
 
@@ -2056,7 +2057,7 @@ class YearlyDataset(TEMDataset):
 
         ready_variables = []
         files = list(Path(data_path).glob(f'{sourceid}-{time_frequency}-CESM2-{experimentid}*.nc'))
-        logger.info(f'YearlyDataset.from_cmip6: found {len(files)} files in {data_path} matching pattern')
+        logger.info(f'{func_name}: found {len(files)} files in {data_path} matching pattern')
         for var_file in files:
             # logger.debug(f'checking: {var_file}')
             # var, model, experiment, ensamble = var_file.stem.split('_')
@@ -2100,7 +2101,7 @@ class YearlyDataset(TEMDataset):
         data = data.convert_calendar('noleap')
         if data.time.size != 365:
             msg = (
-                'YearlyDataset.from_cmip6: full year of data(noleap) not '
+                f'{func_name}: full year of data(noleap) not '
                 f'found for year: {year}, N timestps was {data.time.size}. '
                 'It should be 365. Check if data is available for the year '
                 'in CMIP6 experiment being used'
@@ -2138,7 +2139,7 @@ class YearlyDataset(TEMDataset):
 
         verified, reasons = new.verify()
         if not verified:
-            logger.warn(f'YearlyDataset.from_cmip6: verificaion issues: {reasons}')
+            logger.warn(f'{func_name}: verificaion issues: {reasons}')
 
         # data is in wgs84; is it always though?
         new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
