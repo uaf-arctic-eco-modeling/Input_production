@@ -1480,22 +1480,16 @@ class TEMDataset(object):
         ## we want these to be the center of the pixels so for x and y the range
         self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
         res_x = resolution[0]
-        x_coords = np.arange(minx+res_x/2, minx + dest_x * res_x, res_x) 
-        #y_coords = np.arange(miny+resolution/2, miny + dest_y * resolution, resolution) 
-
-        # print(miny,maxy, resolution)
         res_y = resolution[1]
-        # y_coords = np.arange(miny+res_y/2, miny + dest_y * res_y, res_y)
+
+        x_coords = np.arange(minx, maxx, res_x) + res_x/2
+
         if res_y > 0:
-            print('a')
-            y_coords = np.arange(minx+res_y/2, miny + dest_y * res_y, res_y)
-        else: 
-            print('b')
-            y_coords = np.arange(maxy+res_y/2, maxy + abs(dest_y) * res_y, res_y)
-        # print(y_coords)
-
-
-
+            self.logger.debug(f"{funcname}: positive y resolution, building y coords from miny to maxy")
+            y_coords = np.arange(miny, maxy, res_y) + res_y/2
+        else:
+            self.logger.debug(f"{funcname}: negative y resolution, building y coords from maxy to miny")
+            y_coords = np.arange(maxy, miny, res_y) + res_y/2
 
         coords={
             'x': x_coords,
