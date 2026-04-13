@@ -1368,7 +1368,7 @@ class TEMDataset(object):
         source_gt = working_dataset.rio.transform()
         # source_gt = source_gt.c, abs(source_gt.a), source_gt.b, source_gt.f, source_gt.d, abs(source_gt.e)
         source_gt = source_gt.c, source_gt.a, source_gt.b, source_gt.f, source_gt.d, source_gt.e
-        print(source_gt)
+        # print(source_gt)
 
         # gdal wants things in order, x, y, band count
         # source_dim_sizes = [source_x, source_y]
@@ -1398,8 +1398,8 @@ class TEMDataset(object):
         # dest.SetProjection(dest_crs)
         # dest.SetGeoTransform(dest_gt)
         # dest.FlushCache()
-        print(dest_gt)
-        print(dest_x, dest_y, n_ts)
+        # print(dest_gt)
+        # print(dest_x, dest_y, n_ts)
         dest = gdal_tools.empty_dataset(
             dest_x, dest_y, dest_crs, dest_gt, n_ts, gdal_type
         )
@@ -1477,10 +1477,10 @@ class TEMDataset(object):
         res_y = resolution[1]
         # y_coords = np.arange(miny+res_y/2, miny + dest_y * res_y, res_y)
         if res_y > 0:
-            print('a')
+            # print('a')
             y_coords = np.arange(minx+res_y/2, miny + dest_y * res_y, res_y)
         else: 
-            print('b')
+            # print('b')
             y_coords = np.arange(maxy+res_y/2, maxy + abs(dest_y) * res_y, res_y)
         # print(y_coords)
 

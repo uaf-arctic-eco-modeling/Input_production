@@ -143,3 +143,34 @@ def cmip6_daily(
 
 
 
+@app.command()
+def worldclim(
+        context: Context,
+        destination: common.DESTINATION_FILE,
+        source: common.SOURCE_DIR,
+        extent_file: Annotated[Path, Argument(help="path to extent raster. used to pull extent at resolution")],
+        # name: Annotated[str, Option(help=f"")] = 'worldclim',
+    ):
+    log = context.obj.log
+    overwrite = context.obj.overwrite
+    cleanup = context.obj.cleanup
+    parallel = context.obj.parallel
+    n_process = context.obj.get_n_process()
+
+    if context.obj.region:
+        extent_file = context.obj.region_directory/'mask.tif'
+        destination = context.obj.region_directory/'worldclim.nc'
+
+    data = datasources.dataset.TEMDataset.from_worldclim(
+            source,
+            download=False, 
+            extent_raster=extent_file, 
+            logger=log,
+    )
+
+    try: 
+        data.save(destination, overwrite=overwrite)
+    except FileExistsError:
+        log.error('Output files exist. Cannot save unless --overwrite is passed.')
+        return
+    log.info('Preprocess worldclim complete!')
