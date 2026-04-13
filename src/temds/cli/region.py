@@ -148,8 +148,8 @@ def import_data(
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
-    parallel = True # TODO add to context
-    n_process = 12
+    parallel = context.obj.parallel
+    n_process = context.obj.get_n_process()
 
     if name is None:
         name = source_path.stem 

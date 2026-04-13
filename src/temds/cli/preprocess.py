@@ -12,7 +12,8 @@ from typer import Typer, Argument, Option, Context
 from typing import Annotated
 
 import xarray as xr
-import sys
+from joblib import Parallel, delayed, parallel_config
+
 
 from .. import datasources
 from ..region.region import Region
@@ -89,6 +90,8 @@ def cmip6_daily(
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
+    parallel = context.obj.parallel
+    n_process = context.obj.get_n_process()
     data = []
 
     start_year = None
@@ -102,16 +105,27 @@ def cmip6_daily(
         start_year = years[0]
         end_year = years[1]
     log.info(f'Processing data from {start_year} to {end_year}')
-    for year in range(start_year, end_year+1):
-        log.info(f'.. processing {year}')
-        data.append(   
-            datasources.dataset.YearlyDataset.from_cmip6(
-                year, 
-                source,
-                file_name_match=source_match
-            )
+
+
+
+    from_cmip6 = lambda year: datasources.dataset.YearlyDataset.from_cmip6(
+        year, source,file_name_match=source_match
+    )
+    with parallel_config(backend="loky", n_jobs=n_process, verbose=1):
+        data = Parallel()(
+            delayed(from_cmip6)(year) for year in range(start_year, end_year+1)
         )
-    log.info(f'saving')
+
+    # for year in range(start_year, end_year+1):
+    #     log.info(f'.. processing {year}')
+    #     data.append(   
+    #         datasources.dataset.YearlyDataset.from_cmip6(
+    #             year, 
+    #             source,
+    #             file_name_match=source_match
+    #         )
+    #     )
+    # log.info(f'saving')
     data = datasources.timeseries.YearlyTimeSeries(data)
 
     try: 

@@ -160,6 +160,101 @@ def download_variable_for_year_month(
     
     return save_to, status
 
+def download_variable_for_date(
+        where: Path | str, variable: str, date: 'Timestamp',
+        bounds:tuple=DEFAULT_BOUNDS, overwrite:bool=False
+    ):
+    """Download data for a variable and year from ecmwf using api
+
+    Parameters
+    ----------
+    where: Path or str
+        Path to directory to save file in
+    variable: str
+        TEMDS standard variable name in API_VARIABLES
+    year: int 
+        a year from 1940 to present
+    month: int
+        month from 1 - 12 
+    bounds: tuple, default DEFAULT_BOUNDS
+        bounds as a tuple in format [max lat, min lon, min lat, max lon]
+    overwrite: Bool, default False 
+        If true overwrite downloads, otherwise don't
+
+    Returns
+    -------
+    Path, status
+        Path is path to file.
+        status, is complete, skipped, or failed
+    """
+    where = Path(where)
+    api_var = API_VARIABLES[variable]['name']
+    api_stat = API_VARIABLES[variable]['statistic']
+    request = {
+        "product_type": ["reanalysis"],
+        "variable": [api_var],
+        "year": [f"{date.year}"],
+        "month": [f'{date.month:02}'],
+        "day": [f'{date.day:02}'],
+        "daily_statistic": api_stat,
+        "time_zone": "utc+00:00",
+        "frequency": "1_hourly",
+        "area": bounds,
+        "data_format": "netcdf",
+        # "download_format": "zip",
+    }
+    save_to = where/f'{date.year}-{date.month:02}-{date.day:02}-{api_var}.nc'
+    # try:
+    if not save_to.exists() or overwrite:
+        cdsapi_tools.download(save_to, COLLECTION_ID, request)
+        status = 'complete'
+    else: 
+        status = 'skipped'
+    # except: 
+    #     status = 'failed'
+    
+    return save_to, status
+
+# def build_request_variable_date(api_var, api_stat, date, bounds):
+#     return {
+#         "product_type": ["reanalysis"],
+#         "variable": [api_var],
+#         "year": [f"{date.year}"],
+#         "month": [f'{date.month:02}'],
+#         "day": [f'{date.day:02}'],
+#         "daily_statistic": api_stat,
+#         "time_zone": "utc+00:00",
+#         "frequency": "1_hourly",
+#         "area": bounds,
+#         "data_format": "netcdf",
+#         # "download_format": "zip",
+#     }
+
+# def submit_variable_year(
+#         variable: str, year: int,
+#         bounds:tuple=DEFAULT_BOUNDS, overwrite:bool=False
+#     ):
+    
+#     requests = []
+#     api_var = API_VARIABLES[variable]['name']
+#     api_stat = API_VARIABLES[variable]['statistic']
+#     client = cdsapi_tools.get_clinet()
+#     for date in xr.date_range(f'{year}-01-01', f'{year}-12-31'):
+#         request = build_request_variable_date(api_var, api_stat, date, bounds)
+#         requests.append(client.submit(COLLECTION_ID, request))
+
+#     return client, requests
+
+    
+#     # save_to = where/f'{date.year}-{date.month:02}-{date.day:02}-{api_var}.nc'
+
+# def download_remote(where, remote):
+    
+#     save_to = where#/f'{date.year}-{date.month:02}-{date.day:02}-{api_var}.nc'
+#     results = remote.get_results()
+#     results.download(save_to)
+
+
 def merge_for_year(year: int, datasets: list[xr.Dataset]):
     """Merge all variables for a given year.
 

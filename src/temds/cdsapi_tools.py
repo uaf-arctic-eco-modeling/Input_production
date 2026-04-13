@@ -8,6 +8,13 @@ from pathlib import Path
 
 from ecmwf.datastores import Client
 
+def get_client():
+    """Get default config of ECMWF client
+
+    Parameters
+    ----------
+    """
+    return Client(progress=False, cleanup=True, sleep_max=10)
 
 def download(where: Path, collection_id: str,  request: dict):
     """download from ECMWF 
@@ -21,5 +28,6 @@ def download(where: Path, collection_id: str,  request: dict):
     request: dict
         api request
     """
-    client = Client(progress=False, cleanup=True, sleep_max=30)
+    client = get_client()
     client.retrieve(collection_id, request, target=where) 
+

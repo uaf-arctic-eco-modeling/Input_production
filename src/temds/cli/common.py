@@ -65,6 +65,8 @@ class GlobalConfiguration:
     save_enabled: bool = True
     fail_on_warn: bool = False
     in_memory: bool = True
+    parallel: bool=False
+    n_process: int=4
     log: Logger = field(init=False)
     region: Region = field(init=False)
     runtime_data: dict = field(init=False)
@@ -117,6 +119,8 @@ class GlobalConfiguration:
         else:
             self.log.debug('Save has been disabled')
         
+    def get_n_process(self):
+        return self.n_process if self.parallel else 1
 
 
 def years_as_range_check(years: list[int], as_range: bool, default_range: list[int]) -> list | range:

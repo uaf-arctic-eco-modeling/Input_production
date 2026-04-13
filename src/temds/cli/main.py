@@ -36,12 +36,15 @@ def main(
     silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False,
     use_region: Annotated[Path, Option(help="")]=None,
     load_data:  Annotated[bool, Option(help="")]=True,
+    parallel:  Annotated[bool, Option(help="")]=False,
+    n_process:  Annotated[int, Option(help="")]=4,
     overwrite: common.OVERWRITE_FLAG = False,
     cleanup: common.CLEANUP_FLAG = False,
     fail_on_warn:  Annotated[bool, Option(help="Flag to halt program execution when a warning is generated")]=False,
     ):
     context.obj = common.GlobalConfiguration(
         log_file, log_level, silent, overwrite, cleanup, 
+        parallel=parallel, n_process=n_process,
         region_directory=use_region, import_data=load_data, fail_on_warn=fail_on_warn
     )
     # print(context.obj)

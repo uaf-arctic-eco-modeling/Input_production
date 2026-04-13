@@ -22,6 +22,8 @@ from .. import logger
 from .. import climate_variables 
 from .. import pangeo_tools
 
+from joblib import Parallel, delayed, parallel_config
+
 from . import common
 
 HELP = """Tools to download data"""
@@ -46,6 +48,8 @@ def ERA5_daily(
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
+    # parallel = context.obj.parallel
+    # n_process = context.obj.n_process
 
 
     years = common.years_as_range_check(years, years_as_range, [1940,2025])
@@ -64,10 +68,30 @@ def ERA5_daily(
             log.info(f'.. Downloading {variable} for {year}.')
             if save_to_final.exists() and not overwrite:
                 log.info(f'.... Yearly file exists, download skipped.')
-            for month in range(1, 13):
-                log.info(f'.... Downloading partial {variable} for {year}-{month:02}.')
-                file, status = era5_daily.download_variable_for_year_month(
-                    destination, variable, year, month, overwrite=False
+            # client, requests = era5_daily.submit_variable_year(variable, year)
+
+            # for date in xr.date_range(f'{year}-01-01', f'{year}-12-31'):
+            #     month = date.month
+            #     day = date.day
+            #     log.info(f'.... Downloading partial {variable} for {year}-{month:02}-{day:02}.')
+            #     file, status = era5_daily.download_variable_for_date(
+            #         destination, variable, date, overwrite=False
+            #     )
+            #     if status == 'skipped':
+            #         log.info(f'...... File exists, download skipped.')
+            #     elif status == 'complete':
+            #         log.info(f'...... Download complete.')
+            #     else:
+            #         log.error(f'...... Download failed. exiting')
+            #         return # correct action?
+            #     yearly_files.append(file)
+
+            def download_helper(date):
+                month = date.month
+                day = date.day
+                log.info(f'.... Downloading partial {variable} for {year}-{month:02}-{day:02}.')
+                file, status = era5_daily.download_variable_for_date(
+                    destination, variable, date, overwrite=False
                 )
                 if status == 'skipped':
                     log.info(f'...... File exists, download skipped.')
@@ -75,10 +99,21 @@ def ERA5_daily(
                     log.info(f'...... Download complete.')
                 else:
                     log.error(f'...... Download failed. exiting')
-                    return # correct action?
-                yearly_files.append(file)
+                    raise IOError('aaaaa do something')
+                return file
+
+
+
+            with parallel_config(backend="loky", n_jobs=context.obj.get_n_process(), verbose=1):
+                yearly_files = Parallel()(
+                    delayed(download_helper)(date) for date in xr.date_range(
+                        f'{year}-01-01', f'{year}-12-31'
+                    )
+                )
+
+
             log.info(f'.... Merging partials to {save_to_final.name}')
-            datasets = [xr.open_dataset(f) for f in yearly_files]
+            datasets = [xr.open_dataset(f) for f in sorted(yearly_files)]
             final = xr.concat(datasets, dim='valid_time')
             final.to_netcdf(save_to_final)
             final.close()
