@@ -6,6 +6,7 @@ from copy import deepcopy
 from osgeo import gdal
 import pyproj
 import shapely
+import geopandas as gpd
 from affine import Affine
 
 from . import tools
@@ -126,6 +127,14 @@ class Mask(object):
         rds.WriteArray(as_np)
 
         return cls(rds)
+    
+    def export_gpd_extent(self):
+        minx, resx, _, maxy, _, resy = self.transform
+        nx, ny = self.shape
+        maxx = minx + resx*nx
+        miny = maxy + resy*ny
+
+        return gpd.GeoSeries(shapely.box(minx,miny, maxx,maxy), crs=self.crs)
     
     @classmethod
     def from_file(cls, where):

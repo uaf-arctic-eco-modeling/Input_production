@@ -38,7 +38,6 @@ from temds.util import Version
 from temds import gdal_tools
 
 
-
 ## We can better clear the memory cache on some OS's with this 
 ## trick. If libc.so.6 is not present the code dose nothing
 try:
@@ -132,6 +131,10 @@ class TEMDataset(object):
         return CRS(self.dataset.rio.crs)
     
     @property
+    def shape(self):
+        return self.dataset.rio.shape[::-1] # rio returns column major so swap
+    
+    @property
     def transform(self):
         """Property for Quick access to geo transform"""
         # print('transform')
@@ -194,9 +197,48 @@ class TEMDataset(object):
         if self.in_memory:
             self.dataset.close()
 
-    @staticmethod
+    @classmethod
+    def from_region(cls, region, in_vars = [], ds_time_dim=[], buffer_px=0, logger=Logger() ):
+        """
+        Creates new xr.Dataset for `dataset` using the extent, transform, and 
+        projection of `raster`. An optional buffer can be added to the extent
+        when the crs is not ESPG:4326.
+
+        Parameters
+        ----------
+        region: Region
+            temds region
+        in_vars: list, defaults []
+            List of variables to create `Dataset.data_vars` for
+        ds_time_dim: list, defaults []
+            The time dimension for the `Dataset`
+        buffer_px: int, default 0
+            Buffer in pixels to add to extent. When `raster` crs is EPSG:4326
+            This argument is ignored
+        logger: logger.Logger, defaults to new object
+            Logger to use for printing or saving messages
+            The default Logger will not print any messages, but a 
+            text file may be created from it by calling `logger.save`
+
+        Returns
+        -------
+        TEMDataset
+        """
+        func_name = 'TEMdataset.from_region'
+        logger.info(f'{func_name}: Initializing with extent from region: {region}')
+        return cls.from_raster_extent(
+            region.empty_gdal_dataset(), 
+            in_vars, 
+            ds_time_dim, 
+            buffer_px, 
+            logger
+        )
+
+
+
+    @classmethod
     def from_raster_extent(
-            raster, in_vars = [], ds_time_dim=[], buffer_px=0, logger=Logger()
+            cls, raster, in_vars = [], ds_time_dim=[], buffer_px=0, logger=Logger()
         ):
         """
         Creates new xr.Dataset for `dataset` using the extent, transform, and 
@@ -225,7 +267,11 @@ class TEMDataset(object):
         """
         func_name = 'TEMdataset.from_raster_extent'
         logger.info(f'{func_name}: Initializing with extent from {raster}')
-        extent_ds = gdal.Open(raster)
+        if type(raster) is str or isinstance(raster, Path):
+            # print('yo')
+            extent_ds = gdal.Open(raster)
+        else:
+            extent_ds = raster
 
         ds_crs = CRS.from_wkt(extent_ds.GetProjection() )
         x_dim = 'x'
@@ -243,9 +289,9 @@ class TEMDataset(object):
             
         gt = extent_ds.GetGeoTransform()
         minx = gt[0] - (buffer_px * extent_ds.RasterXSize)
-        miny = gt[3] - (buffer_px * extent_ds.RasterYSize)
+        maxy = gt[3] - (buffer_px * extent_ds.RasterYSize)
         maxx = minx + gt[1] * extent_ds.RasterXSize + (buffer_px * extent_ds.RasterXSize)
-        maxy = miny + gt[5] * extent_ds.RasterYSize + (buffer_px * extent_ds.RasterYSize)
+        miny = maxy + gt[5] * extent_ds.RasterYSize + (buffer_px * extent_ds.RasterYSize)
         
         extent = (minx, miny, maxx, maxy) #_warp_order
         logger.debug(f'{func_name}: extent {extent}')
@@ -258,15 +304,17 @@ class TEMDataset(object):
             f'{func_name}: out size {extent_ds.RasterXSize}, '
             f'{extent_ds.RasterYSize}'
         ))
-    
-        y_array = np.arange( miny, maxy, abs(y_res) ) + (abs(y_res)/2)
-        # lat_dim is empty if this is true, so swap min and max and redo
-        if maxy < miny: 
-            miny, maxy = maxy, miny
-            y_array = np.arange(miny,maxy, abs(y_res)) + (abs(y_res)/2)
-            miny, maxy = maxy, miny ## keep for gdal
 
-        ## do we need the dimension trick here?
+        ## y_coords should almost alaways fall into the else category
+        ## as most rasters are assumed to be top up
+        if y_res > 0:
+            # print('a') # should rarely be used
+            y_array = np.arange(miny+y_res/2, maxy,  y_res)
+        else: 
+            # print('b')
+            y_array = np.arange(miny-y_res/2, maxy,  abs(y_res))[::-1]
+        
+    
         x_array = np.arange(minx, maxx, abs(x_res)) + (abs(x_res)/2)
         rows, cols = len(y_array), len(x_array)
 
@@ -538,8 +586,8 @@ class TEMDataset(object):
 
         # slow....
         topo = TEMDataset.from_topo(
-            data_path='working/00-download/topo/',
-            extent_raster=extent_raster,
+            'working/00-download/topo/',
+            extent_raster,
             download=False,
             logger=logger,
         )
@@ -865,123 +913,71 @@ class TEMDataset(object):
     
 
 
-    @staticmethod
-    def from_topo(data_path, download=False, extent_raster=None,
-                  overwrite=False, logger=Logger(), buffer=0, 
-                  resample_alg='average'):
+    @classmethod
+    def from_topo(
+            cls, data_path, region, download=False, url=topo.URL,
+            overwrite=False, resample_alg='average', logger=Logger(),
+        ):
+        """Create dataset from raw topo data. TODO: document spesifics
 
+        Parameters
+        ----------
+        data_path: Path
+            Path to topo data (see TODO above)
+        region: region.Region
+            Extent dataset
+        download: bool, default False
+            Data is downloaded when true. If data exists overwrite must also
+            be Ture
+        overwrite: bool, default False
+            Flags if data can be overwritten
+        resample_alg: str, defaults, average
+            Algoritm for resampling elevation from source data
+        logger.Logger, defaults to new object
+            Logger to use for printing or saving messages
+            The default Logger will not print any messages, but a 
+            text file may be created from it by calling `logger.save
+
+        Returns
+        -------
+        TEMDataset
+        """
         func_name = "TEMdataset.from_topo"
-
         logger.info(f'{func_name}: Processing topography data in {data_path}')
 
-        ## download first if needed
         if download:
             logger.info(f'{func_name}: Downloading data.')
-            file_tools.download(topo.url, data_path, overwrite)
+            data_path = file_tools.download(url, data_path, overwrite)
 
-        if not Path(data_path, topo.zipped_raw).exists():
-            raise topo.FileError("Something went wrong with the download.")
+        if data_path.suffix == '.zip':
+            logger.info(f'{func_name}: Extracting data to {data_path.parent}.')
+            data_path = file_tools.extract(data_path, data_path.parent)/data_path.stem 
 
-        if not Path(data_path, topo.unzipped_raw).exists():
-            logger.info(f'{func_name}: Extracting data.')
-            file_tools.extract(Path(data_path, topo.unzipped_raw),
-                               Path(data_path, topo.zipped_raw))
-
-        if not extent_raster:
-            raise ValueError(f'{func_name}: extent_raster is required!')
-
-        logger.info(f'{func_name}: Using extent from {extent_raster}')
-        er = gdal.Open(extent_raster)
-
-        # Get the extent from the extent raster
-        er_gt = er.GetGeoTransform()
-        er_minx = er_gt[0]
-        er_miny = er_gt[3]
-        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
-        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
-
-        # get the full topography dataset in memory. This is an Arc/Info 
-        # Binary Grid format, which is a collection of a whole bunch of files,
-        # so its easier to read it with GDAL rather than the xarray tools.
-        # This is obtuse because the unzipped directory has another level, 
-        # with the same name, i.e.  mn75_grd/mn75_grd, we have to add that
-        # before gdal can figure out what/how to open the file.
         logger.info(f'{func_name}: Loading topography data.')
-        srcDS = Path(data_path, topo.unzipped_raw, topo.unzipped_raw)
-        ds = gdal.Translate("", srcDS=srcDS, format="MEM")
-        ds.FlushCache()
+        full_data = gdal.Open(data_path)
 
-        # ^---consider replacing with plain gdal open, read only.
-        # refactor to  "src" and "dest" or "aoi" and "topo" rather than ds, ds2, etc
-
-        logger.info(f'{func_name}: Reprojecting and cropping topography data.')
-        ds2 = gdal.Warp("", ds, 
-                        options=gdal.WarpOptions(format="MEM", 
-                                                 srcSRS=ds.GetSpatialRef(), 
-                                                 dstSRS=er.GetSpatialRef(), 
-                                                 xRes=er.GetGeoTransform()[1], 
-                                                 yRes=er.GetGeoTransform()[5], 
-                                                 resampleAlg='average',
-                                                 outputType=gdal.GDT_Float32,
-                                                 outputBounds=[er_minx, er_miny, er_maxx, er_maxy]))
-        ds2.FlushCache()
-        # logger.debug("Saving temp file out...")
-        # tmp = gdal.Translate("/tmp/topo_0_B.tif", ds2, format="GTiff")
-        # tmp.FlushCache()
-        # del(tmp)
-
-
+        logger.info(f'{func_name}: Computing target area elevation (gdal.warp)')
+        elevation = topo.create_elevation(full_data, region, resample_alg)
         logger.info(f'{func_name}: Computing aspect, slope, and TPI.')
-        assert np.abs(ds2.GetGeoTransform()[1]) == np.abs(ds2.GetGeoTransform()[5]), "Non-square pixels detected"
-        aspect_ds2 = gdal.DEMProcessing("", ds2, 
-                                        processing='aspect', 
-                                        options=gdal.DEMProcessingOptions(
-                                            format='MEM', 
-                                            computeEdges=True, 
-                                            scale=ds2.GetGeoTransform()[1], 
-                                            ))
-        aspect_ds2.FlushCache()
+        slope = topo.create_slope(elevation)
+        aspect = topo.create_aspect(elevation)
+        tpi = topo.create_tpi(elevation)
+        logger.info(f'{func_name}: Computing Drainage Class.')
+        drainage_class = topo.create_drainage_class(slope)
 
-        slope_ds2 = gdal.DEMProcessing("", ds2, 
-                                        processing='slope', 
-                                        options=gdal.DEMProcessingOptions(
-                                            format='MEM', 
-                                            computeEdges=True, 
-                                            slopeFormat='degree',
-                                            )) 
-        slope_ds2.FlushCache()
-
-        TPI_ds2 = gdal.DEMProcessing("", ds2, 
-                                        processing='TPI', 
-                                        options=gdal.DEMProcessingOptions(
-                                            format='MEM', 
-                                            computeEdges=True,
-                                            )) 
-        TPI_ds2.FlushCache()
-
-        # Find the drainage class. Original method used gdal_calc.py and 
-        # also factored in the mask...
-        slope = slope_ds2.ReadAsArray()
-        drainage_class = np.where( ((slope >= -0.05) & (slope <= 0.05)), 1, 0 )   
-
-        # gdal_calc.py \
-        #     -A '/Volumes/5TIV/PROCESSED/TOPO/tpi_4k_6931_mask.tif' \
-        #     -B '/Volumes/5TIV/PROCESSED/TOPO/slope_4k_6931_mask.tif' \
-        #     --outfile='/Volumes/5TIV/PROCESSED/TOPO/drainage.tif' \
-        #     --calc="numpy.where(((A >= -0.05) & (A <= 0.05) & (B <= 1.0)), 1, 0)" --NoDataValue=-9999
-
-
-        logger.info(f'{func_name}: Creating empty xarray dataset')
-        newDS = TEMDataset.from_raster_extent(extent_raster, 
-                                              in_vars='elevation aspect slope TPI drainage_class'.split(), 
-                                              ds_time_dim=[], buffer_px=0)
+        newDS = cls.from_region(
+            region, 
+            in_vars=['elevation','aspect','slope','TPI','drainage_class'],
+            ds_time_dim=[], 
+            buffer_px=0
+        )
 
         logger.info(f'{func_name}: Assigning data to the new dataset')
-        newDS.dataset['elevation'] = (['y','x'], ds2.ReadAsArray())
-        newDS.dataset['aspect'] = (['y','x'], aspect_ds2.ReadAsArray())
-        newDS.dataset['slope'] = (['y','x'], slope_ds2.ReadAsArray())
-        newDS.dataset['TPI'] = (['y','x'], TPI_ds2.ReadAsArray())
-        newDS.dataset['drainage_class'] = (['y','x'], drainage_class)
+        newDS.dataset['elevation'] = (['y','x'], elevation.ReadAsArray().astype(float))
+        newDS.dataset['aspect'] = (['y','x'], aspect.ReadAsArray().astype(float))
+        newDS.dataset['slope'] = (['y','x'], slope.ReadAsArray().astype(float))
+        newDS.dataset['TPI'] = (['y','x'], tpi.ReadAsArray().astype(float))
+        newDS.dataset['drainage_class'] = (['y','x'], drainage_class.astype(float))
 
         newDS.dataset['elevation'].attrs.update(units='m', name='Elevation')
         newDS.dataset['aspect'].attrs.update(units='degrees', name='Aspect')
@@ -990,11 +986,10 @@ class TEMDataset(object):
         newDS.dataset['drainage_class'].attrs.update(units='', name='Drainage Class (1=poorly drained, 0=well drained)')
 
         newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
-                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_crs(elevation.GetProjection(), inplace=True)\
                     .rio.write_coordinate_system(inplace=True) 
 
         return newDS
-    
 
     @staticmethod
     def from_worldclim(
@@ -1478,12 +1473,12 @@ class TEMDataset(object):
         # y_coords = np.arange(miny+res_y/2, miny + dest_y * res_y, res_y)
         if res_y > 0:
             # print('a')
-            y_coords = np.arange(minx+res_y/2, miny + dest_y * res_y, res_y)
+            y_coords = np.arange(miny+res_y/2, miny + dest_y * res_y, res_y)
         else: 
             # print('b')
             y_coords = np.arange(maxy+res_y/2, maxy + abs(dest_y) * res_y, res_y)
         # print(y_coords)
-
+        
 
 
 

@@ -17,6 +17,7 @@ from joblib import Parallel, delayed, parallel_config
 
 from .. import datasources
 from ..region.region import Region
+from ..region.mask import Mask
 from . import common
 from .region import import_data
 
@@ -174,3 +175,31 @@ def worldclim(
         log.error('Output files exist. Cannot save unless --overwrite is passed.')
         return
     log.info('Preprocess worldclim complete!')
+
+
+@app.command()
+def topo(
+        context: Context,
+        destination: common.DESTINATION_FILE,
+        source: common.SOURCE_FILE,
+        extent_file: Annotated[Path, Argument(help="path to extent raster. used to pull extent at resolution")],
+        algorithm: Annotated[str, Option(help=f"")] = 'average',
+    ):
+    log = context.obj.log
+    overwrite = context.obj.overwrite
+
+
+    if context.obj.region:
+        region = context.obj.region
+        destination = context.obj.region_directory/'topo.nc'
+
+    else: 
+        region = Region.from_mask(Mask.from_file(extent_file))
+
+    topo_ds = datasources.dataset.TEMDataset.from_topo(
+        source, region, 
+        overwrite=overwrite, resample_alg = algorithm, logger=log
+    )
+        
+    topo_ds.save(destination)
+    print('Complete.')

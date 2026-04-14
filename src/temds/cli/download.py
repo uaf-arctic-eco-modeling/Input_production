@@ -16,11 +16,10 @@ import xarray as xr
 import cftime
 
 # from .. import cdsapi_tools
-from ..datasources import era5_daily, cmip6
+from ..datasources import era5_daily, cmip6, topo
 from ..region.region import Region
-from .. import logger
-from .. import climate_variables 
-from .. import pangeo_tools
+
+from .. import pangeo_tools, file_tools
 
 from joblib import Parallel, delayed, parallel_config
 
@@ -68,6 +67,7 @@ def ERA5_daily(
             log.info(f'.. Downloading {variable} for {year}.')
             if save_to_final.exists() and not overwrite:
                 log.info(f'.... Yearly file exists, download skipped.')
+                continue
             # client, requests = era5_daily.submit_variable_year(variable, year)
 
             # for date in xr.date_range(f'{year}-01-01', f'{year}-12-31'):
@@ -167,7 +167,7 @@ def CMIP6_daily(
             return
 
     else:
-        start_year = 2016 if start_year is None else start_year
+        start_year = 2015 if start_year is None else start_year
         end_year =  2100 if end_year is None else end_year
         if start_year < 2015:
             log.error(f"Start year must be greater than or equal to  2015 for projected (ssp) experiments. Was given {start_year}.")
@@ -214,3 +214,21 @@ def CMIP6_daily(
             )
             ds.close()
     log.info('Complete!')
+
+
+@app.command()
+def elevation(
+        context: Context,
+        destination: common.DESTINATION_DIR,
+        url: Annotated[str, Option(help='URL to elevation file')] = topo.URL
+    ):
+    log = context.obj.log
+    overwrite = context.obj.overwrite
+    cleanup = context.obj.cleanup
+    log.info('downloading elevation')
+    data_path = file_tools.download(url, destination, overwrite)
+
+    log.info('extracting')
+    file_tools.extract(data_path, data_path.parent)/data_path.stem 
+
+    log.info('download elevation complete!')

@@ -82,6 +82,8 @@ def download(url: str, location: Path, overwrite: bool=False):
         location.mkdir(parents=True, exist_ok=True)
 
         r = requests.get(url)
+        if r.status_code != 200:
+            raise FileNotFoundError(f'File to download could not be found at remote: {url}')
         with local_file.open('wb') as new_file:
             new_file.write(r.content)
     else:

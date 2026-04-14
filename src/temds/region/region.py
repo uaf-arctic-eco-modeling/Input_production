@@ -29,6 +29,7 @@ from .. import corrections, downscalers
 
 from ..logger import Logger
 from ..datasources import dataset, timeseries
+from .. import gdal_tools
 
 from .mask import Mask
 from .manifest import Manifest
@@ -129,7 +130,6 @@ class Region(object):
         return total_extent_as_geoseries(boundary, align_to).total_bounds
 
 
-
     def check_mask_compatibility(self, mask):
         """Checks that a mask is compatible with `boundary`
         Parameters
@@ -207,6 +207,10 @@ class Region(object):
         pass
 
     @classmethod
+    def from_mask(cls, mask:Mask,logger: Logger = Logger(), **kwargs):
+        return cls(mask.export_gpd_extent(), mask, logger, **kwargs)
+    
+    @classmethod
     def from_directory(cls, directory: Path, import_data: bool = True, logger: Logger = Logger()):
         """Create a Region from a directory containing a manifest file
 
@@ -244,6 +248,14 @@ class Region(object):
             logger.info('Skipping data import')
 
         return new
+    
+    def check_datasource(self, datasource):
+        """checks if a datasource already matches the region"""
+        gt_check = self.transform == datasource.transform.to_gdal()
+        crs_check = self.crs == datasource.crs
+        shape_check = self.shape == datasource.shape
+        return gt_check and crs_check and shape_check
+
     
     def import_datasource(self, name, datasource, callback = None, **kwargs):
         """Loads an item to `data` as name from a datasource. Each datasource 
@@ -354,6 +366,16 @@ class Region(object):
 
         manifest.to_file(manifest_file)
         return manifest
+
+    def empty_gdal_dataset(self, n_layers=1, dtype = gdal.GDT_Float32):
+        """Create an empty gdal raster based on regions extent/crs/transform
+        """
+        _x, _y = self.shape
+        
+        new = gdal_tools.empty_dataset(
+            _x, _y, self.crs.to_wkt(), self.transform, n_layers, dtype
+        )
+        return new
 
     ## much of he tile stuff should move here
 
