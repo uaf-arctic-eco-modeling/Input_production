@@ -51,6 +51,8 @@ class Manifest(UserDict):
             new.data['data'] = {}
         return new
         
+    def add_dataset(self, name, file):
+        self.data['data'][name] = file
 
     def to_file(self, where: str | Path):
         """Saves manifest to yml file

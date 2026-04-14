@@ -18,6 +18,7 @@ from joblib import Parallel, delayed, parallel_config
 from .. import datasources
 from ..region.region import Region
 from ..region.mask import Mask
+from ..region.manifest import Manifest
 from . import common
 from .region import import_data
 
@@ -159,19 +160,24 @@ def worldclim(
     n_process = context.obj.get_n_process()
 
     if context.obj.region:
-        extent_file = context.obj.region_directory/'mask.tif'
+        region = context.obj.region
         destination = context.obj.region_directory/'worldclim.nc'
-
+    else: 
+        region = Region.from_mask(Mask.from_file(extent_file), logger=log)
     data = datasources.dataset.TEMDataset.from_worldclim(
             source,
+            region,
             download=False, 
-            extent_raster=extent_file, 
             logger=log,
             # resample_alg='bilinear'
     )
 
     try: 
         data.save(destination, overwrite=overwrite)
+        if context.obj.region:
+            man = Manifest.from_file( context.obj.region_directory/ 'manifest.yml' )
+            man.add_dataset('worldclim', destination.name)
+            man.to_file(context.obj.region_directory/ 'manifest.yml' )
     except FileExistsError:
         log.error('Output files exist. Cannot save unless --overwrite is passed.')
         return
@@ -203,4 +209,9 @@ def topo(
     )
         
     topo_ds.save(destination)
+    if context.obj.region:
+        man = Manifest.from_file( context.obj.region_directory/ 'manifest.yml' )
+        man.add_dataset('topo', 'topo.nc')
+        man.to_file(context.obj.region_directory/ 'manifest.yml' )
+
     print('Complete.')
