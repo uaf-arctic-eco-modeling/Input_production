@@ -167,6 +167,7 @@ def worldclim(
             download=False, 
             extent_raster=extent_file, 
             logger=log,
+            # resample_alg='bilinear'
     )
 
     try: 

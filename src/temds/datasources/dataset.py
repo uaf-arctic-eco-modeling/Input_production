@@ -991,14 +991,16 @@ class TEMDataset(object):
 
         return newDS
 
-    @staticmethod
+    @classmethod
     def from_worldclim(
+            cls,
             data_path, 
+            region = None,
             download=False, 
             version='2.1', 
             resolution='30s', 
             in_vars='all', 
-            extent_raster=None,
+            # extent_raster=None,
             overwrite=False, 
             logger=Logger(),
             resample_alg='bilinear'
@@ -1013,6 +1015,8 @@ class TEMDataset(object):
         data_path: path
             Path to source data location on local machine. If download is True
             the data is downloaded to this location first. 
+        region: Region
+            region to get data for
         download: Bool, default False
             If True, data is downloaded using urls generated with 
             `worldclim.url_for` 
@@ -1025,9 +1029,6 @@ class TEMDataset(object):
             If a str, should be a single var name, or `all` which will
             use all variables `worldclim.vars` 
             If a list, a list of variables in `worldclim.vars` 
-        extent_raster: Path, defaults None  
-            A raster to take the extent, crs, and resolution from.
-            If None, one of the source files is used
         overwrite: bool, defaults False 
             If true, overwrite existing data.
         logger: logger.Logger, defaults to new object
@@ -1054,31 +1055,18 @@ class TEMDataset(object):
 
         ## download first if needed
         if download: # get from web
-            logger.info(f'{func_name}: Downloading data.')
-            for var in in_vars:
-                url = worldclim.url_for(var, version, resolution)
-                logger.debug(f'{func_name}: downloading {url}')
-                file_tools.download(url, data_path, overwrite)
+            worldclim.download(data_path, in_vars, version, resolution, overwrite, logger)
 
 
         #get available data, unzip if needed
-        for var in in_vars:
-            var_dir = worldclim.name_for(var, version, resolution)
-            in_dir = Path(f'{data_path}/{var_dir}')
-            if not in_dir.exists():
-                archive = Path(f'{data_path}/{var_dir}.zip')
-                logger.debug(f'{func_name}: unzipping {archive}')
-                file_tools.extract(archive, in_dir)
-            completed[var] = in_dir
+        completed = worldclim.prepare(data_path, in_vars, version, resolution, overwrite, logger)
 
         logger.debug(
-            f'{func_name}: Initializing with extent from {extent_raster}'
+            f'{func_name}: Initializing with extent from region'
         )
-        if extent_raster is None:
-            key = list(completed.keys())[0]
-            extent_raster = list(completed[key].glob('*.tif'))[0]
-        new = YearlyDataset.from_raster_extent(
-            extent_raster, 
+        
+        new = TEMDataset.from_region(
+            region, 
             in_vars=in_vars, 
             ds_time_dim=MONTH_START_DAYS, 
             logger=logger,
@@ -1089,36 +1077,11 @@ class TEMDataset(object):
         logger.info(f"{func_name}: Initialization complete")
         logger.info(f"{func_name}: {new.dataset.rio.transform()=}")
         logger.info(f"{func_name}: {new.dataset.rio.transform().to_gdal()=}")
-
-        x_dim = 'x'
-        y_dim = 'y'
-        if new.crs == CRS.from_epsg(4326): #is this true for other crs as well?
-            x_dim = 'lon'
-            y_dim = 'lat'
-
-
-        gt = new.transform.to_gdal()
-        logger.debug(f"{func_name}: {gt=}")
-
-        minx, miny = gt[0], gt[3]
-        maxx = minx + abs(gt[1]) * new.dataset[x_dim].size
-        maxy = miny + abs(gt[5]) * new.dataset[y_dim].size
-
-        # Problem was here: we calc maxy using the abs(), so it gets rid of 
-        # the negative sign, which is what we need for the y direction.
-        # and then we assign maxy to extent...BUT 
-        # when calling the gdal_tools.empty_dataset, we use the gt which is
-        # the original geotransform, which has the negative y direction!!
-
-        extent = (minx, miny, maxx, maxy) #_warp_order
         logger.info(
-            f'{func_name}: Running gdal.Warp to extent {extent} on all data'
+            f'{func_name}: Running gdal.Warp to extent {region.get_extent()} on all data'
         )
 
-        # TODO: verify names
-        # PROBLREMS SEEMS TO BE HERE...not sure if this is correct and the
-        # other ones (cru) need to be renamed like this, or if this is the one that is wrong
-
+        result = region.empty_gdal_dataset()
         for var in in_vars:
             cv = climate_variables.lookup_alias(worldclim.NAME, var)
             unit = cv.std_unit.name
@@ -1139,35 +1102,14 @@ class TEMDataset(object):
                     f'{func_name}: loading {var} data from {data_raster} for '
                     f'month {month} at index {idx}'
                 ))
-                
-                # Explicitly create destination dataset of the correct size and
-                # with the geo ref info assigned. 
-                # 
-                # It is important here to use abs() on the pixel size in y
-                # direction because gdal_tools.empty_dataset uses that to create
-                # the geotransform and if it is negative, the data gets flipped
-                # upside down (and shifted south). Assume the issue would be
-                # happen in the x direction as well, but we don't seem to
-                # encounter any negative x resolutions.
-                result = gdal_tools.empty_dataset(new.dataset[x_dim].size, 
-                                                  new.dataset[y_dim].size, 
-                                                  new.crs.to_wkt(), (gt[0], abs(gt[1]), gt[2], gt[3], gt[4], abs(gt[5])))
-                # Now warp into this empty dataset...
-                _ = gdal.Warp(
+  
+                gdal.Warp(
                     result, data_raster, 
                     resampleAlg=resample_alg,
-                    dstNodata=-3.4e+38,
-                    outputType=gdal.GDT_Float32,
+                    # dstNodata=-3.4e+38,
+                    # outputType=gdal.GDT_Float32,
                 )
-
-                # At this point if we plot the pixels, 
-                # it looks like it is grabbing the data to the south of what is
-                # requested unless we take the abs() above...
                 pixels = result.ReadAsArray()
-
-                # This did not seem to be needed after fixing with abs() above.
-                #if gt[5] < 0: # filp flop if res_y is negative
-                #    pixels = pixels[::-1]
 
                 pixels[pixels <= -3e30] = np.nan # fix
                 
