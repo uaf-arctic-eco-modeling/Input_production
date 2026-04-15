@@ -16,6 +16,7 @@ from ..tile import Tile
 
 from .config import PipelineConfig, AOIConfig
 from .cache import CacheManager
+from temds import tile
 
 def get_aoi_info(cache_manager: CacheManager, logger: Optional[Logger] = None)-> tuple[float, float, float, float, str]:
     '''This needs a better name or maybe should be part of the aoi class??
@@ -614,6 +615,122 @@ class Pipeline:
         # And  load saved data here...
         ssp245 = temds.datasources.timeseries.YearlyTimeSeries(Path('working/00-download/cmip6-preprocess/cmip6-CESM2-ssp245/'), logger=self.logger)
         cmiphist = temds.datasources.timeseries.YearlyTimeSeries(Path('working/00-download/cmip6-preprocess/cmip6-CESM2-hist/'), logger=self.logger)
+
+
+
+
+        cru = temds.datasources.timeseries.YearlyTimeSeries(Path("working/02-arctic/cru-jra-fixed-temds/"))
+
+        import geopandas as gpd
+        boundary = gpd.read_file(aoi.vector_file)
+
+        #topo = cache_manager.get_path("topography")
+
+        # Open the boundary file (geojson)
+        # get the bounds of the raster for the aoi
+        # load the topo and worldclim from the cache
+        # make a tile with the following dataset 
+        # - cru 
+        # - cmip6
+
+
+
+        ###############
+        #     
+        # Get tile index from setup_tiles output
+        tile_dir = cache_manager.get_path("setup_tiles")
+        tile_index_path = tile_dir / "tile_index.geojson"
+        if not tile_index_path.exists():
+            raise FileNotFoundError(f"Tile index not found: {tile_index_path}. Run setup_tiles step first.")
+        
+        # Load tile index to get available tiles
+        import geopandas as gpd
+        tile_index = gpd.read_file(tile_index_path)
+        
+        # Determine which tiles to process
+        if self.config.tile_config.tile_indices:
+            tiles_to_process = self.config.tile_config.tile_indices
+        elif self.config.tile_config.all_tiles:
+            # Use 'tile_id' column which has format like 'H01_V02'
+            tiles_to_process = tile_index['tile_id'].tolist()
+        else:
+            self.logger.info("No tiles specified for processing")
+            return
+        
+        self.logger.info(f"Processing {len(tiles_to_process)} tile(s)")
+        
+        # Process each tile
+        for tile_idx in tiles_to_process:
+
+            self.logger.info(f"  Processing tile {tile_idx}")
+
+            # Check if tile already processed (has valid manifest)
+            step_config = self.config.get_step_config("tiles")
+            if step_config.cache and not step_config.force and not self.force_all:
+                pass # TODO, check if tile has manifest has cmip6 and cru data, and if so skip processing
+            
+            # Tile not in cache, (or cache invalid), so we need to process it
+
+            # Get tile extent from index
+            tile_row = tile_index[tile_index['tile_id'] == tile_idx]
+            if tile_row.empty:
+                self.logger.warn(f"  Tile {tile_idx} not found in index")
+                return
+            
+            extent = tile_row.iloc[0].geometry.bounds  # (minx, miny, maxx, maxy)
+            self.logger.info(f"  Tile {tile_idx} extent: {extent}")
+
+            def convert(x):
+                # Convert 'H01_V02' to (1, 2)
+                parts = x.split('_')
+                h = int(parts[0][1:])  # Remove 'H' and convert to int
+                v = int(parts[1][1:])  # Remove 'V' and convert to int
+                return (h, v)
+    
+
+
+
+            # Create tile object
+            tile = Tile(
+                index=convert(tile_idx),
+                extent=extent,
+                resolution=self.config.resolution,
+                crs=self.config.crs,
+                buffer_px=0,
+                logger=self.logger
+            )
+            tile.load_from_directory(cache_manager.get_path("process_tiles", tile_index=tile_idx) / tile_idx)
+        
+        
+            tile.import_and_normalize('ssp245', ssp245, False, 
+                                    callback=temds.datasources.cmip6.callback_psl_to_vapo, 
+                                    elevation=tile.data['topography'].dataset.elevation)
+
+            tile.import_and_normalize('cmiphist', cmiphist, False,
+                                    callback=temds.datasources.cmip6.callback_psl_to_vapo,
+                                    elevation=tile.data['topography'].dataset.elevation)
+
+            tile.save('working/03-temrs_site7/tiles/', items=['ssp245'])
+            tile.save('working/03-temrs_site7/tiles/', items=['cmiphist'])
+
+            tile.calculate_climate_baseline(1970, 2000, 'cmip-baseline', 'cmiphist') 
+            corr_params = {
+            # 'tair_max': {'function': 'temperature', 'reference': 'tair_max','baseline':'tair_max', 'name': 'tair_max'},
+            # 'tair_min': {'function': 'temperature', 'reference': 'tair_min','baseline':'tair_min', 'name': 'tair_min'},
+            'tair_avg': {'function': 'temperature'},# 'reference': 'tair_avg','baseline':'tair_mp', 'name': 'tair_avg'},
+            'prec': {'function': 'precipitation'},# 'reference': 'prec','baseline':'pre', 'name': 'prec'},
+            'vapo': {'function': 'vapor-pressure'},#  'reference': 'vapo','baseline':'vapo', 'name': 'vapo'},
+            'nirr': {'function': 'radiation'},#  'reference': 'nirr','baseline':'nirr', 'name': 'nirr'},
+            }
+            tile.calculate_climate_baseline(1970, 2000, 'cru-downscaled-ref', 'cru-downscaled')
+
+            ds_params = {
+            'tair_avg': {'function': 'temperature'},
+            'prec':     {'function': 'precipitation'},
+            'vapo':     {'function': 'vapor-pressure'},
+            'nirr':     {'function':'radiation'},
+            }
+            tile.calculate_correction_factors('cmip-baseline', 'cru-downscaled-ref', corr_params, factor_id='correction-factors-cmip')
 
 
     @pipeline_step("setup_tiles")
