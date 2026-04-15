@@ -285,10 +285,13 @@ class Region(object):
         self.logger.info(
             f'importing {name} from {datasource} for the extent: {minx}, {miny}, {maxx}, {maxy}.'
         )
-        kwargs['dest_gt'] = self.mask.raster.GetGeoTransform()
-        self.data[name] = datasource.get_by_extent(
-            minx, miny, maxx, maxy, self.crs, **kwargs
-        )
+        if self.check_datasource(datasource): # the datasource is region ready
+            self.data[name] = datasource
+        else:
+            kwargs['dest_gt'] = self.mask.raster.GetGeoTransform()
+            self.data[name] = datasource.get_by_extent(
+                minx, miny, maxx, maxy, self.crs, **kwargs
+            )
         if callback is not None:
             if isinstance(self.data[name], dataset.TEMDataset ):
                 self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)

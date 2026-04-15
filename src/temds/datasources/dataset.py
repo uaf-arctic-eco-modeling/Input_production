@@ -799,14 +799,10 @@ class TEMDataset(object):
         # dunno why, but this data comes out flipped, so we reverse the y axis here
         logger.info(f'{func_name}: Assigning data to the new dataset')
         newDS.dataset['veg_class'] = (
-            ['y','x'], 
-            (
+            ['y','x'], ( 
                 np.reshape(
-                    ecotype['CMT_num'], 
-                    (
-                        region.shape[1],region.shape[0]
-                    )
-                )
+                    ecotype['CMT_num'], (region.shape[1],region.shape[0])
+                ).astype(float) # need to figure out issue with saving int data
             )
         )
 
