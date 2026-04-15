@@ -468,62 +468,24 @@ class TEMDataset(object):
         ):
         func_name = "TEMdataset.from_vegetation"
 
-        logger.info(f'{func_name}: Processing vegetation data in ...')
+        logger.info(f'{func_name}: Processing vegetation data from: ')
+        logger.info(f'               {land_cover_raster}')
+        logger.info(f'               {land_cover_classes}')
+        logger.info(f'               {global_political_map}')
+        logger.info(f'               {eco_region_map}')
 
-        extent_raster = region.empty_gdal_dataset()
 
         if download:
             raise NotImplementedError('Vegetation download not implemented yet!')
-            #logger.info(f'{func_name}: Downloading data.')
-            #file_tools.download_all_files(vegetation.url_iem_veg, data_path, overwrite)
-        
-        # Extent raster is likely something small(ish) and in projection 6931.
-        # need to reproject it to wgs84 before using it as a bbox.
 
         logger.info(f'{func_name}: Reading shapefiles')
 
-        # naieve hardcoded full extents, wgs84
-        #political_shp = gpd.read_file("working/00-download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp", bbox=(-180, 40, 180, 90))
-        #eco_shp = gpd.read_file("working/00-download/mask/Ecoregions2017/Ecoregions2017.shp", bbox=(-180, 40, 180, 90))
-
-        # ER = rio.open(extent_raster)
-
-        # assert ER.crs.to_epsg() == 6931, "Extent raster must be in EPSG:6931"
-
-        # ext_bnds_wgs84 = rio.warp.transform_bounds(ER.crs.to_epsg(), 4326, *ER.bounds)
-
         political_shp = gpd.read_file(global_political_map)
         eco_shp = gpd.read_file(eco_region_map)
+        #clip to broad area in 4326 then clip to exact area in region.crs
         political_shp = political_shp.clip(region.get_extent('4326', True)).to_crs(region.crs).clip(region.get_extent())
         eco_shp = eco_shp.clip(region.get_extent('4326', True)).to_crs(region.crs).clip(region.get_extent())
         
-
-        
-        # # Using bbox to read the file doesn't clip the polygons, so we need to clip them.
-        # # To do this we need the extent raster as a vector
-        # # and then use that to clip the shapefiles.
-
-        # def raster_extent_to_geoseries(raster_path):
-        #     """Convert raster extent to GeoSeries for use in from_vegetation"""
-        #     with rio.open(raster_path) as src:
-        #         bounds = src.bounds
-        #         polygon = shapely.geometry.box(bounds.left, bounds.bottom, bounds.right, bounds.top)
-                
-        #         # Create GeoSeries with proper CRS
-        #         geoseries = gpd.GeoSeries([polygon], crs=src.crs)
-                
-        #     return geoseries
-        
-        # extent_geoseries = raster_extent_to_geoseries(extent_raster)
-        # extent_geoseries_wgs84 = extent_geoseries.to_crs(4326)
-
-        # # Use for clipping
-        # political_shp = political_shp.clip(extent_geoseries_wgs84)
-        # eco_shp = eco_shp.clip(extent_geoseries_wgs84)
-
-        # logger.info(f'{func_name}: Reprojecting shapefiles to extent raster CRS: {ER.crs.to_epsg()}')
-        # political_shp = political_shp.to_crs(ER.crs.to_epsg())
-        # eco_shp = eco_shp.to_crs(ER.crs.to_epsg())
 
         logger.info(f'{func_name}: Processing political shapefile')
 
@@ -593,17 +555,12 @@ class TEMDataset(object):
         burn_gdf('/tmp/ecobiome_raster_temp_from_veg.tif', ecobiome_geo_df, 'ecobiome_idx', meta)
         burn_gdf('/tmp/realm_raster_temp_from_veg.tif', realm_geo_df, 'realm_idx', meta)
 
+        extent_raster = region.empty_gdal_dataset()
         logger.info(f"{func_name}: Convert the TEM_Landcover_V4 to match the  AOI raster in extents and resolution")
         gdal.Warp(
             extent_raster,
             land_cover_raster,
             options=gdal.WarpOptions(
-                # format='GTiff',
-                # srcSRS='EPSG:6931',
-                # dstSRS='EPSG:6931',
-                # xRes=ER.res[0],
-                # yRes=ER.res[1],
-                # outputBounds=ER.bounds,
                 resampleAlg='mode',
             ))
         extent_raster.FlushCache()
@@ -611,17 +568,18 @@ class TEMDataset(object):
         driver.CreateCopy("/tmp/TEM_Landcover_V4_temp_from_veg.tif",extent_raster)
         del(driver)
 
-        # # slow....
+       
         if 'topo' in region.data:
             topo = region.data['topo']
         else:
             raise NotImplementedError('Need to add back options to load topo for raw/or other preprocessed data')
-        # topo = TEMDataset.from_topo(
-        #     'working/00-download/topo/',
-        #     extent_raster,
-        #     download=False,
-        #     logger=logger,
-        # )
+            # # slow.... for large areas
+            # topo = TEMDataset.from_topo(
+            #     'working/00-download/topo/',
+            #     extent_raster,
+            #     download=False,
+            #     logger=logger,
+            # )
 
         # Make sure we only write out the variable we are interested in.
         topo.dataset['drainage_class'].astype(np.int32).rio.to_raster("/tmp/drainage_raster_temp_from_veg.tif")
