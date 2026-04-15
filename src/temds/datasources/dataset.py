@@ -455,12 +455,22 @@ class TEMDataset(object):
 
         return newDS
 
-    @staticmethod
-    def from_vegetation(data_path, extent_raster=None, download=False,
-                          overwrite=False, logger=Logger(), buffer=0):
+    @classmethod
+    def from_vegetation(
+            cls,
+            land_cover_raster: Path,
+            land_cover_classes: Path,
+            global_political_map: Path, 
+            eco_region_map: Path,
+            region, 
+            download=False,
+            overwrite=False, logger=Logger(), buffer=0
+        ):
         func_name = "TEMdataset.from_vegetation"
 
-        logger.info(f'{func_name}: Processing vegetation data in {data_path}')
+        logger.info(f'{func_name}: Processing vegetation data in ...')
+
+        extent_raster = region.empty_gdal_dataset()
 
         if download:
             raise NotImplementedError('Vegetation download not implemented yet!')
@@ -476,42 +486,44 @@ class TEMDataset(object):
         #political_shp = gpd.read_file("working/00-download/mask/geoBoundariesCGAZ_ADM1/geoBoundariesCGAZ_ADM1.shp", bbox=(-180, 40, 180, 90))
         #eco_shp = gpd.read_file("working/00-download/mask/Ecoregions2017/Ecoregions2017.shp", bbox=(-180, 40, 180, 90))
 
-        ER = rio.open(extent_raster)
+        # ER = rio.open(extent_raster)
 
-        assert ER.crs.to_epsg() == 6931, "Extent raster must be in EPSG:6931"
+        # assert ER.crs.to_epsg() == 6931, "Extent raster must be in EPSG:6931"
 
-        ext_bnds_wgs84 = rio.warp.transform_bounds(ER.crs.to_epsg(), 4326, *ER.bounds)
+        # ext_bnds_wgs84 = rio.warp.transform_bounds(ER.crs.to_epsg(), 4326, *ER.bounds)
 
-        political_shp = gpd.read_file(temds.datasources.vegetation.political_shp_path, 
-                                      bbox=ext_bnds_wgs84)
-        eco_shp = gpd.read_file(temds.datasources.vegetation.eco_shp_path, 
-                                bbox=ext_bnds_wgs84)
+        political_shp = gpd.read_file(global_political_map)
+        eco_shp = gpd.read_file(eco_region_map)
+        political_shp = political_shp.clip(region.get_extent('4326', True)).to_crs(region.crs).clip(region.get_extent())
+        eco_shp = eco_shp.clip(region.get_extent('4326', True)).to_crs(region.crs).clip(region.get_extent())
         
-        # Using bbox to read the file doesn't clip the polygons, so we need to clip them.
-        # To do this we need the extent raster as a vector
-        # and then use that to clip the shapefiles.
 
-        def raster_extent_to_geoseries(raster_path):
-            """Convert raster extent to GeoSeries for use in from_vegetation"""
-            with rio.open(raster_path) as src:
-                bounds = src.bounds
-                polygon = shapely.geometry.box(bounds.left, bounds.bottom, bounds.right, bounds.top)
-                
-                # Create GeoSeries with proper CRS
-                geoseries = gpd.GeoSeries([polygon], crs=src.crs)
-                
-            return geoseries
         
-        extent_geoseries = raster_extent_to_geoseries(extent_raster)
-        extent_geoseries_wgs84 = extent_geoseries.to_crs(4326)
+        # # Using bbox to read the file doesn't clip the polygons, so we need to clip them.
+        # # To do this we need the extent raster as a vector
+        # # and then use that to clip the shapefiles.
 
-        # Use for clipping
-        political_shp = political_shp.clip(extent_geoseries_wgs84)
-        eco_shp = eco_shp.clip(extent_geoseries_wgs84)
+        # def raster_extent_to_geoseries(raster_path):
+        #     """Convert raster extent to GeoSeries for use in from_vegetation"""
+        #     with rio.open(raster_path) as src:
+        #         bounds = src.bounds
+        #         polygon = shapely.geometry.box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+                
+        #         # Create GeoSeries with proper CRS
+        #         geoseries = gpd.GeoSeries([polygon], crs=src.crs)
+                
+        #     return geoseries
+        
+        # extent_geoseries = raster_extent_to_geoseries(extent_raster)
+        # extent_geoseries_wgs84 = extent_geoseries.to_crs(4326)
 
-        logger.info(f'{func_name}: Reprojecting shapefiles to extent raster CRS: {ER.crs.to_epsg()}')
-        political_shp = political_shp.to_crs(ER.crs.to_epsg())
-        eco_shp = eco_shp.to_crs(ER.crs.to_epsg())
+        # # Use for clipping
+        # political_shp = political_shp.clip(extent_geoseries_wgs84)
+        # eco_shp = eco_shp.clip(extent_geoseries_wgs84)
+
+        # logger.info(f'{func_name}: Reprojecting shapefiles to extent raster CRS: {ER.crs.to_epsg()}')
+        # political_shp = political_shp.to_crs(ER.crs.to_epsg())
+        # eco_shp = eco_shp.to_crs(ER.crs.to_epsg())
 
         logger.info(f'{func_name}: Processing political shapefile')
 
@@ -549,51 +561,70 @@ class TEMDataset(object):
                 out.write_band(1, burned)
 
         files = [
-            '/tmp/country_raster_6931_4000m.tiff',
-            '/tmp/state_raster_6931_4000m.tiff',
-            '/tmp/eco_raster_6931_4000m.tiff',
-            '/tmp/biome_raster_6931_4000m.tiff',
-            '/tmp/ecobiome_raster_6931_4000m.tiff',
-            '/tmp/realm_raster_6931_4000m.tiff',
-            '/tmp/TEM_Landcover_V4_6931_4000m.tiff',
-            '/tmp/drainage_raster_6931_4000m.tiff',
+            '/tmp/country_raster_temp_from_veg.tif',
+            '/tmp/state_raster_temp_from_veg.tif',
+            '/tmp/eco_raster_temp_from_veg.tif',
+            '/tmp/biome_raster_temp_from_veg.tif',
+            '/tmp/ecobiome_raster_temp_from_veg.tif',
+            '/tmp/realm_raster_temp_from_veg.tif',
+            '/tmp/TEM_Landcover_V4_temp_from_veg.tif',
+            '/tmp/drainage_raster_temp_from_veg.tif',
         ]
         [os.unlink(f) for f in files if os.path.exists(f)]
 
-        meta = ER.meta.copy()
-        meta.update(compress='lzw')
-        burn_gdf('/tmp/country_raster_6931_4000m.tiff', country_geo_df, 'ctry_idx', meta)
-        burn_gdf('/tmp/state_raster_6931_4000m.tiff', state_geo_df, 'state_idx', meta)
-        burn_gdf('/tmp/eco_raster_6931_4000m.tiff', eco_geo_df, 'eco_idx', meta)
-        burn_gdf('/tmp/biome_raster_6931_4000m.tiff', biome_geo_df, 'biome_idx', meta)
-        burn_gdf('/tmp/ecobiome_raster_6931_4000m.tiff', ecobiome_geo_df, 'ecobiome_idx', meta)
-        burn_gdf('/tmp/realm_raster_6931_4000m.tiff', realm_geo_df, 'realm_idx', meta)
+        # meta = ER.meta.copy()
+        meta = {
+            'driver': 'GTiff',
+            'dtype': 'float32',
+            'nodata': None,
+            'width': region.shape[0],
+            'height': region.shape[1],
+            'count': 1,
+            'crs': region.crs,
+            'transform': Affine.from_gdal(*region.transform),
+            'compress': 'lzw'
+        }
+
+        # meta.update(compress='lzw')
+        burn_gdf('/tmp/country_raster_temp_from_veg.tif', country_geo_df, 'ctry_idx', meta)
+        burn_gdf('/tmp/state_raster_temp_from_veg.tif', state_geo_df, 'state_idx', meta)
+        burn_gdf('/tmp/eco_raster_temp_from_veg.tif', eco_geo_df, 'eco_idx', meta)
+        burn_gdf('/tmp/biome_raster_temp_from_veg.tif', biome_geo_df, 'biome_idx', meta)
+        burn_gdf('/tmp/ecobiome_raster_temp_from_veg.tif', ecobiome_geo_df, 'ecobiome_idx', meta)
+        burn_gdf('/tmp/realm_raster_temp_from_veg.tif', realm_geo_df, 'realm_idx', meta)
 
         logger.info(f"{func_name}: Convert the TEM_Landcover_V4 to match the  AOI raster in extents and resolution")
-        X = gdal.Warp(
-            "/tmp/TEM_Landcover_V4_6931_4000m.tiff",
-            temds.datasources.vegetation.land_cover_path,
+        gdal.Warp(
+            extent_raster,
+            land_cover_raster,
             options=gdal.WarpOptions(
-                format='GTiff',
-                srcSRS='EPSG:6931',
-                dstSRS='EPSG:6931',
-                xRes=ER.res[0],
-                yRes=ER.res[1],
-                outputBounds=ER.bounds,
+                # format='GTiff',
+                # srcSRS='EPSG:6931',
+                # dstSRS='EPSG:6931',
+                # xRes=ER.res[0],
+                # yRes=ER.res[1],
+                # outputBounds=ER.bounds,
                 resampleAlg='mode',
             ))
-        X.FlushCache()
+        extent_raster.FlushCache()
+        driver = gdal.GetDriverByName('GTiff')
+        driver.CreateCopy("/tmp/TEM_Landcover_V4_temp_from_veg.tif",extent_raster)
+        del(driver)
 
-        # slow....
-        topo = TEMDataset.from_topo(
-            'working/00-download/topo/',
-            extent_raster,
-            download=False,
-            logger=logger,
-        )
+        # # slow....
+        if 'topo' in region.data:
+            topo = region.data['topo']
+        else:
+            raise NotImplementedError('Need to add back options to load topo for raw/or other preprocessed data')
+        # topo = TEMDataset.from_topo(
+        #     'working/00-download/topo/',
+        #     extent_raster,
+        #     download=False,
+        #     logger=logger,
+        # )
 
         # Make sure we only write out the variable we are interested in.
-        topo.dataset['drainage_class'].astype(np.int32).rio.to_raster("/tmp/drainage_raster_6931_4000m.tiff")
+        topo.dataset['drainage_class'].astype(np.int32).rio.to_raster("/tmp/drainage_raster_temp_from_veg.tif")
 
         index_names = ['ctry_idx', 'state_idx', 'eco_idx', 'biome_idx', 'ecobiome_idx', 'realm_idx', 'lc_idx', 'drain_idx']
         
@@ -614,7 +645,7 @@ class TEMDataset(object):
         ecotype = pd.concat(list(generate_indices(files, index_names)), axis=1)
         
         logger.info(f"{func_name}: Loading the land cover classification...")
-        classif = pd.read_csv(temds.datasources.vegetation.land_cover_classification)
+        classif = pd.read_csv(land_cover_classes)
         classif = classif.rename(columns={"value": "lc_idx"})
         classif = classif.rename(columns={"classname ": "classname"}) # there is a trailing space in the csv column name
 
@@ -802,21 +833,30 @@ class TEMDataset(object):
         ecotype['CMT_num'] = pd.to_numeric(ecotype['CMT'].str.extract('(\d+)', expand=False)).fillna(np.int32(-9999)).astype(np.int32)
 
         logger.info(f'{func_name}: Creating empty xarray dataset')
-        newDS = TEMDataset.from_raster_extent(extent_raster, 
+        newDS = TEMDataset.from_region(region, 
                                               in_vars=['veg_class'], 
                                               ds_time_dim=[], buffer_px=0)
 
 
         # dunno why, but this data comes out flipped, so we reverse the y axis here
         logger.info(f'{func_name}: Assigning data to the new dataset')
-        newDS.dataset['veg_class'] = (['y','x'], 
-                                      np.flipud(np.reshape(ecotype['CMT_num'], (ER.shape[0],ER.shape[1]))))
+        newDS.dataset['veg_class'] = (
+            ['y','x'], 
+            (
+                np.reshape(
+                    ecotype['CMT_num'], 
+                    (
+                        region.shape[1],region.shape[0]
+                    )
+                )
+            )
+        )
 
 
         newDS.dataset['veg_class'].attrs.update(units='', name='Community Type Classification')
         
         newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
-                    .rio.write_crs(ER.crs.to_wkt(), inplace=True)\
+                    .rio.write_crs(region.crs.to_wkt(), inplace=True)\
                     .rio.write_coordinate_system(inplace=True) 
 
 
