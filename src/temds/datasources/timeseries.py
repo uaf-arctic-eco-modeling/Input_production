@@ -4,19 +4,22 @@ timeseries
 
 list operations for timeseries based data
 """
+import gc
+import numbers
 from collections import UserList
 from pathlib import Path
 from datetime import datetime
-
-from joblib import Parallel, delayed
+from copy import deepcopy
 
 import xarray as xr
 import rioxarray
 import numpy as np
+from joblib import Parallel, delayed
 
 from .dataset import YearlyDataset, TEMDataset
 from . import errors
-from temds.logger import Logger
+from ..logger import Logger
+from .. import climate_variables, constants
 
 try:
     import ctypes
@@ -25,32 +28,34 @@ try:
 except:
     malloc_trim = lambda x: x ## do nothing 
 
-
-from temds import climate_variables
-from temds import constants
-import gc
-from copy import deepcopy
-
-
 class YearlyTimeSeries(UserList):
     """
+    Class representing a timeseries of YearlyDatasets
+
     Attributes
     ----------
+    crs
+    transform
+    shape
     data: list
+        sorted list of YearlyDataset objects
     start_year: int
-    verbose: bool
-
+        start year for data
+    logger: Logger
+        Logging object
     """
 
-    def __init__(self, data, logger=Logger(), **kwargs):
+    def __init__(self, data: list[Path]| list[xr.Dataset] | Path, logger: Logger=Logger(), **kwargs):
         """
         parameters
         ----------
-        data:
+        data: list[Path]| list[xr.Dataset] | Path
+            initial data. Can be a list of Paths to netcdf files, a list of 
+            xarray dataset, or a path to a directory of netcdf files
         verbose: bool
             verbosity flag
         kwargs:
-            forwarded to AnnualDaily's kwargs 
+            forwarded to YearlyDataset's kwargs 
         """
         self.logger = logger
 
@@ -94,7 +99,6 @@ class YearlyTimeSeries(UserList):
         
         self.check_continuity(raise_exception=True)
         self.check_continuity(advanced=True,raise_exception=True)
-
 
     def check_continuity(self, advanced=False, raise_exception=False):
         """Checks annual continuity of `data`
@@ -179,16 +183,62 @@ class YearlyTimeSeries(UserList):
     def __getitem__(self, index):
         """Overload __getitem__ to allow year based indexing
         """
-        if type(index) is int:
-            yr = index-self.start_year
+        if isinstance(index, numbers.Integral):
+            yr = int(index-self.start_year)
         else: #slice
             start = index.start - self.start_year
             stop = index.stop - self.start_year if index.stop else None
             step = index.step if index.step else None
             yr = slice(start, stop, step)
         return super().__getitem__(yr)
+        
+    @property
+    def crs(self):
+        """Property for Quick access to crs"""
+        return self[self.start_year].crs
+    
+    @property
+    def shape(self):
+        return self[self.start_year].shape 
+    
+    @property
+    def transform(self):
+        """Property for Quick access to geo transform"""
+        # print('transform')
+        return self[self.start_year].transform
+    
+    def apply_callback(self, callback, **kwargs):
+        """Applys a callback to each item in timeseries
 
-    def get_by_extent(self, minx, miny, maxx, maxy, extent_crs, **kwargs ):
+        Parameters
+        ----------
+        callback: function
+        """
+        # parallel =  kwargs['parallel'] if 'parallel' in kwargs else False
+
+
+        # def helper(item):
+        #     item.dataset = callback(item.dataset, self.logger, **kwargs)
+        #     return  item
+        
+        # if parallel:
+        #     data = Parallel()(
+        #             delayed(helper)(item) for item in self.data
+        #         )
+        #     self.data = sorted(data)
+        # else:
+        for year in self.range():
+            self[year].dataset = callback(self[year].dataset, self.logger, **kwargs)
+    
+
+    def get_by_extent(self, 
+            minx: numbers.Number, 
+            miny: numbers.Number, 
+            maxx: numbers.Number, 
+            maxy: numbers.Number, 
+            extent_crs, 
+            **kwargs
+        ):
         """Get by extent. Can optionally promote to child classes if 
         YearlyDataset or ATsType are in kwargs
 
@@ -202,55 +252,35 @@ class YearlyTimeSeries(UserList):
         extent_crs:
             crs of extent coords
         kwargs:
-            resolution: number
-                pixel resolution to get
-            YearlyDataset: 
-                class that inherits from AnnualDaily
-            ATsType: 
-                class that inherits from AnnualTimeseries
+            TODO document
         """
         tiles = []
-
-        # resolution = kwargs['resolution'] if 'resolution' in kwargs else None
         parallel =  kwargs['parallel'] if 'parallel' in kwargs else False
-        # n_jobs =  kwargs['n_jobs'] if 'n_jobs' in kwargs else None
 
-        # helper = lambda item: YearlyDataset(
-        #     item.year, 
-        #     # item.get_by_extent(
-        #     #     minx, miny, maxx, maxy, extent_crs,
-        #     #     **kwargs
-        #     # )
-        # )
         helper = lambda item: item.get_by_extent(
                         minx, miny, maxx, maxy, extent_crs,
                         **kwargs
                     )
 
         if parallel:
-            print('parallel')
+            self.logger.info('YearlyTimeSeries.get_by_extent: parallel enabled')
             tiles = Parallel()(
                 delayed(helper)(item) for item in self.data
             )
         else:
-            print('not parallel')
+            self.logger.info('YearlyTimeSeries.get_by_extent: parallel disabled')
             for item in self.data:
-                print(f'{item} clipping' )
-                # c_tile = helper(item)
+                self.logger.info(f'... clipping {item}')
                  
                 temp = item.get_by_extent(
                         minx, miny, maxx, maxy, extent_crs,
                         **kwargs
                     )
-                # c_tile = YearlyDataset(
-                #     item.year,
-                #     temp,
-                # )
                 tiles.append(temp)
 
         return YearlyTimeSeries(tiles, logger=self.logger)
 
-    def save(self, where, name_pattern, **kwargs):
+    def save(self, where: Path, name_pattern: str, **kwargs):
         """Saves each item in data
 
         Parameters

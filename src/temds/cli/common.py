@@ -16,6 +16,9 @@ from typer import Argument, Option
 from ..logger import Logger, INFO, ERROR, WARN, DEBUG
 from ..region.region import Region
 
+
+OVERWRITE_DISABLED_MSG = 'Overwriting data disabled, and resulting data already exists. Use --overwrite flag to enable. Exiting...'
+
 @dataclass
 class GlobalConfiguration:
     """Defines storage for global CLI configuration options
@@ -100,8 +103,11 @@ class GlobalConfiguration:
             self.region = None
         self.runtime_data = {}
 
-        
-    
+
+    def overwrite_disabled_exit(self):
+        self.log.error(OVERWRITE_DISABLED_MSG)
+        sys.exit(0)
+
     def callback_export_region(self, items = 'all', **kwargs):
         if self.save_enabled:   
             self.log.info(f'Saving {items} to region at {self.region_directory}.')

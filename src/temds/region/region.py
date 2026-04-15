@@ -211,7 +211,7 @@ class Region(object):
         return cls(mask.export_gpd_extent(), mask, logger, **kwargs)
     
     @classmethod
-    def from_directory(cls, directory: Path, import_data: bool = True, logger: Logger = Logger()):
+    def from_directory(cls, directory: Path, import_data: list = None, logger: Logger = Logger()):
         """Create a Region from a directory containing a manifest file
 
         Parameters
@@ -230,11 +230,13 @@ class Region(object):
         mask = Mask.from_file(directory / manifest['mask'])
         new = cls(boundary, mask, logger)
 
+        
+
         if import_data:
             logger.info('Importing data')
             for item, _file in manifest['data'].items():
                 in_path = Path(directory).joinpath(_file)
-                print(in_path)
+                logger.info('... {item} from {in_path}')
                 if in_path.is_dir():
                     new.data[item] = timeseries.YearlyTimeSeries(
                         in_path, 
@@ -296,8 +298,9 @@ class Region(object):
             if isinstance(self.data[name], dataset.TEMDataset ):
                 self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)
             else:
-                for year in self.data[name].range():
-                    self.data[name][year].dataset = callback(self.data[name][year].dataset, self.logger, **kwargs)
+                self.data[name].apply_callback(callback, **kwargs)
+                # for year in self.data[name].range():
+                #     self.data[name][year].dataset = callback(self.data[name][year].dataset, self.logger, **kwargs)
 
     def export_dataset(self, where, name, **kwargs):
         """Exports a item in `data` to a file (TEMDataset) or files (Timeseries)

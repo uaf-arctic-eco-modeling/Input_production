@@ -194,8 +194,11 @@ class TEMDataset(object):
     def __del__(self):
         """Explicitly close each dataset to hopefully avoid memory leaks"""
         # print('__del__')
-        if self.in_memory:
+        try:
+            # if self.in_memory:
             self.dataset.close()
+        except:
+            pass
 
     @classmethod
     def from_region(cls, region, in_vars = [], ds_time_dim=[], buffer_px=0, logger=Logger() ):
@@ -233,8 +236,6 @@ class TEMDataset(object):
             buffer_px, 
             logger
         )
-
-
 
     @classmethod
     def from_raster_extent(
@@ -1906,6 +1907,9 @@ class YearlyDataset(TEMDataset):
             calcualte_vapo=False,
             file_name_match = '*.nc'
         ):
+        """
+        TODO add region option?
+        """
         func_name = "YearlyDataset.from_cmip6"
         table=['day']
 

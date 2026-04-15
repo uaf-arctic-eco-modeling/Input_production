@@ -15,7 +15,8 @@ import xarray as xr
 from joblib import Parallel, delayed, parallel_config
 
 
-from .. import datasources
+from .. import datasources 
+from ..datasources import cmip6
 from ..region.region import Region
 from ..region.mask import Mask
 from ..region.manifest import Manifest
@@ -46,7 +47,11 @@ def era5_daily(
     cleanup = context.obj.cleanup
 
 
-    destination = Path(destination)
+    if context.obj.region: ## TODO suport region in this function
+        destination = context.obj.region_directory / 'ERA5'
+
+
+    if destination.exists() and overwrite == False: context.obj.overwrite_disabled_exit()
 
     downloads = source
     downloads = Path(downloads)
@@ -83,6 +88,7 @@ def cmip6_daily(
         years: Annotated[tuple[int, int], Argument(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
         source_match: Annotated[str, Option(help=f"")] = '*.nc',
         name: Annotated[str, Option(help=f"")] = 'cmpi6',
+        topo: Annotated[Path, Option(help=f"path to preprocessed topo data")] = None,
 
         # region_directory: Annotated[Path, Option(help='region folder with manifest.yml, this will supersede the default destination path')]= None,
 
@@ -95,6 +101,12 @@ def cmip6_daily(
     parallel = context.obj.parallel
     n_process = context.obj.get_n_process()
     data = []
+
+    if context.obj.region:
+        destination = context.obj.region_directory/ name
+        
+    if destination.exists() and overwrite == False: context.obj.overwrite_disabled_exit()
+
 
     start_year = None
     end_year = None
@@ -109,34 +121,71 @@ def cmip6_daily(
     log.info(f'Processing data from {start_year} to {end_year}')
 
 
-
     from_cmip6 = lambda year: datasources.dataset.YearlyDataset.from_cmip6(
-        year, source,file_name_match=source_match
+        year, source, file_name_match=source_match
     )
+
     with parallel_config(backend="loky", n_jobs=n_process, verbose=1):
         data = Parallel()(
             delayed(from_cmip6)(year) for year in range(start_year, end_year+1)
         )
 
-    # for year in range(start_year, end_year+1):
-    #     log.info(f'.. processing {year}')
-    #     data.append(   
-    #         datasources.dataset.YearlyDataset.from_cmip6(
-    #             year, 
-    #             source,
-    #             file_name_match=source_match
-    #         )
-    #     )
-    # log.info(f'saving')
     data = datasources.timeseries.YearlyTimeSeries(data)
 
     try: 
         if context.obj.region:
-            log.info('Preprocessing to region, Vapo not being calculated.')
+            area = context.obj.region
+            try:
+                topo = datasources.dataset.TEMDataset(
+                        context.obj.region_directory/'topo.nc', log
+                )
+                area.import_datasource('topo', topo)
+            except:
+                pass
+
+            log.info('Preprocessing to region')
             context.obj.runtime_data['source'] = data
-            import_data(context, None, None, name)
+            # import_data(context, None, None, name) ## with the callback its easier to not use existing fn
+            if 'topo' in context.obj.region.data:
+                log.info('With VAPO')
+                callback_fn = cmip6.callback_psl_to_vapo
+                elevation = area.data['topo'].dataset['elevation']
+            else:
+                log.info('With out VAPO, no topo found')
+                callback_fn = None
+                elevation = None
+
+            with parallel_config(backend="loky", n_jobs=n_process, verbose=1):
+                area.import_datasource(name, data, parallel=parallel, callback=callback_fn, elevation=elevation)
+
+            with parallel_config(backend="loky", n_jobs=n_process, verbose=1):
+                context.obj.callback_export_region([name], parallel=parallel)
+
+            # if 'topo' in context.obj.region.data:
+            #     log.info('Adding VAPO')
+            #     elevation = context.obj.region.data['topo'].dataset['elevation']
+            #     no_vapo = context.obj.region.data[name]
+            
+            #     context.obj.region.import_datasource(
+            #         name, 
+            #         no_vapo, 
+            #         callback=cmip6.callback_psl_to_vapo, 
+            #         elevation=elevation,
+            #         # parallel = parallel
+            #     )
+            # else:
+            #     log.info('Skipping VAPO, no topo data')
+
         else:
             destination_format = name+'-{year}.nc'
+            if topo:
+                log.info('Adding VAPO')
+                topo = datasources.dataset.TEMdataset(topo)
+                elevation = topo.dataset['elevation']
+                data.dataset = cmip6.callback_psl_to_vapo(data.dataset, log, elevation=elevation)
+            else:
+                log.info('Skipping VAPO, no topo data')
+
             data.save(destination, destination_format, overwrite=overwrite)
     except FileExistsError:
         log.error('Output files exist. Cannot save unless --overwrite is passed.')
@@ -164,6 +213,9 @@ def worldclim(
         destination = context.obj.region_directory/'worldclim.nc'
     else: 
         region = Region.from_mask(Mask.from_file(extent_file), logger=log)
+
+    if destination.exists() and overwrite == False: context.obj.overwrite_disabled_exit()
+
     data = datasources.dataset.TEMDataset.from_worldclim(
             source,
             region,
@@ -202,6 +254,8 @@ def topo(
 
     else: 
         region = Region.from_mask(Mask.from_file(extent_file))
+
+    if destination.exists() and overwrite == False: context.obj.overwrite_disabled_exit()
 
     topo_ds = datasources.dataset.TEMDataset.from_topo(
         source, region, 

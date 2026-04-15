@@ -154,6 +154,8 @@ def import_data(
     if name is None:
         name = source_path.stem 
 
+    
+
     log.info(f'Starting region import data for {name}')
 
     if context.obj.region: 
@@ -165,6 +167,12 @@ def import_data(
         area = Region.from_directory(region_directory)
         context.obj.region = area
         context.obj.region_directory = Path(region_directory)
+
+    if overwrite == False:
+        if (region_directory/f'{name}.nc').exists() or (region_directory/f'{name}').exists():
+            context.obj.overwrite_disabled_exit()
+            
+
 
     if source_path is None:
         source = context.obj.runtime_data['source']
