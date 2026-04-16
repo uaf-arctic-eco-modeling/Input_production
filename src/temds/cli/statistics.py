@@ -26,9 +26,9 @@ app = Typer(help=HELP, no_args_is_help=True)
 NAME = 'statistics'
 
 @app.command()
-def calculate_climate_baseline(
+def calculate_normals(
         context: Context,
-        region_directory: common.DESTINATION_DIR,
+        destination: common.DESTINATION_FILE,
         source: Annotated[str, Argument(help="name of data in region to calculate baseline for")],
         years: Annotated[tuple[int, int], Argument(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
         name: Annotated[str, Argument(help=f"name to save baseline data in region to; When not provided -baseline is appended to source")] = None,
@@ -40,23 +40,39 @@ def calculate_climate_baseline(
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
-
+    # return
     if context.obj.region: 
         log.info('Using region from context')
         area = context.obj.region
         region_directory = context.obj.region_directory
     else:
-        log.info('Using region from argument')
-        area = Region.from_directory(region_directory, logger=log)
+        source_pth = Path(source)
+        log.info(f'Using source data at: {source_pth}')
+        if not source_pth.exists():
+            log.error('Target source data does not exist...')
+            sys.exit()
+        log.suspend()
+        source_ds = datasources.timeseries.YearlyTimeSeries(source_pth, logger=log)
+        log.resume()
+        log.debug(f'Creating temp Region')
+        area = Region.from_TEMDataset(source_ds.data[0], logger=log)
+        source = source_pth.stem
+        log.suspend()
+        area.import_datasource(source, source_ds)
+        log.resume()
+        log.info('Setup complete!')
 
     if name is None:
-        name = source + '-baseline'
+        name = source + f'-normals-{years[0]}-{years[1]}'
 
     area.calculate_climate_baseline(years[0], years[1], name, source)
 
     if context.obj.save_enabled:
         try:
-            area.export_to_directory(region_directory, items=[name], update_manifest=True, overwrite=overwrite)
+            if context.obj.region: 
+                area.export_to_directory(region_directory, items=[name], update_manifest=True, overwrite=overwrite)
+            else:
+                area.export_dataset(destination, name, overwrite=overwrite)
         except FileExistsError:
             log.error('Output files exist. Cannot save unless --overwrite is passed.')
             sys.exit(0)

@@ -42,9 +42,9 @@ class GlobalConfiguration:
         file. When provided, `region` is loaded, and commands should use the 
         regions extent, and output directory when saving results instead
         of their destination argument
-    import_data: bool, defaults True
-        Flag to pass to Region.from_directory, When true load all data,
-        when false skip loading data which is useful in preprocessing steps
+    import_data: list, Optional
+        List of data in a regions manifest to load on creation. If not provided
+        all_items are loaded.
     save_enabled: bool, defaults True
         This flag enables saving of output/intermediate data. When set to
         False writing of data should be disabled, which is useful when commands
@@ -64,7 +64,7 @@ class GlobalConfiguration:
     overwrite: bool = False
     cleanup: bool = False
     region_directory: Path = None
-    import_data: bool = True
+    import_data: list = None
     save_enabled: bool = True
     fail_on_warn: bool = False
     in_memory: bool = True

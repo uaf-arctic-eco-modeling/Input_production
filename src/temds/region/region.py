@@ -22,7 +22,7 @@ from osgeo import gdal
 import pyproj
 import xarray as xr
 from joblib import Parallel, delayed
-
+import shapely
 
 # from ..gdal_tools import empty_dataset
 from .. import corrections, downscalers
@@ -211,6 +211,15 @@ class Region(object):
         return cls(mask.export_gpd_extent(), mask, logger, **kwargs)
     
     @classmethod
+    def from_TEMDataset(cls, temds, logger: Logger = Logger(), **kwargs):
+        """
+        """
+        minx, miny, maxx, maxy = temds.extent
+        extent = gpd.GeoSeries(shapely.box(minx, miny, maxx, maxy ), [0], temds.crs)
+        mask = Mask.from_extent(extent, abs(temds.resolution[0]), False, True)
+        return cls.from_mask(mask, logger, **kwargs)
+
+    @classmethod
     def from_directory(cls, directory: Path, import_data: list = None, logger: Logger = Logger()):
         """Create a Region from a directory containing a manifest file
 
@@ -230,13 +239,18 @@ class Region(object):
         mask = Mask.from_file(directory / manifest['mask'])
         new = cls(boundary, mask, logger)
 
-        
+        if import_data is None:
+            import_data = manifest['data'].keys()
+            
 
-        if import_data:
-            logger.info('Importing data')
-            for item, _file in manifest['data'].items():
+        # if import_data:
+        if import_data != []:
+            logger.info('Region.from_directory: Importing data')
+            for item in import_data:
+                _file = manifest['data'][item]
                 in_path = Path(directory).joinpath(_file)
-                logger.info('... {item} from {in_path}')
+                logger.info(f'... {item} from {in_path}')
+                logger.suspend()
                 if in_path.is_dir():
                     new.data[item] = timeseries.YearlyTimeSeries(
                         in_path, 
@@ -246,16 +260,19 @@ class Region(object):
                     new.data[item] = dataset.TEMDataset(
                         in_path, logger = new.logger
                     )
+                logger.resume()
         else:
-            logger.info('Skipping data import')
+            logger.info('Region.from_directory: Skipping data import')
 
         return new
     
     def check_datasource(self, datasource):
         """checks if a datasource already matches the region"""
         gt_check = self.transform == datasource.transform.to_gdal()
+        print('region-check', self.transform, datasource.transform.to_gdal())
         crs_check = self.crs == datasource.crs
         shape_check = self.shape == datasource.shape
+        print( gt_check, crs_check, shape_check)
         return gt_check and crs_check and shape_check
 
     
@@ -288,6 +305,7 @@ class Region(object):
             f'importing {name} from {datasource} for the extent: {minx}, {miny}, {maxx}, {maxy}.'
         )
         if self.check_datasource(datasource): # the datasource is region ready
+            # print('region Ready')
             self.data[name] = datasource
         else:
             kwargs['dest_gt'] = self.mask.raster.GetGeoTransform()
@@ -295,7 +313,7 @@ class Region(object):
                 minx, miny, maxx, maxy, self.crs, **kwargs
             )
         if callback is not None:
-            if isinstance(self.data[name], dataset.TEMDataset ):
+            if isinstance( self.data[name], dataset.TEMDataset ):
                 self.data[name].dataset = callback(self.data[name].dataset, self.logger, **kwargs)
             else:
                 self.data[name].apply_callback(callback, **kwargs)

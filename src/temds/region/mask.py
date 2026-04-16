@@ -92,7 +92,7 @@ class Mask(object):
     def from_extent(cls, extent_gpd, resolution, align_extent_to_resolution=True, fill_uniform=False):
         """create mask from extent, all values are set to 1(good)
 
-        Assumes grid resolution is uniform (1000m by 1000m)
+        Assumes grid resolution is uniform i.e(1000m by 1000m)
         """
         init_boundary = deepcopy(extent_gpd)
 

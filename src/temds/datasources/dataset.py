@@ -1274,18 +1274,10 @@ class TEMDataset(object):
 
         ## clipped shape, and geotransform
         dest_x, dest_y = abs(int((maxx-minx)/resolution[0])), abs(int((maxy-miny)/resolution[1]))
-        #dest_gt = minx, resolution, 0.0, miny, 0.0, resolution
-        # print(dest_x, dest_y)
-        # x_sign, y_sign = 1, 1
-        # if dest_x<0:
-        #     x_sign = -1
-        # if dest_y < 0:
-        #     y_sign = -1
-
-        # dest_gt = minx, x_sign*resolution, 0.0, miny, 0.0, y_sign*resolution
         if dest_gt is None:
             # NOTE: assumes north up
             dest_gt = minx, resolution[0], 0.0, maxy, 0.0, resolution[1]    
+        # print(dest_gt)
 
         if hasattr(working_dataset, 'lat') and hasattr(working_dataset, 'lon'):
             source_x = working_dataset.lon.shape[0]
@@ -1294,18 +1286,11 @@ class TEMDataset(object):
             source_x = working_dataset.x.shape[0]
             source_y = working_dataset.y.shape[0]
 
-        ## read GT from dataset, extra step is to keep resolution positive
-        ## which may not be needed on all datasets, so be wary in in future
        
         source_gt = working_dataset.rio.transform()
         # source_gt = source_gt.c, abs(source_gt.a), source_gt.b, source_gt.f, source_gt.d, abs(source_gt.e)
         source_gt = source_gt.c, source_gt.a, source_gt.b, source_gt.f, source_gt.d, source_gt.e
         # print(source_gt)
-
-        # gdal wants things in order, x, y, band count
-        # source_dim_sizes = [source_x, source_y]
-        # #dest_dim_sizes = [dest_x, dest_y]
-        # dest_dim_sizes = [abs(dest_x), abs(dest_y)]
 
         # N time steps
         if hasattr(working_dataset, 'time') and working_dataset['time'].size > 0:
@@ -1314,8 +1299,7 @@ class TEMDataset(object):
             # dest_dim_sizes.append(n_ts)
         else:
             n_ts = 1 # not a time step; in GDAL's view always at least 1 Band.
-            # dest_dim_sizes.append(1)
-            # source_dim_sizes.append(1)
+
         self.logger.debug(f'{funcname}: source dimensions (for each Variable): x={source_x}, y={source_y}, time={n_ts}')
         self.logger.debug(f'{funcname}: source GeoTransform: {source_gt}')
         self.logger.debug(f'{funcname}: destination dimensions (for each Variable): x={dest_x}, y={dest_y}, time={n_ts}')
@@ -1325,13 +1309,6 @@ class TEMDataset(object):
 
         dest_crs = extent_crs.to_wkt()
 
-        # setup dest and soruce
-        # dest = driver.Create("", *dest_dim_sizes, gdal_type)
-        # dest.SetProjection(dest_crs)
-        # dest.SetGeoTransform(dest_gt)
-        # dest.FlushCache()
-        # print(dest_gt)
-        # print(dest_x, dest_y, n_ts)
         dest = gdal_tools.empty_dataset(
             dest_x, dest_y, dest_crs, dest_gt, n_ts, gdal_type
         )
@@ -1339,65 +1316,17 @@ class TEMDataset(object):
         driver.CreateCopy('sample-dest.tif', dest)
 
         source_crs = working_dataset.rio.crs.to_wkt()
-        # source = driver.Create("", *source_dim_sizes, gdal_type)
-        # source.SetProjection(source_crs)
-        # source.SetGeoTransform(source_gt)
-        # source.FlushCache() # this should work just once, but when working in 
-        #                     # the interpreter, you often have to call it 
-        #                     # multiple times.
         source = gdal_tools.empty_dataset(
             source_x, source_y, source_crs, source_gt, n_ts, gdal_type
         )
 
-        # driver = gdal.GetDriverByName('GTiff')
-        # driver.CreateCopy('sample-source.tif', source)
 
         ## option 2
         vars_dict = {var: working_dataset[var].values for var in self.vars }
         data_arrays = gdal_tools.clip_opt_2(dest, source, vars_dict, resample_alg, run_primer, nd_as_array)
         self.logger.debug(f"{funcname}: deleting vars_dict")
 
-        # driver.CreateCopy('sample-dest.tif', dest)
-        # driver.CreateCopy('sample-source.tif', source)
         del(vars_dict)
-
-        # Option 1
-        # 
-
-        # for var in self.vars:
-        #     cur = working_dataset[var]
-        #     source.WriteArray(cur.values[:,:,:])
-        #     source.FlushCache() ## ensures data is in gdal dataset
-
-        #     dest = gdal_tools.clip_gdal_opt(dest, source, resample_alg, run_primer, nd_as_array)
-            
-        #     data_arrays[var] = dest.ReadAsArray()
-
-        # option 0
-        # data_arrays = {}
-        # no_data = np.nan
-        # if nd_as_array:
-        #     no_data = [np.nan for i in range(n_ts)]
-
-        # for var in self.vars:
-        #     cur = working_dataset[var]
-        #     source.WriteArray(cur.values[:,:,:])
-        #     source.FlushCache() ## ensures data is in gdal dataset
-
-        #     # run twice first to 'prime' the objects, other wise coastal data is
-        #     # missing in result
-        #     if run_primer:
-        #         gdal.Warp(dest, source, multithread=True)
-        #     gdal.Warp(
-        #         dest, source,
-        #         srcNodata=no_data,
-        #         dstNodata=no_data,
-        #         resampleAlg=resample_alg,
-        #         multithread=True
-        #     )
-        #     dest.FlushCache()
-            
-        #     data_arrays[var] = dest.ReadAsArray()
             
         ## we want these to be the center of the pixels so for x and y the range
         self.logger.debug(f"{funcname}: ...building xarray Dataset from clipped data")
@@ -1595,9 +1524,11 @@ class TEMDataset(object):
         if CRS(crs) == CRS('EPSG:4326'): #is this true for other crs as well?
             x_dim ='lon'
             y_dim = 'lat'
+        
         self.dataset = self.dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
                  rio.write_coordinate_system(inplace=True) 
+        # print(self.dataset.rio.transform())
         
         self.dataset = self.dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
@@ -1713,29 +1644,24 @@ class TEMDataset(object):
         else:
             self.logger.info("Dataset is missing lon/lat dimensions. Using default x, y spatial dimensions.")
 
-
-        # # trickery to ensure all data uses our standard min coords
+        ### some of our old data may not follow conventions
         s_minx, s_miny, s_maxx, s_maxy = in_dataset.rio.bounds()
-        transform = in_dataset.rio.transform()
-        if transform.c > s_minx:
-            transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
-            if x_dim == 'x':
-                in_dataset = in_dataset.reindex(x=in_dataset.x[::-1])
-            else:
-                in_dataset = in_dataset.reindex(lon=in_dataset.lon[::-1])
-            in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
-
-                
-        if transform.f > s_miny:
-            transform = Affine(abs(transform.a), transform.b, s_minx, transform.d, abs(transform.e), s_miny)
+        # print(s_minx, s_miny, s_maxx, s_maxy)
+        transform = in_dataset.rio.transform().to_gdal()
+        # print ((s_minx, s_maxy), (transform[0], transform[5]), (s_minx, s_maxy)==(transform[0], transform[5]))
+        if  (s_minx, s_maxy)!=(transform[0], transform[5]) and transform[-1] > 0:
+            self.logger.debug('Non standard transform, fixing...')
             if y_dim == 'y':
                 in_dataset = in_dataset.reindex(y=in_dataset.y[::-1])
             else:
                 in_dataset = in_dataset.reindex(lat=in_dataset.lat[::-1])
+            transform = Affine.from_gdal(s_minx, transform[1],0, s_maxy, 0, -transform[5])
             in_dataset = in_dataset.rio.write_transform(transform, inplace=True)
+
+
         
 
-
+        # print(in_dataset.rio.transform().to_gdal())
         in_dataset = \
             in_dataset.rio.write_crs(crs, inplace=True).\
                  rio.set_spatial_dims(x_dim=x_dim, y_dim=y_dim, inplace=True).\
