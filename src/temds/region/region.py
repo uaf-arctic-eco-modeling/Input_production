@@ -553,18 +553,20 @@ class Region(object):
 
         return dataset.YearlyDataset(year, downscaled)
 
-    def delta_downscale_timeseries(self, downscaled_id, source_id, correction_id, variables, parallel=False):
+    def delta_downscale_timeseries(self, downscaled_id, source_id, correction_id, variables, parallel=False, years=None):
         """
         Add downscaled to self.data dict as xarray dataset. 
         """
+        if not years:
+            years = self.data[source_id].range()
 
         if parallel:
             results = Parallel()(
-                delayed(self.downscale_year)(year, source_id, correction_id, variables) for year in self.data[source_id].range()
+                delayed(self.downscale_year)(year, source_id, correction_id, variables) for year in years
             )
         else:
             results = []
-            for year in self.data[source_id].range():
+            for year in years:
                 self.logger.info(f'Downscaling {year}')
                 data = self.downscale_year(year, source_id, correction_id, variables)
                 results.append(data)

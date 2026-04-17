@@ -11,6 +11,7 @@ from pathlib import Path
 from typer import Typer, Argument, Option, Context
 from typing import Annotated
 
+from joblib import parallel_config
 import xarray as xr
 import sys
 
@@ -19,41 +20,151 @@ from ..region.region import Region
 from . import common
 from .region import import_data
 
+
+
 HELP = """Tools to downscale data"""
 
 app = Typer(help=HELP, no_args_is_help=True)
 
 NAME = 'Downscale'
 
+
+
 @app.command()
 def delta_method(
         context: Context,
         destination: common.DESTINATION_FILE,
-        to_downscale: Annotated[str, Argument(help="")],
-        reference: Annotated[str, Argument(help="")],
-        # years: Annotated[tuple[int, int], Option(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
-        # name: Annotated[str, Argument(help=f"name to save baseline data in region to; When not provided -baseline is appended to source")] = None,
-        baseline: Annotated[str, Option(help="Optional precalculated baseline data to use")]=None
+        to_downscale: Annotated[Path, Argument(help="")],
+        reference: Annotated[Path, Argument(help="")],
+        baseline: Annotated[Path, Option(help="Optional precalculated baseline data to use")]=None,
+        baseline_years: Annotated[tuple[int, int], Option(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
+        baseline_name: Annotated[str, Option(help=f"name to save baseline data in region to; When not provided -baseline is appended to source")] = None,
+        save_baseline: Annotated[str, Option(help="Flag to save baseline data when it has to be caclulated")] = False,
+        correction_factors: Annotated[str, Option(help="Optional precalculated baseline data to use")]=None,
+        save_correction_factors: Annotated[str, Option(help="Flag to save baseline data when it has to be caclulated")] = False,
+        downscale_years: Annotated[tuple[int, int], Option(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
+
     ):
     """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
     formatted to be read as a YearlyDataset.
+
+    If --use-region is provided al
     """
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
+    parallel = context.obj.parallel
+    n_process = context.obj.get_n_process()
 
     if context.obj.region: 
         log.info('Using region from context')
         area = context.obj.region
         region_directory = context.obj.region_directory
+
+        log.info('--use-region was provided so "to_downscale", "reference", and "baseline" will be treated as items in Region.data')
+        to_downscale = str(to_downscale)
+        reference = str(reference)
+        baseline = str(baseline) if baseline else None
+
+        for key in [to_downscale, reference, baseline, destination]:
+            if not key in area.data:
+                if key is None:
+                    continue
+                log.error(f"You are using a region and to_downscale value of {key} not loaded, load with --load-data={key}")
+
     else:
-        log.info('Using region from argument')
-        area = Region.from_directory(region_directory, logger=log) ## add an error message if this fails
+        to_downscale_pth = Path(to_downscale)
+        log.info(f'Using to_downscale data at: {to_downscale_pth}')
+        if not to_downscale_pth.exists():
+            log.error('Target to_downscale data does not exist...')
+            sys.exit()
 
-    ## if baseline is provided as argument load precalculated baseline, else calculate from to downscale data if years are provided
+        reference_pth = Path(reference)
+        log.info(f'Using reference data at: {reference_pth}')
+        if not reference_pth.exists():
+            log.error('Target reference data does not exist...')
+            sys.exit()
+            
+        log.suspend()
+        to_downscale_ds = datasources.timeseries.YearlyTimeSeries(to_downscale_pth, logger=log)
+        reference_ds = datasources.dataset.TEMDataset(reference_pth, logger=log)
 
-    ## calculate correction factors
+        log.resume()
+        log.debug(f'Creating temp Region')
 
-    ## downscale/ multithreading etc
+        area = Region.from_TEMDataset(to_downscale_ds.data[0], logger=log)
+        to_downscale = to_downscale_pth.stem
+        log.suspend()
+        area.import_datasource(to_downscale, to_downscale_ds)
+        log.resume()
+
+        reference = reference_pth.stem
+        area.import_datasource(reference, reference_ds)
+
+        log.info('Setup complete!')
+
+    if not baseline:
+        log.info("Baseline data was not provided, Calculating......")
+        if not baseline_name:
+            baseline_name = to_downscale+"-baseline"
+        area.calculate_climate_baseline(baseline_years[0], baseline_years[1], baseline_name, to_downscale)
+
+        if save_baseline:
+            log.info('... with --save-baseline. Saving Calculated baseline data.')
+            if context.obj.region:
+                context.obj.callback_export_region([baseline_name], overwrite=overwrite) #TODO would we want to overwrite here
+            else:
+                out_path = destination.parent/f"{baseline_name}.nc"
+                area.data[baseline_name].save(out_path, overwrite=overwrite)
+
+    elif not context.obj.region:
+        log.info("Baseline data was provided, Loading......")
+        if not baseline_name:
+            baseline_name = to_downscale+"-baseline"
+        area.import_datasource(baseline_name, baseline)
+
+    baseline = baseline_name
+
+    if not correction_factors:
+        correction_factors = to_downscale + '-correction-factors'
+
+    variables = '...'
+    area.calculate_correction_factors(baseline, reference, variables, factor_id=correction_factors)
+
+    if save_correction_factors:
+        if save_baseline:
+                log.info('... with --save-correction-factors. Saving Calculated correction factors.')
+                if context.obj.region:
+                    context.obj.callback_export_region(
+                        [correction_factors], 
+                        overwrite=overwrite
+                    ) #TODO would we want to overwrite here
+                else:
+                    out_path = destination.parent/f"{correction_factors}.nc"
+                    area.data[correction_factors].save(
+                        out_path, overwrite=overwrite
+                    )
+
+    if type(destination) is str:
+        destination_name = destination
+    else:
+        destination_name =  to_downscale + '-downscaled'
+
+    variables = '...'
+    log.info('Downscaling...')
+    with parallel_config(backend="loky", n_jobs=n_process, verbose=1):
+        area.delta_downscale_timeseries(
+            destination_name, to_downscale, correction_factors, variables, parallel, years=downscale_years
+        )
+
+    log.info('Saving Results...')
+    if context.obj.region:
+        context.obj.callback_export_region(
+            [destination_name], 
+            overwrite=overwrite
+        ) 
+    else:
+        out_path = destination
+        area.data[destination_name].save(out_path, overwrite=overwrite)
 
     return area
