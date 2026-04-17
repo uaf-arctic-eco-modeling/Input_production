@@ -223,6 +223,8 @@ class Region(object):
     def from_directory(cls, directory: Path, import_data: list = None, logger: Logger = Logger()):
         """Create a Region from a directory containing a manifest file
 
+        TODO: Parallel option here?
+
         Parameters
         ----------
         directory: Path
@@ -252,14 +254,15 @@ class Region(object):
                 logger.info(f'... {item} from {in_path}')
                 logger.suspend()
                 if in_path.is_dir():
-                    new.data[item] = timeseries.YearlyTimeSeries(
+                    temp = timeseries.YearlyTimeSeries(
                         in_path, 
                         logger = new.logger
                     )
                 else:
-                    new.data[item] = dataset.TEMDataset(
+                    temp = dataset.TEMDataset(
                         in_path, logger = new.logger
                     )
+                new.import_datasource(item, temp)
                 logger.resume()
         else:
             logger.info('Region.from_directory: Skipping data import')
@@ -269,10 +272,10 @@ class Region(object):
     def check_datasource(self, datasource):
         """checks if a datasource already matches the region"""
         gt_check = self.transform == datasource.transform.to_gdal()
-        print('region-check', self.transform, datasource.transform.to_gdal())
+        # print('region-check', self.transform, datasource.transform.to_gdal())
         crs_check = self.crs == datasource.crs
         shape_check = self.shape == datasource.shape
-        print( gt_check, crs_check, shape_check)
+        # print( gt_check, crs_check, shape_check)
         return gt_check and crs_check and shape_check
 
     
@@ -557,18 +560,32 @@ class Region(object):
         """
         Add downscaled to self.data dict as xarray dataset. 
         """
+        print(source_id, correction_id, variables)
         if not years:
             years = self.data[source_id].range()
-
+        else:
+            years = range(years[0], years[1]+1)
+        
         if parallel:
+            ## The open raster in mask breaks parallelization, so remove it 
+            ## for now, and add it back at the end
+            mask_backup = self.mask
+            self.mask=""
             results = Parallel()(
-                delayed(self.downscale_year)(year, source_id, correction_id, variables) for year in years
+                delayed(self.delta_downscale_year)(
+                    int(year), 
+                    source_id, 
+                    correction_id, 
+                    variables
+                    ) for year in self.data[source_id].range()
             )
+            self.mask = mask_backup
         else:
             results = []
             for year in years:
+                print(year, type(year))
                 self.logger.info(f'Downscaling {year}')
-                data = self.downscale_year(year, source_id, correction_id, variables)
+                data = self.delta_downscale_year(year, source_id, correction_id, variables)
                 results.append(data)
         
         self.data[downscaled_id] = timeseries.YearlyTimeSeries(results)
