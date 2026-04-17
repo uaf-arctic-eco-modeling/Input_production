@@ -530,10 +530,11 @@ class Region(object):
         correction = self.data[correction_id].dataset
         source = self.data[source_id][year].dataset
         temp = []
-
+        
+        self.logger.info(f'.. Downscaling {year}')
         for var in variables:
             func = downscalers.LOOKUP[var]
-            self.logger.info(f'.. Downscaling {var} with {func}')
+            self.logger.debug(f'.. Downscaling {var} with {func}')
             src = source[var]
             try:
                 cf = correction[var]
@@ -583,8 +584,8 @@ class Region(object):
         else:
             results = []
             for year in years:
-                print(year, type(year))
-                self.logger.info(f'Downscaling {year}')
+                # print(year, type(year))
+                # self.logger.info(f'Downscaling {year}')
                 data = self.delta_downscale_year(year, source_id, correction_id, variables)
                 results.append(data)
         
