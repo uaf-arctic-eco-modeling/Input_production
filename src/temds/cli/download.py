@@ -37,21 +37,19 @@ NAME = 'Download'
 def ERA5_daily(
         context: Context,
         destination: common.DESTINATION_DIR,
-        years: common.ERA5_YEARS=None,
-        years_as_range: common.YEAR_RANGE_FLAG =False,
-        # overwrite: common.OVERWRITE_FLAG = True,
-        # cleanup: common.CLEANUP_FLAG = False,
+        years: Annotated[tuple[int, int], Argument(help="Range of years to download ERA5 daily data for.")] = None
     ):
-    """Downloads ERA5 daily data from ECMWF. This is a slow process.
+    """Downloads ERA5 daily reanalysis data from ECMWF. This is a slow process.
     """
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
     # parallel = context.obj.parallel
     # n_process = context.obj.n_process
+    log.info('Starting download of cmip6-daily data.')
 
-
-    years = common.years_as_range_check(years, years_as_range, [1940,2025])
+    ## always get the years aas a range. 
+    years = common.years_as_range_check(years, True, [1940,2025])
     
 
     log.info(f'Processing years: {years}')
@@ -121,9 +119,8 @@ def ERA5_daily(
             if cleanup:
                 log.info(f'.... Cleanup: removing partials {[f.name for f in yearly_files]}.')
                 [file.unlink(file) for file in yearly_files]
-            
-
-    log.info('Complete!')
+        
+    log.info('Download of ERA5-daily data complete!')
 
 @app.command()
 def CMIP6_daily(
@@ -131,29 +128,23 @@ def CMIP6_daily(
         destination: common.DESTINATION_DIR,
         experiment: Annotated[str, Argument(help=f"Name of CMIP6 experiment from {cmip6.EXPERIMENTS}")],
         source_model: Annotated[str, Argument(help="Name of CMIP6 model that provides daily data (i.e. CESM2)")],
-        years: Annotated[tuple[int, int], Argument(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
-        # start_year: Annotated[int, Option(help="Start year to save data for.")] = None,
-        # end_year: Annotated[int, Option(help="End year to save data for.")] = None,
+        years: Annotated[tuple[int, int], Argument(help="Start and end of years to download data for. Will default to full range of experiment provided (See Note on 'years').")] = None,
         ensemble: Annotated[str, Option(help=f"CMIP6 ensemble/member_id (i.e. {cmip6.DEFAULT_ENSEMBLE})")] = cmip6.DEFAULT_ENSEMBLE ,
-        region: Annotated[Path, Option(help=f"")] = None
     ):
-    """download cmip6 daily data
+    """This command downloads CMIP6 daily data from Pangeo. 
     
     Note on `years`
         - For historical experiments these values must be between 1850 and 2014 inclusive.
         - For projected experiments these values must be between 2015 and 2100 inclusive.
         - The start year must be less than or equal to end year
-        - When not provided values will default to the appropriate minimum or maximum value. 
-
-    
-    """
-    log = context.obj.log
-
+        - When not provided values will default to the appropriate minimum or maximum value.   
+    """ 
+    #TODO: implement overwrite flag to protect existing data
+    log = context.obj.log 
+    log.info('Starting download of cmip6-daily data.')
     if experiment not in cmip6.EXPERIMENTS:
         log.error(f'bad experiment try one of {cmip6.EXPERIMENTS} ')
         return
-    
-
 
     start_year, end_year = years if years else (None, None)
     if experiment == 'historical':
@@ -165,7 +156,6 @@ def CMIP6_daily(
         if start_year > 2014:
             log.error(f"End year must be less than or equal to than 2014 for historical experiments. Was given {end_year}.")
             return
-
     else:
         start_year = 2015 if start_year is None else start_year
         end_year =  2100 if end_year is None else end_year
@@ -188,8 +178,8 @@ def CMIP6_daily(
     log.info(f'.. Found {len(items)} items.')
 
     spatial_bounds = (0, 30, 360, 90)
-    if region:
-        area = Region.from_directory(region)
+    if context.obj.region:
+        area = context.obj.region
 
         spatial_bounds = area.get_extent(4326, 1)
         spatial_bounds[0]+=360
@@ -213,22 +203,28 @@ def CMIP6_daily(
                 zlib= True, complevel= 9 
             )
             ds.close()
-    log.info('Complete!')
+    log.info('Download of cmip6-daily data complete!')
 
 
 @app.command()
 def elevation(
         context: Context,
         destination: common.DESTINATION_DIR,
-        url: Annotated[str, Option(help='URL to elevation file')] = topo.URL
+        # url: Annotated[str, Option(help='URL to an elevation data.')] = topo.URL 
     ):
+    """This command downloads the the mn75_grd elevation from the USGS data 
+    used in creating the TEM input topography dataset
+    """
+    #TODO: Is there a case were a user may want to download a different 
+    # elevation data set to use
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
     log.info('downloading elevation')
+    url = topo.URL
     data_path = file_tools.download(url, destination, overwrite)
 
     log.info('extracting')
     file_tools.extract(data_path, data_path.parent)/data_path.stem 
 
-    log.info('download elevation complete!')
+    log.info('Download of elevation data complete!')
