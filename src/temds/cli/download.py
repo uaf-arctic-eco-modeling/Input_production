@@ -70,28 +70,16 @@ def ERA5_daily(
                 continue
             # client, requests = era5_daily.submit_variable_year(variable, year)
 
-            # for date in xr.date_range(f'{year}-01-01', f'{year}-12-31'):
-            #     month = date.month
-            #     day = date.day
-            #     log.info(f'.... Downloading partial {variable} for {year}-{month:02}-{day:02}.')
-            #     file, status = era5_daily.download_variable_for_date(
-            #         destination, variable, date, overwrite=False
-            #     )
-            #     if status == 'skipped':
-            #         log.info(f'...... File exists, download skipped.')
-            #     elif status == 'complete':
-            #         log.info(f'...... Download complete.')
-            #     else:
-            #         log.error(f'...... Download failed. exiting')
-            #         return # correct action?
-            #     yearly_files.append(file)
-
             def download_helper(date):
+                year_h = date.year
                 month = date.month
                 day = date.day
-                log.info(f'.... Downloading partial {variable} for {year}-{month:02}-{day:02}.')
-                file, status = era5_daily.download_variable_for_date(
-                    destination, variable, date, overwrite=False
+                log.info(f'.... Downloading partial {variable} for {year_h}-{month:02}-{day:02}.')
+                # file, status = era5_daily.download_variable_for_date(
+                #     destination, variable, date, overwrite=False
+                # )
+                file, status = era5_daily.download_variable_for_year_month(
+                    destination, variable, year_h, month, overwrite=False
                 )
                 if status == 'skipped':
                     log.info(f'...... File exists, download skipped.')
@@ -107,7 +95,7 @@ def ERA5_daily(
             with parallel_config(backend="loky", n_jobs=context.obj.get_n_process(), verbose=1):
                 yearly_files = Parallel()(
                     delayed(download_helper)(date) for date in xr.date_range(
-                        f'{year}-01-01', f'{year}-12-31'
+                        f'{year}-01-01', f'{year}-12-31', freq = 'MS'
                     )
                 )
 
