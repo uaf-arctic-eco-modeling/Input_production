@@ -96,19 +96,37 @@ class GlobalConfiguration:
                 sys.exit(0)
 
         if self.region_directory:
+            self.log.info(f'Using Region at {self.region_directory}')
             self.region = Region.from_directory(
                 self.region_directory, self.import_data, self.log
             )
         else:
+            self.log.info(f'No Region provided')
             self.region = None
         self.runtime_data = {}
 
 
     def overwrite_disabled_exit(self):
+        """Exits the program at start up if overwrite is disabled"""
         self.log.error(OVERWRITE_DISABLED_MSG)
         sys.exit(0)
 
-    def callback_export_region(self, items = 'all', **kwargs):
+    def callback_export_region(self, items: list|str = 'all', **kwargs):
+        """Callback to export the region if it's configured in the configuration
+
+        Parameters
+        ----------
+        items: list or str, defaults 'all'
+            If a string is provided it must be 'all'
+            otherwise it should be a list of items in the region to save
+        kwargs: 
+            kwargs to pass to regions export function.
+
+        Raises
+        ------
+        FileExistsError:
+            if region exists and overwrite is false
+        """
         if self.save_enabled:   
             self.log.info(f'Saving {items} to region at {self.region_directory}.')
             try:
@@ -125,7 +143,14 @@ class GlobalConfiguration:
         else:
             self.log.debug('Save has been disabled')
         
-    def get_n_process(self):
+    def get_n_process(self) -> int:
+        """Checks `parallel` and `n_process` to detrmine the number
+        of processes available. 
+
+        Returns
+        -------
+        int
+        """
         return self.n_process if self.parallel else 1
 
 

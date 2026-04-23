@@ -27,22 +27,29 @@ def version_callback(arg):
         print(__version__)
         sys.exit(0)
 
+
 @app.callback()
 def main(
     context: Context,
-    version: Annotated[bool,Option(callback=version_callback, is_eager=True)] = False,
+    version: Annotated[bool,Option(callback=version_callback, is_eager=True, help="Flags if version TEMDS version should be shown.")] = False,
     log_file: Annotated[Path, Option(help="Optional path to save log to")]=None,
-    log_level: Annotated[str, Option(help="Log level")]="INFO",
+    log_level: Annotated[str, Option(help="Log level. Options are: INFO, DEBUG, WARN. ERROR, or NONE}")]="INFO",
     silent: Annotated[bool, Option(help="Flag to suppress printing messages to console.")] = False,
-    use_region: Annotated[Path, Option(help="")]=None,
-    load_all:  Annotated[bool, Option(help="")]=True,
-    load_item:  Annotated[List[str], Option(help="")]=[],
-    parallel:  Annotated[bool, Option(help="")]=False,
-    n_process:  Annotated[int, Option(help="")]=4,
+    use_region: Annotated[Path, Option(help="Path to a directory containing a region defined by manifest.yml")]=None,
+    load_all:  Annotated[bool, Option(help="Flag to load all data for a region when --use-region is provided")]=True,
+    load_item:  Annotated[List[str], Option(help="Keys for items to load for region if --no-load-all is provided")]=[],
+    parallel:  Annotated[bool, Option(help="Flag to enable parallel processing")]=False,
+    n_process:  Annotated[int, Option(help="Number of parallel processes to use when --parallel is used")]=4,
     overwrite: common.OVERWRITE_FLAG = False,
     cleanup: common.CLEANUP_FLAG = False,
     fail_on_warn:  Annotated[bool, Option(help="Flag to halt program execution when a warning is generated")]=False,
     ):
+    """Callback for cli interface. Configures context.obj
+
+    Parameters
+    ----------
+    see above.
+    """
     load_data = []
     if load_all and load_item==[]:
         load_data = None # none will force load all in region constructor

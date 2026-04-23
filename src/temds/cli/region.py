@@ -46,7 +46,6 @@ def create(
         resolution: Annotated[float, Option(help="Resolution, required if mast is not provided")] = None,
         crs: Annotated[str, Option(help="WKT formatted CRS")] = None,
         align: Annotated[bool, Option(help="Flag to force region to ba aligned to resolution. It is a good idea to keep this true")] = True
-
     ):
     """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
     formatted to be read as a YearlyDataset.
@@ -98,7 +97,7 @@ def create(
     context.obj.callback_export_region()
     # new.export_to_directory(destination)
 
-    log.info('Complete!')
+    log.info('Create region Complete!')
 
 @app.command()
 def divide(
@@ -108,7 +107,10 @@ def divide(
     size_x: Annotated[int, Argument(help=f"Target number of pixels for x dimension if each subregion ")],
     size_y: Annotated[int, Argument(help=f"Target number of pixels for y dimension if each subregion. Will uses size_x if not provided.")] = None
     ):
+    """This command subdivides a soruce region in to multiple smaller regions.
+    """
     log = context.obj.log
+    log.info("Region division starting.")
     try:
         init = Region.from_directory(source)
     except FileNotFoundError:
@@ -135,16 +137,18 @@ def divide(
         log.info(f'.. exporting to  {hix},{vix}')
         subregion.export_to_directory(destination/f'H{hix}-V{vix}/')
 
-    log.info('Complete!')
+    log.info('Region division complete!')
 
 @app.command()
 def import_data(
     context: Context,
     region_directory: common.DESTINATION_DIR,
-    source_path: Annotated[Path, Argument(help=f"path to input data")],
-    name: Annotated[str, Argument(help=f"")] = None,
+    source_path: Annotated[Path, Argument(help=f"Path to input data")],
+    name: Annotated[str, Argument(help=f"Name to use for imported data")] = None,
     # overwrite: common.OVERWRITE_FLAG = False,
     ):
+    """This command imports data for a region. 
+    """
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
@@ -206,5 +210,5 @@ def import_data(
         # except FileExistsError:
         #     log.error('Output files exist. Cannot save unless --overwrite is passed.')
         #     return
-    log.info('region import-data complete!')
+    log.info('Import data complete!')
     return area

@@ -34,15 +34,14 @@ def calculate_normals(
         name: Annotated[str, Argument(help=f"name to save baseline data in region to; When not provided -baseline is appended to source")] = None,
 
     ):
-    """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
-    formatted to be read as a YearlyDataset.
+    """This command calculates the long term climate normals for a daily dataset.
     """
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
-    # return
+    log.info('Starting calculate normals.')
     if context.obj.region: 
-        log.info('Using region from context')
+        # log.info('Using region from context')
         area = context.obj.region
         region_directory = context.obj.region_directory
     else:
@@ -76,4 +75,5 @@ def calculate_normals(
         except FileExistsError:
             log.error('Output files exist. Cannot save unless --overwrite is passed.')
             sys.exit(0)
+    log.info("Calculating normals complete.")
     return area

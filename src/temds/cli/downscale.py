@@ -34,24 +34,23 @@ NAME = 'Downscale'
 @app.command()
 def delta_method(
         context: Context,
-        destination: common.DESTINATION_FILE,
-        to_downscale: Annotated[Path, Argument(help="")],
-        reference: Annotated[Path, Argument(help="")],
+        destination: common.DESTINATION_DIR,
+        to_downscale: Annotated[Path, Argument(help="Path of data to be downscaled. This should be a directory containing netcdf files for each year of data you wish to downscale. See note if --use-region flag is provided.")],
+        reference: Annotated[Path, Argument(help="Path to data to use as downscaling reference. This should be a single netcdf file with long term climate normals. See note if --use-region flag is provided. ")],
         variables: Annotated[List[str], Argument(help="list of variables to downscale")] = None,
-        baseline: Annotated[Path, Option(help="Optional precalculated baseline data to use")]=None,
-        baseline_years: Annotated[tuple[int, int], Option(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
-        baseline_name: Annotated[str, Option(help=f"name to save baseline data in region to; When not provided -baseline is appended to source")] = None,
-        save_baseline: Annotated[bool, Option(help="Flag to save baseline data when it has to be caclulated")] = False,
-        correction_factors: Annotated[str, Option(help="Optional precalculated baseline data to use")]=None,
-        save_correction_factors: Annotated[bool, Option(help="Flag to save baseline data when it has to be caclulated")] = False,
-        downscale_years: Annotated[tuple[int, int], Option(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
-        
-
+        baseline: Annotated[Path, Option(help="Path to optional precalculated baseline data to use. A single netcdf file. See note if --use-region flag is provided.")]=None,
+        baseline_years: Annotated[tuple[int, int], Option(help="Start and end of years (inclusive) to calculate climate baseline for if not provided")] = None,
+        baseline_name: Annotated[str, Option(help=f"Name to save baseline data as. Data is saved as baseline_name.nc in destinations directory when no region is provided, otherwise it's saved in the region.  When not provided -baseline is appended to source")] = None,
+        save_baseline: Annotated[str, Option(help="Flag to save baseline data when it has to be calculated")] = False,
+        correction_factors: Annotated[str, Option(help="Path to optional precalculated correction factor data to use, See note if --use-region flag is provided.")] = None,
+        save_correction_factors: Annotated[str, Option(help="Flag to save correction factor data when it has to be calculated")] = False,
+        downscale_years: Annotated[tuple[int, int], Option(help="Start and end of years to download data for. Will default to full range available if not provided")] = None,
     ):
-    """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
-    formatted to be read as a YearlyDataset.
+    """This command downscale data via the delta-method
 
-    If --use-region is provided al
+    Note: 
+        If --use-region is provided, paths are treated as keys to imported data 
+        from region.
     """
     log = context.obj.log
     overwrite = context.obj.overwrite
@@ -130,7 +129,7 @@ def delta_method(
             if context.obj.region:
                 context.obj.callback_export_region([baseline_name], overwrite=overwrite) #TODO would we want to overwrite here
             else:
-                out_path = destination.parent/f"{baseline_name}.nc"
+                out_path = destination/f"{baseline_name}.nc"
                 area.data[baseline_name].save(out_path, overwrite=overwrite)
 
     elif not context.obj.region:
@@ -164,7 +163,7 @@ def delta_method(
                 overwrite=overwrite
             ) #TODO would we want to overwrite here
         else:
-            out_path = destination.parent/f"{correction_factors}.nc"
+            out_path = destination/f"{correction_factors}.nc"
             area.data[correction_factors].save(
                 out_path, overwrite=overwrite
             )

@@ -34,21 +34,23 @@ def era5_daily(
         context: Context,
         destination: common.DESTINATION_DIR,
         source: common.SOURCE_DIR,
-        years: common.ERA5_YEARS = None,
-        years_as_range: common.YEAR_RANGE_FLAG =False,
+        years: Annotated[tuple[int, int], Argument(help="Range of years to preprocess ERA5 daily data for.")] = None
+        # years: common.ERA5_YEARS = None,
+        # years_as_range: common.YEAR_RANGE_FLAG = False,
         # overwrite: common.OVERWRITE_FLAG = True,
         # cleanup: common.CLEANUP_FLAG = False,
     ):
-    """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
-    formatted to be read as a YearlyDataset.
+    """This command preprocesses downloaded ERA5 daily data. Preprocessed data 
+    will be formatted to be read as a YearlyDataset.
     """
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
+    log.info('Starting preprocessing of ERA5-daily data')
 
 
     if context.obj.region: ## TODO suport region in this function
-        destination = context.obj.region_directory / 'ERA5'
+        destination = context.obj.region_directory / 'ERA5-'
 
 
     if destination.exists() and overwrite == False: context.obj.overwrite_disabled_exit()
@@ -56,7 +58,7 @@ def era5_daily(
     downloads = source
     downloads = Path(downloads)
 
-    years = common.years_as_range_check(years, years_as_range, [1940,2025])
+    years = common.years_as_range_check(years, True, [1940,2025])
     
     log.info(f'Running for {years}')
 
@@ -86,21 +88,25 @@ def cmip6_daily(
         destination: common.DESTINATION_DIR,
         source: common.SOURCE_DIR,
         years: Annotated[tuple[int, int], Argument(help="Start and end of years to download data for. Will default to full range of experiment provided")] = None,
-        source_match: Annotated[str, Option(help=f"")] = '*.nc',
-        name: Annotated[str, Option(help=f"")] = 'cmpi6',
-        topo: Annotated[Path, Option(help=f"path to preprocessed topo data")] = None,
+        source_match: Annotated[str, Option(help=f"bash style file name matching for finding source data to load")] = '*.nc',
+        name: Annotated[str, Option(help=f"Optional name to use for output files")] = 'cmpi6',
+        topo: Annotated[Path, Option(help=f"path to preprocessed tem formatted topo data")] = None,
 
         # region_directory: Annotated[Path, Option(help='region folder with manifest.yml, this will supersede the default destination path')]= None,
 
         # overwrite: common.OVERWRITE_FLAG = False,
         # cleanup: common.CLEANUP_FLAG = False
     ):
+    """This command preprocesses CMIP6 daily data to use in downscaling. If topo
+    is provided the variable for VAPO is calculated otherwise it is not.
+    """
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
     parallel = context.obj.parallel
     n_process = context.obj.get_n_process()
     data = []
+    log.info('Starting preprocessing of CMIP6 Daily data')
 
     if context.obj.region:
         destination = context.obj.region_directory/ name
@@ -120,7 +126,7 @@ def cmip6_daily(
         end_year = years[1]
     log.info(f'Processing data from {start_year} to {end_year}')
 
-
+    
     from_cmip6 = lambda year: datasources.dataset.YearlyDataset.from_cmip6(
         year, source, file_name_match=source_match
     )
@@ -161,21 +167,6 @@ def cmip6_daily(
             with parallel_config(backend="loky", n_jobs=n_process, verbose=1):
                 context.obj.callback_export_region([name], parallel=parallel)
 
-            # if 'topo' in context.obj.region.data:
-            #     log.info('Adding VAPO')
-            #     elevation = context.obj.region.data['topo'].dataset['elevation']
-            #     no_vapo = context.obj.region.data[name]
-            
-            #     context.obj.region.import_datasource(
-            #         name, 
-            #         no_vapo, 
-            #         callback=cmip6.callback_psl_to_vapo, 
-            #         elevation=elevation,
-            #         # parallel = parallel
-            #     )
-            # else:
-            #     log.info('Skipping VAPO, no topo data')
-
         else:
             destination_format = name+'-{year}.nc'
             if topo:
@@ -190,7 +181,7 @@ def cmip6_daily(
     except FileExistsError:
         log.error('Output files exist. Cannot save unless --overwrite is passed.')
         return
-    log.info('Preprocess cmip6-daily complete!')
+    log.info('Preprocessing of CMIP6-daily data complete!')
 
 
 
@@ -199,14 +190,17 @@ def worldclim(
         context: Context,
         destination: common.DESTINATION_FILE,
         source: common.SOURCE_DIR,
-        extent_file: Annotated[Path, Argument(help="path to extent raster. used to pull extent at resolution")],
+        extent_file: Annotated[Path, Argument(help="Path to extent raster which is used to determine projection, extent, and resolution of data")],
         # name: Annotated[str, Option(help=f"")] = 'worldclim',
     ):
+    """This command creates the worldclim climate reference dataset from raw worldclim data and an extent
+    """
     log = context.obj.log
     overwrite = context.obj.overwrite
     cleanup = context.obj.cleanup
     parallel = context.obj.parallel
     n_process = context.obj.get_n_process()
+    log.info('Preprocessing worldclim data.')
 
     if context.obj.region:
         region = context.obj.region
@@ -233,7 +227,7 @@ def worldclim(
     except FileExistsError:
         log.error('Output files exist. Cannot save unless --overwrite is passed.')
         return
-    log.info('Preprocess worldclim complete!')
+    log.info('Preprocessing worldclim complete!')
 
 
 @app.command()
@@ -242,16 +236,17 @@ def topo(
         destination: common.DESTINATION_FILE,
         source: common.SOURCE_FILE,
         extent_file: Annotated[Path, Argument(help="path to extent raster. used to pull extent at resolution")],
-        algorithm: Annotated[str, Option(help=f"")] = 'average',
+        algorithm: Annotated[str, Option(help=f"Algorithm used in resampling.")] = 'average',
     ):
+    """This command creates the topo data set from an input elevation dataset, and an extent
+    """
     log = context.obj.log
     overwrite = context.obj.overwrite
-
+    log.info("Starting preprocessing of topo data.")
 
     if context.obj.region:
         region = context.obj.region
         destination = context.obj.region_directory/'topo.nc'
-
     else: 
         region = Region.from_mask(Mask.from_file(extent_file))
 
@@ -268,4 +263,4 @@ def topo(
         man.add_dataset('topo', 'topo.nc')
         man.to_file(context.obj.region_directory/ 'manifest.yml' )
 
-    print('Complete.')
+    print('Preprocessing of topo data complete!')
