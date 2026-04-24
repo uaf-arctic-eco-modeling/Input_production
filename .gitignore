@@ -9,3 +9,9 @@ __pycache__/
 working/
 
 local_test_data/*
+
+*.nc
+*.xml
+*.tif
+#*.ipynb
+
