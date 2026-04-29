@@ -394,6 +394,41 @@ class Region(object):
         manifest.to_file(manifest_file)
         return manifest
 
+
+    def export_TEM(self, dataset_name, where, **kwargs):
+        """Exports a item in `data` to a TEM ready format.
+        dataset_name: str 
+            should be a key in self.data which corresponds to a dataset which
+            can be exported to TEM format.
+        where: Path
+            directory to save exported data to. Will be created if it does not
+            exist. Data will be saved to this directory with the name
+            {dataset_name}.nc, where dataset_name is the value of the
+            dataset_name parameter.
+
+        Questions:
+         - should this export all data in a region object? Not all possible keys
+           have a tem analog
+         - should there be something that lets user specifiy which things to
+           export?
+         - should there be any validation? validation that the TEM dataset is
+           complete?
+         - should there be a return type? like an xarray dataset? Or should this
+           function actually write the files?
+         -
+
+        """
+
+
+
+        if dataset_name == 'co2':
+            self.logger.info("Exporting CO2 data to TEM format...")
+
+
+
+        where = Path(where)
+
+        from IPython import embed; embed()
     def empty_gdal_dataset(self, n_layers=1, dtype = gdal.GDT_Float32):
         """Create an empty gdal raster based on regions extent/crs/transform
         """
