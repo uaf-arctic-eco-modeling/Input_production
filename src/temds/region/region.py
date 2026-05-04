@@ -518,6 +518,33 @@ class Region(object):
             self.logger.info(f"Saving file to {destination / 'topo.nc'}...")
             T.to_netcdf(destination / 'topo.nc')
             return 0
+
+        if dataset_name == 'drainage':
+            self.logger.info("Exporting drainage data to TEM format...")
+            if 'topo' not in self.data.keys():
+                self.lazy_import(where, 'topo')
+
+            self.logger.info("Converting drainage data to TEM format...")
+            D = self.data['topo'].dataset.drop(['elevation', 'TPI', 'slope', 'aspect'])
+            D['Y'] = np.arange(D.sizes['y'])
+            D['X'] = np.arange(D.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'drainage.nc'}...")
+            D.to_netcdf(destination / 'drainage.nc')
+            return 0
+
+        if dataset_name == 'vegetation':
+
+            self.logger.info("Exporting vegetation data to TEM format...")
+            if dataset_name not in self.data.keys():
+                self.lazy_import(where, 'vegetation')
+
+            self.logger.info("Converting vegetation data to TEM format...")
+            V = self.data[dataset_name].dataset
+            V['Y'] = np.arange(V.sizes['y'])
+            V['X'] = np.arange(V.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'veg.nc'}...")
+            V.to_netcdf(destination / 'veg.nc')
+            return 0
         from IPython import embed; embed()
     def empty_gdal_dataset(self, n_layers=1, dtype = gdal.GDT_Float32):
         """Create an empty gdal raster based on regions extent/crs/transform
