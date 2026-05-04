@@ -569,18 +569,15 @@ class TEMDataset(object):
         driver.CreateCopy("/tmp/TEM_Landcover_V4_temp_from_veg.tif",extent_raster)
         del(driver)
 
-       
         if 'topo' in region.data:
             topo = region.data['topo']
         else:
-            raise NotImplementedError('Need to add back options to load topo for raw/or other preprocessed data')
-            # # slow.... for large areas
-            # topo = TEMDataset.from_topo(
-            #     'working/00-download/topo/',
-            #     extent_raster,
-            #     download=False,
-            #     logger=logger,
-            # )
+            try:
+                # not sure how to get the path here....the 'working/' part...
+                region.lazy_import(Path('working') / region.name, 'topo')
+                topo = region.data['topo']
+            except Exception as e:
+                raise RuntimeError(f"{func_name}: Problem loading topo data. Expection: {e}")
 
         # Make sure we only write out the variable we are interested in.
         topo.dataset['drainage_class'].astype(np.int32).rio.to_raster("/tmp/drainage_raster_temp_from_veg.tif")

@@ -30,6 +30,37 @@ app = Typer(help=HELP, no_args_is_help=True)
 NAME = 'Downscale'
 
 
+@app.command()
+def extra_tem_files(
+    context: Context,
+    destination: common.DESTINATION_DIR,
+    overwrite: common.OVERWRITE_FLAG = False,
+
+    ):
+    """
+    Function to prepare extra files for TEM, e.g.: vegetation, etc
+    """
+    log = context.obj.log
+
+    log.info('Preparing TEM vegetation file...')
+    veg = datasources.dataset.TEMDataset.from_vegetation(
+        land_cover_raster=datasources.vegetation.land_cover_path, 
+        land_cover_classes=datasources.vegetation.land_cover_classification, 
+        global_political_map=datasources.vegetation.political_shp_path, 
+        eco_region_map=datasources.vegetation.eco_shp_path, 
+        region=context.obj.region
+        )
+
+    log.info('Importing vegetation data to region object...')    
+    context.obj.region.import_datasource('vegetation', veg)
+
+    log.info("Exporting the region object's vegetation data...")
+    if context.obj.region:
+        context.obj.callback_export_region(
+            ['vegetation'], 
+            overwrite=overwrite
+    ) 
+
 
 @app.command()
 def delta_method(
