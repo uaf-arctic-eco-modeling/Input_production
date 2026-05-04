@@ -18,6 +18,7 @@ TODO:
 from pathlib import Path
 
 import geopandas as gpd
+import numpy as np
 from osgeo import gdal
 import pyproj
 import xarray as xr
@@ -34,6 +35,7 @@ from .. import gdal_tools
 from .mask import Mask
 from .manifest import Manifest
 from .tools import mask_boundary_compatibility_report, total_extent_as_geoseries
+from temds.constants import TEMDS_DATASET_NAMES
 
 class MaskBoundaryCompatibilityError(Exception):
     """Exception for region mask and  boundary incompatibility errors
@@ -239,7 +241,7 @@ class Region(object):
         manifest = Manifest.from_file( directory/ 'manifest.yml' )
         boundary = gpd.read_file(directory / manifest['boundary'] )
         mask = Mask.from_file(directory / manifest['mask'])
-        new = cls(boundary, mask, logger)
+        new = cls(boundary, mask, logger, name=directory.stem)
 
         if import_data is None:
             import_data = manifest['data'].keys()
@@ -277,6 +279,37 @@ class Region(object):
         shape_check = self.shape == datasource.shape
         # print( gt_check, crs_check, shape_check)
         return gt_check and crs_check and shape_check
+
+    def lazy_import(self, where, ds_name_key):
+        """
+        Tries to look in `where` for a manifest file. Then looks in manifest for
+        an entry corresponding to `ds_name_key`. If it finds one it imports that
+        dataset and adds it to the region data with the key `ds_name_key`. If it
+        does not find one it raises an error. This is designed to be used when a
+        dataset is required for a region but is not currently loaded in the
+        region data. This allows the region to import only the data it needs for
+        export without having to load everything at the start.
+        """
+        self.logger.info(f"{ds_name_key} data not found in region data. Attempting to read manifest and import {ds_name_key} data...")
+
+        manifest = Manifest.from_file( Path(where) / 'manifest.yml' )
+        if ds_name_key not in manifest['data'].keys():
+            raise KeyError(f"{ds_name_key} not found in manifest data. Cannot lazy import {ds_name_key}. Please ensure the manifest file in {where} has an entry for {ds_name_key} in the data section.")
+        _file = manifest['data'][ds_name_key]
+        in_path = Path(where).joinpath(_file)
+        self.logger.info(f'... {ds_name_key} from {in_path}')
+        self.logger.suspend()
+        if in_path.is_dir():
+            _ds = timeseries.YearlyTimeSeries(
+                in_path, 
+                logger = self.logger
+            )
+        else:
+            _ds = dataset.TEMDataset(
+                in_path, logger = self.logger
+            )
+        self.import_datasource(ds_name_key, _ds)
+        self.logger.resume()
 
     
     def import_datasource(self, name, datasource, callback = None, **kwargs):
@@ -342,14 +375,17 @@ class Region(object):
     def export_mask(self, where):
         self.mask.to_file( where )
 
-    def export_to_directory(self, where: Path, **kwargs
+    def export_to_directory(self, where: Path, format: str = 'TEMDS', **kwargs
             # boundary_filename = 'boundary.geojson',
             # mask_filename = 'mask.tif',
             # manifest_filename = 'manifest.yml',
             # update_manifest = 
             
         ):
+        # TODO: Should this actually be the wrapper for exporting to a specific
+        # format???
         """
+
         """
 
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
@@ -420,14 +456,68 @@ class Region(object):
         """
 
 
+        if dataset_name not in TEMDS_DATASET_NAMES:
+            raise NotImplementedError(f"Invalid dataset name for TEM export: {dataset_name}. Must be one of {TEMDS_DATASET_NAMES}.")
+
+        # Not really sure about this.....
+        assert self.name == where.stem, f"Region name {self.name} does not match destination directory name {where.stem}. Please ensure the destination directory is named the same as the region you want to export."  
+
+
+        destination = where / "tem_export"
+        destination.mkdir(exist_ok=True, parents=True)
 
         if dataset_name == 'co2':
             self.logger.info("Exporting CO2 data to TEM format...")
 
+            # Manually spliced data from NOAA ESRL Global Monitoring Division
+            # with the data from the demo file. (just added yrs 2016+)
+            # https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.txt
+            co2 = [296.311, 296.661, 297.04, 297.441, 297.86, 298.29, 298.726, 299.163, 
+                299.595, 300.016, 300.421, 300.804, 301.162, 301.501, 301.829, 302.154, 
+                302.48, 302.808, 303.142, 303.482, 303.833, 304.195, 304.573, 304.966, 
+                305.378, 305.806, 306.247, 306.698, 307.154, 307.614, 308.074, 308.531, 
+                308.979, 309.401, 309.781, 310.107, 310.369, 310.559, 310.667, 310.697, 
+                310.664, 310.594, 310.51, 310.438, 310.401, 310.41, 310.475, 310.605, 
+                310.807, 311.077, 311.41, 311.802, 312.245, 312.736, 313.27, 313.842, 
+                314.448, 315.084, 315.665, 316.535, 317.195, 317.885, 318.495, 318.935, 
+                319.58, 320.895, 321.56, 322.34, 323.7, 324.835, 325.555, 326.55, 
+                328.455, 329.215, 330.165, 331.215, 332.79, 334.44, 335.78, 337.655, 
+                338.925, 340.065, 341.79, 343.33, 344.67, 346.075, 347.845, 350.055, 
+                351.52, 352.785, 354.21, 355.225, 356.055, 357.55, 359.62, 361.69, 
+                363.76, 365.83, 367.9, 368, 370.1, 372.2, 373.6943, 375.3507, 377.0071, 
+                378.6636, 380.5236, 382.3536, 384.1336, 389.9, 391.65, 393.85, 396.52, 
+                398.65, 400.83,
+                404.41, 406.76, 408.72, 411.65, 414.21, 416.41, 418.53, 421.08, 424.61 ]
+            year = [1901, 1902, 1903, 1904, 1905, 1906, 1907, 1908, 1909, 1910, 1911, 
+                1912, 1913, 1914, 1915, 1916, 1917, 1918, 1919, 1920, 1921, 1922, 1923, 
+                1924, 1925, 1926, 1927, 1928, 1929, 1930, 1931, 1932, 1933, 1934, 1935, 
+                1936, 1937, 1938, 1939, 1940, 1941, 1942, 1943, 1944, 1945, 1946, 1947, 
+                1948, 1949, 1950, 1951, 1952, 1953, 1954, 1955, 1956, 1957, 1958, 1959, 
+                1960, 1961, 1962, 1963, 1964, 1965, 1966, 1967, 1968, 1969, 1970, 1971, 
+                1972, 1973, 1974, 1975, 1976, 1977, 1978, 1979, 1980, 1981, 1982, 1983, 
+                1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 
+                1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 
+                2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 
+                2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
 
+            self.logger.info(f"Saving file to {destination / 'co2.nc'}...")
+            xr.Dataset(data_vars={'co2':('year',co2)}, coords={'year':year}).to_netcdf(destination / 'co2.nc')
+            return 0
 
-        where = Path(where)
+        if dataset_name == 'topo':
+            self.logger.info("Exporting topo data to TEM format...")
+            if dataset_name not in self.data.keys():
+                self.lazy_import(where, 'topo')
 
+            self.logger.info("Converting topo data to TEM format...")
+            T = self.data['topo'].dataset.drop(['TPI', 'drainage_class'])
+
+            T['Y'] = np.arange(T.sizes['y'])
+            T['X'] = np.arange(T.sizes['x'])
+
+            self.logger.info(f"Saving file to {destination / 'topo.nc'}...")
+            T.to_netcdf(destination / 'topo.nc')
+            return 0
         from IPython import embed; embed()
     def empty_gdal_dataset(self, n_layers=1, dtype = gdal.GDT_Float32):
         """Create an empty gdal raster based on regions extent/crs/transform
