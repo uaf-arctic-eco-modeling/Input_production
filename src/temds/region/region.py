@@ -545,7 +545,22 @@ class Region(object):
             self.logger.info(f"Saving file to {destination / 'veg.nc'}...")
             V.to_netcdf(destination / 'veg.nc')
             return 0
-        from IPython import embed; embed()
+
+        if dataset_name == 'soiltex':
+            self.logger.info("Exporting soil texture data to TEM format...")
+            if dataset_name not in self.data.keys():
+                self.lazy_import(where, 'soiltex')
+
+            self.logger.info("Converting soil texture data to TEM format...")
+            ST = self.data[dataset_name].dataset
+            ST['Y'] = np.arange(ST.sizes['y'])
+            ST['X'] = np.arange(ST.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'soiltex.nc'}...")
+            ST.to_netcdf(destination / 'soiltex.nc')
+            return 0
+
+
+
     def empty_gdal_dataset(self, n_layers=1, dtype = gdal.GDT_Float32):
         """Create an empty gdal raster based on regions extent/crs/transform
         """
