@@ -42,7 +42,7 @@ def extra_tem_files(
     """
     log = context.obj.log
 
-    log.info('Preparing TEM vegetation file...')
+    log.info('Preparing TEM vegetation data...')
     veg = datasources.dataset.TEMDataset.from_vegetation(
         land_cover_raster=datasources.vegetation.land_cover_path, 
         land_cover_classes=datasources.vegetation.land_cover_classification, 
@@ -59,7 +59,19 @@ def extra_tem_files(
         context.obj.callback_export_region(
             ['vegetation'], 
             overwrite=overwrite
-    ) 
+    )
+
+    log.info("Preparing TEM soil texture data....")
+    soil_texture = datasources.dataset.TEMDataset.from_soil_texture('working/00-download/soiltexture', context.obj.region, logger=context.obj.log)
+
+    log.info('Importing soil texture data to region object...')
+    context.obj.region.import_datasource('soiltex', soil_texture)
+    log.info("Exporting the region object's soil texture data...")
+    if context.obj.region:
+        context.obj.callback_export_region(
+            ['soiltex'], 
+            overwrite=overwrite
+    )
 
 
 @app.command()

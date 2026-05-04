@@ -369,10 +369,9 @@ class TEMDataset(object):
 
         return TEMDataset(dataset, logger=logger)
 
-    @staticmethod
-    def from_soil_texture(data_path, extent_raster=None, download=False,
-                          overwrite=False, logger=Logger(), buffer=0,
-                          resample_alg='average'):
+    @classmethod
+    def from_soil_texture(cls, data_path, region, download=False,
+                          overwrite=False, logger=Logger()):
         func_name = "TEMdataset.from_soil_texture"
         logger.info(f'{func_name}: Processing soil texture data in {data_path}')
 
@@ -382,13 +381,10 @@ class TEMDataset(object):
             file_tools.download_all_files(soil_texture.urlsilt, data_path, overwrite)
             file_tools.download_all_files(soil_texture.urlclay, data_path, overwrite)
 
-        # ???if not Path(data_path, soil_texture..
+        if not region:
+            raise ValueError(f'{func_name}: region is required!')
 
-        if not extent_raster:
-            raise ValueError(f'{func_name}: extent_raster is required!')
-
-        logger.info(f'{func_name}: Using extent from {extent_raster}')
-        er = gdal.Open(extent_raster)
+        extent_raster = region.empty_gdal_dataset()
 
         # Original method seemed to have some extra steps...
         # also the original method didn't seem to process the sand file??
@@ -403,17 +399,10 @@ class TEMDataset(object):
         #   take the coarse value, 
         #   otherwise take the fine value.
 
-        # Get the extent from the extent raster
-        er_gt = er.GetGeoTransform()
-        er_minx = er_gt[0]
-        er_miny = er_gt[3]
-        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
-        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
-
         logger.info(f'{func_name}: Creating empty xarray dataset')
-        newDS = TEMDataset.from_raster_extent(extent_raster, 
-                                              in_vars='pct_clay pct_sand pct_silt'.split(), 
-                                              ds_time_dim=[], buffer_px=0)
+        newDS = TEMDataset.from_region(region,
+                                       in_vars='pct_clay pct_sand pct_silt'.split(), 
+                                       ds_time_dim=[], buffer_px=0)
 
         for X in ['clay','sand','silt']:
             logger.info(f'{func_name}: Processing {X} data')
@@ -428,12 +417,12 @@ class TEMDataset(object):
             warpOpts = gdal.WarpOptions(
                         format='MEM',
                         srcSRS=ds_15_30.GetSpatialRef(), 
-                        dstSRS=er.GetSpatialRef(), 
-                        xRes=er.GetGeoTransform()[1], 
-                        yRes=er.GetGeoTransform()[5], 
+                        dstSRS=extent_raster.GetSpatialRef(), 
+                        xRes=extent_raster.GetGeoTransform()[1], 
+                        yRes=extent_raster.GetGeoTransform()[5], 
                         resampleAlg='average', 
                         outputType=gdal.GDT_Float32, 
-                        outputBounds=[er_minx, er_miny, er_maxx, er_maxy])
+                        outputBounds=region.get_extent())
 
             # crop them all down to the AOI
             dst_1530 = gdal.Warp("", ds_15_30, options=warpOpts)
@@ -451,7 +440,7 @@ class TEMDataset(object):
         newDS.dataset['pct_sand'].attrs.update(units='percent')
         newDS.dataset['pct_silt'].attrs.update(units='percent')
         newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
-                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_crs(extent_raster.GetProjection(), inplace=True)\
                     .rio.write_coordinate_system(inplace=True) 
 
         return newDS
