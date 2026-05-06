@@ -559,6 +559,63 @@ class Region(object):
             ST.to_netcdf(destination / 'soiltex.nc')
             return 0
 
+        if dataset_name == 'cru_climate' or dataset_name == 'cmip_climate':
+
+            if dataset_name == 'cru_climate':
+                ds_key_name = 'crujra-downscaled'
+                if 'crujra-downscaled' not in self.data.keys():
+                    self.lazy_import(where, 'crujra-downscaled')
+            if dataset_name == 'cmip_climate':
+                ds_key_name = 'cmip6-ssp245-downscaled'
+                if 'cmip6-ssp245-downscaled' not in self.data.keys():
+                    self.lazy_import(where, 'cmip6-ssp245-downscaled')
+
+            target_vars = {
+                'tair_avg': 'mean', 
+                'vapo': 'mean', 
+                'nirr': 'mean',
+                'prec': 'sum'
+            }
+
+            new_names = {
+                'tair_avg':'tair', 
+                'vapo':'vapor_press', 
+                'nirr':'nirr', 
+                'prec':'precip'
+            }
+
+            ds_monthly = self.data[ds_key_name].synthesize_to_monthly(target_vars, new_names)
+
+            transformer = pyproj.Transformer.from_crs(self.data[ds_key_name].data[0].dataset.rio.crs.to_epsg(), 4326)
+
+            X, Y = np.meshgrid(self.data[ds_key_name].data[0].dataset['x'].values, self.data[ds_key_name].data[0].dataset['y'].values)
+
+            LATS, LONS = transformer.transform(X, Y)
+
+            print("Adding latitude and longitude coordinates...")
+            ds_monthly['lat'] = (('y','x'), LATS)
+            ds_monthly['lat'].attrs['long_name'] = 'latitude'
+            ds_monthly['lat'].attrs['units'] = 'degrees_north'
+            ds_monthly['lat'].attrs['standard_name'] = 'latitude'
+
+            ds_monthly['lon'] = (('y','x'), LONS)
+            ds_monthly['lon'].attrs['long_name'] = 'longitude'
+            ds_monthly['lon'].attrs['units'] = 'degrees_east'
+            ds_monthly['lon'].attrs['standard_name'] = 'longitude'
+
+            ds_monthly['X'] = np.arange(ds_monthly.sizes['x'])
+            ds_monthly['Y'] = np.arange(ds_monthly.sizes['y'])
+
+            if dataset_name == 'cru_climate':
+                outname = 'crujra-downscaled-historic-climate.nc'
+            elif dataset_name == 'cmip_climate':
+                outname = 'cmip6-ssp245-downscaled-projected-climate.nc'
+            else:
+                assert False, "This should never happen"
+            self.logger.info(f"Saving file to {destination / outname}...")
+            ds_monthly.to_netcdf(destination / outname) 
+
+            return 0
 
 
     def empty_gdal_dataset(self, n_layers=1, dtype = gdal.GDT_Float32):
