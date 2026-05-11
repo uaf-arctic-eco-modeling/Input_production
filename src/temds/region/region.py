@@ -454,7 +454,7 @@ class Region(object):
          -
 
         """
-
+        function_name = 'Region.export_TEM'
 
         if dataset_name not in TEMDS_DATASET_NAMES:
             raise NotImplementedError(f"Invalid dataset name for TEM export: {dataset_name}. Must be one of {TEMDS_DATASET_NAMES}.")
@@ -635,6 +635,69 @@ class Region(object):
                 assert False, "This should never happen"
             self.logger.info(f"Saving file to {destination / outname}...")
             ds_monthly.to_netcdf(destination / outname) 
+
+            return 0
+
+        if dataset_name == 'fri_fire':
+            self.logger.info("Exporting FRI fire data to TEM format...")
+            if 'fri-fire' not in self.data.keys():
+                self.lazy_import(where, 'fri-fire')
+            self.logger.info("Converting FRI fire data to TEM format...")
+            F = self.data['fri-fire'].dataset
+            F['Y'] = np.arange(F.sizes['y'])
+            F['X'] = np.arange(F.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'fri-fire.nc'}...")
+            F.to_netcdf(destination / 'fri-fire.nc')
+            return 0
+
+        if dataset_name == 'historic_explicit_fire' or dataset_name == 'projected_explicit_fire':
+            self.logger.info("Exporting explicit fire data to TEM format...")
+            self.logger.warn("SYNTHETIC DATA ONLY AT THIS TIME.")
+
+            # The process for creating "real" explicit fire data has not been
+            # developed yet, so for now we just make some synthetic data so that
+            # TEM will run without complaint. The fire module is effectively off
+            # because we set the burn mask to all zero. The data must match the
+            # shape of the climate files so we simply copy those and rename the
+            # variables. This avoids the need to create the synthetic data at
+            # daily resolution and then resample to monthly, which would be
+            # necessary if we try to make the synthetic data from scratch.
+
+            target_vars = {
+                'tair_avg': 'mean', 
+                'vapo': 'mean', 
+                'nirr': 'mean',
+                'prec': 'sum'
+            }
+
+            new_names = {
+                'tair_avg':'exp_burn_mask', 
+                'vapo':'exp_area_of_burn', 
+                'nirr':'exp_jday_of_burn', 
+                'prec':'exp_severity'
+            }
+
+            if 'historic' in dataset_name:
+                self.logger.info("Pulling time axis from cru...")
+                ds_key = 'crujra-downscaled'
+                out_name = 'historic-explicit-fire.nc'
+            elif 'projected' in dataset_name:
+                self.logger.info("Pulling time axis from cmip...")
+                ds_key = 'cmip6-ssp245-downscaled'
+                out_name = 'projected-explicit-fire.nc'
+            else:
+                assert False, f"{function_name}: the dataset_name must contain either 'historic' or 'projected'"
+
+            ds_monthly = self.data[ds_key].synthesize_to_monthly(target_vars, new_names)
+
+            for v in 'exp_burn_mask exp_jday_of_burn exp_severity exp_area_of_burn'.split(' '):
+                ds_monthly[v].values = np.ones(ds_monthly[v].shape)    
+
+            # Turning explicit fire OFF for all grid cells and time steps.
+            ds_monthly['exp_burn_mask'].values = np.zeros(ds_monthly['exp_area_of_burn'].shape)
+
+            self.logger.info(f"Saving file to {destination / out_name}...")
+            ds_monthly.to_netcdf(destination / out_name)
 
             return 0
 
