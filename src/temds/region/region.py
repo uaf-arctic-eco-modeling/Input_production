@@ -469,6 +469,9 @@ class Region(object):
         if dataset_name == 'co2':
             self.logger.info("Exporting CO2 data to TEM format...")
 
+            # TODO: Refactor this to get data from the web or at least a
+            # file instead of hard coding here...
+
             # Manually spliced data from NOAA ESRL Global Monitoring Division
             # with the data from the demo file. (just added yrs 2016+)
             # https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.txt
@@ -532,6 +535,24 @@ class Region(object):
             D.to_netcdf(destination / 'drainage.nc')
             return 0
 
+        if dataset_name == 'runmask':
+            self.logger.info("Exporting runmask data to TEM format...")
+            self.logger.info("...using vegetation data to create runmask...")
+            if 'vegetation' not in self.data.keys():
+                self.lazy_import(where, 'vegetation')
+            veg_ds = self.data['vegetation'].dataset
+            mask = veg_ds.copy()
+            mask = mask.rename({'veg_class':'run'})
+
+            self.logger.info("turn on mask for all valid veg class px...")
+            mask['run'] = (('y','x'), np.where(veg_ds['veg_class'] > 0, 1, 0))
+            mask['Y'] = np.arange(mask.sizes['y'])
+            mask['X'] = np.arange(mask.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'run-mask.nc'}...")
+            mask.to_netcdf(destination / 'run-mask.nc')
+
+            return 0
+
         if dataset_name == 'vegetation':
 
             self.logger.info("Exporting vegetation data to TEM format...")
@@ -592,7 +613,7 @@ class Region(object):
 
             LATS, LONS = transformer.transform(X, Y)
 
-            print("Adding latitude and longitude coordinates...")
+            self.logger.info("Adding latitude and longitude coordinates to dataset...")
             ds_monthly['lat'] = (('y','x'), LATS)
             ds_monthly['lat'].attrs['long_name'] = 'latitude'
             ds_monthly['lat'].attrs['units'] = 'degrees_north'

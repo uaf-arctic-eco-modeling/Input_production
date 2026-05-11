@@ -38,9 +38,8 @@ def export_model(
     # cleanup = context.obj.cleanup
     # parallel = context.obj.parallel
     # n_process = context.obj.get_n_process()
-    # use_region = context.obj.use_region
 
-    # THis ends up being slow to check because the context is loaded first
+    # This ends up being slow to check because the context is loaded first
     # which requires loading the region data. Unless you use the --no-load-all flag.
     assert format == 'TEM', "Only TEM format is currently supported. Please specify --format TEM or implement a new format (see src/temds/cli/export.py)."
 

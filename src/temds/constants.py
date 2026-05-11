@@ -33,4 +33,4 @@ def get_month_slice(mn):
     return slice(MONTH_START_DAYS[mn]-1, DAYS_PER_MONTH[mn])
 
 
-TEMDS_DATASET_NAMES = 'co2,topo,vegetation,drainage,soiltex,cru_climate,cmip_climate'.split(',')
+TEMDS_DATASET_NAMES = 'runmask,co2,topo,vegetation,drainage,soiltex,cru_climate,cmip_climate,fri_fire,historic_explicit_fire,projected_explicit_fire'.split(',')
