@@ -674,7 +674,7 @@ class Region(object):
                 'tair_avg':'exp_burn_mask', 
                 'vapo':'exp_area_of_burn', 
                 'nirr':'exp_jday_of_burn', 
-                'prec':'exp_severity'
+                'prec':'exp_fire_severity'
             }
 
             if 'historic' in dataset_name:
@@ -690,8 +690,14 @@ class Region(object):
 
             ds_monthly = self.data[ds_key].synthesize_to_monthly(target_vars, new_names)
 
-            for v in 'exp_burn_mask exp_jday_of_burn exp_severity exp_area_of_burn'.split(' '):
+            for v in new_names.values():
                 ds_monthly[v].values = np.ones(ds_monthly[v].shape)    
+
+            self.logger.info('Setting attributes for data variables')
+            ds_monthly['exp_burn_mask'].attrs.update(units='', name='Fire Occurrence')
+            ds_monthly['exp_fire_severity'].attrs.update(units='', name='Fire Severity')
+            ds_monthly['exp_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
+            ds_monthly['exp_area_of_burn'].attrs.update(units='km-2', name='Area of Burn (km-2)')
 
             # Turning explicit fire OFF for all grid cells and time steps.
             ds_monthly['exp_burn_mask'].values = np.zeros(ds_monthly['exp_area_of_burn'].shape)

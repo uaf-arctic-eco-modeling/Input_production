@@ -42,6 +42,23 @@ def extra_tem_files(
     """
     log = context.obj.log
 
+
+    log.info('Preparing TEM fri fire data...')
+    fri = datasources.dataset.TEMDataset.from_fri(
+        data_path='n/a', 
+        region=context.obj.region, 
+        synthetic=True, 
+        logger=context.obj.log
+    )
+    log.info('Importing fri fire data to region object...')
+    context.obj.region.import_datasource('fri-fire', fri)
+    log.info("Exporting the region object's fri fire data...")
+    if context.obj.region:
+        context.obj.callback_export_region(
+            ['fri-fire'], 
+            overwrite=overwrite
+    )
+
     log.info('Preparing TEM vegetation data...')
     veg = datasources.dataset.TEMDataset.from_vegetation(
         land_cover_raster=datasources.vegetation.land_cover_path, 
