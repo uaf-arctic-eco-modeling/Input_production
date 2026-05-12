@@ -627,6 +627,9 @@ class Region(object):
             ds_monthly['X'] = np.arange(ds_monthly.sizes['x'])
             ds_monthly['Y'] = np.arange(ds_monthly.sizes['y'])
 
+            self.logger.warn("Replacing any NaN or inf values in nirr with 0...")
+            np.nan_to_num(ds_monthly['nirr'], copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+
             if dataset_name == 'cru_climate':
                 outname = 'crujra-downscaled-historic-climate.nc'
             elif dataset_name == 'cmip_climate':
@@ -701,6 +704,19 @@ class Region(object):
 
             # Turning explicit fire OFF for all grid cells and time steps.
             ds_monthly['exp_burn_mask'].values = np.zeros(ds_monthly['exp_area_of_burn'].shape)
+
+            ds_monthly['exp_burn_mask'] = ds_monthly['exp_burn_mask'].astype(np.int32)
+            ds_monthly['exp_jday_of_burn'] = ds_monthly['exp_jday_of_burn'].astype(np.int32)
+            ds_monthly['exp_fire_severity'] = ds_monthly['exp_fire_severity'].astype(np.int32)
+            ds_monthly['exp_area_of_burn'] = ds_monthly['exp_area_of_burn'].astype(np.int64)
+
+            ds_monthly['X'] = np.arange(ds_monthly.sizes['x'])
+            ds_monthly['Y'] = np.arange(ds_monthly.sizes['y'])
+
+            ds_monthly['exp_burn_mask'] = ds_monthly['exp_burn_mask'].rename({'y': 'Y', 'x': 'X'})
+            ds_monthly['exp_jday_of_burn'] = ds_monthly['exp_jday_of_burn'].rename({'y': 'Y', 'x': 'X'})
+            ds_monthly['exp_fire_severity'] = ds_monthly['exp_fire_severity'].rename({'y': 'Y', 'x': 'X'})
+            ds_monthly['exp_area_of_burn'] = ds_monthly['exp_area_of_burn'].rename({'y': 'Y', 'x': 'X'})
 
             self.logger.info(f"Saving file to {destination / out_name}...")
             ds_monthly.to_netcdf(destination / out_name)
