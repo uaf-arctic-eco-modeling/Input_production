@@ -18,6 +18,7 @@ TODO:
 from pathlib import Path
 
 import geopandas as gpd
+import numpy as np
 from osgeo import gdal
 import pyproj
 import xarray as xr
@@ -34,6 +35,7 @@ from .. import gdal_tools
 from .mask import Mask
 from .manifest import Manifest
 from .tools import mask_boundary_compatibility_report, total_extent_as_geoseries
+from temds.constants import TEMDS_DATASET_NAMES
 
 class MaskBoundaryCompatibilityError(Exception):
     """Exception for region mask and  boundary incompatibility errors
@@ -239,7 +241,7 @@ class Region(object):
         manifest = Manifest.from_file( directory/ 'manifest.yml' )
         boundary = gpd.read_file(directory / manifest['boundary'] )
         mask = Mask.from_file(directory / manifest['mask'])
-        new = cls(boundary, mask, logger)
+        new = cls(boundary, mask, logger, name=directory.stem)
 
         if import_data is None:
             import_data = manifest['data'].keys()
@@ -277,6 +279,37 @@ class Region(object):
         shape_check = self.shape == datasource.shape
         # print( gt_check, crs_check, shape_check)
         return gt_check and crs_check and shape_check
+
+    def lazy_import(self, where, ds_name_key):
+        """
+        Tries to look in `where` for a manifest file. Then looks in manifest for
+        an entry corresponding to `ds_name_key`. If it finds one it imports that
+        dataset and adds it to the region data with the key `ds_name_key`. If it
+        does not find one it raises an error. This is designed to be used when a
+        dataset is required for a region but is not currently loaded in the
+        region data. This allows the region to import only the data it needs for
+        export without having to load everything at the start.
+        """
+        self.logger.info(f"{ds_name_key} data not found in region data. Attempting to read manifest and import {ds_name_key} data...")
+
+        manifest = Manifest.from_file( Path(where) / 'manifest.yml' )
+        if ds_name_key not in manifest['data'].keys():
+            raise KeyError(f"{ds_name_key} not found in manifest data. Cannot lazy import {ds_name_key}. Please ensure the manifest file in {where} has an entry for {ds_name_key} in the data section.")
+        _file = manifest['data'][ds_name_key]
+        in_path = Path(where).joinpath(_file)
+        self.logger.info(f'... {ds_name_key} from {in_path}')
+        self.logger.suspend()
+        if in_path.is_dir():
+            _ds = timeseries.YearlyTimeSeries(
+                in_path, 
+                logger = self.logger
+            )
+        else:
+            _ds = dataset.TEMDataset(
+                in_path, logger = self.logger
+            )
+        self.import_datasource(ds_name_key, _ds)
+        self.logger.resume()
 
     
     def import_datasource(self, name, datasource, callback = None, **kwargs):
@@ -342,14 +375,17 @@ class Region(object):
     def export_mask(self, where):
         self.mask.to_file( where )
 
-    def export_to_directory(self, where: Path, **kwargs
+    def export_to_directory(self, where: Path, format: str = 'TEMDS', **kwargs
             # boundary_filename = 'boundary.geojson',
             # mask_filename = 'mask.tif',
             # manifest_filename = 'manifest.yml',
             # update_manifest = 
             
         ):
+        # TODO: Should this actually be the wrapper for exporting to a specific
+        # format???
         """
+
         """
 
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
@@ -393,6 +429,302 @@ class Region(object):
 
         manifest.to_file(manifest_file)
         return manifest
+
+
+    def export_TEM(self, dataset_name, where, **kwargs):
+        """Exports a item in `data` to a TEM ready format.
+        dataset_name: str 
+            should be a key in self.data which corresponds to a dataset which
+            can be exported to TEM format.
+        where: Path
+            directory to save exported data to. Will be created if it does not
+            exist. Data will be saved to this directory with the name
+            {dataset_name}.nc, where dataset_name is the value of the
+            dataset_name parameter.
+
+        Questions:
+         - should this export all data in a region object? Not all possible keys
+           have a tem analog
+         - should there be something that lets user specifiy which things to
+           export?
+         - should there be any validation? validation that the TEM dataset is
+           complete?
+         - should there be a return type? like an xarray dataset? Or should this
+           function actually write the files?
+         -
+
+        """
+        function_name = 'Region.export_TEM'
+
+        if dataset_name not in TEMDS_DATASET_NAMES:
+            raise NotImplementedError(f"Invalid dataset name for TEM export: {dataset_name}. Must be one of {TEMDS_DATASET_NAMES}.")
+
+        # Not really sure about this.....
+        assert self.name == where.stem, f"Region name {self.name} does not match destination directory name {where.stem}. Please ensure the destination directory is named the same as the region you want to export."  
+
+
+        destination = where / "tem_export"
+        destination.mkdir(exist_ok=True, parents=True)
+
+        if dataset_name == 'co2':
+            self.logger.info("Exporting CO2 data to TEM format...")
+
+            # TODO: Refactor this to get data from the web or at least a
+            # file instead of hard coding here...
+
+            # TODO: Handle projected co2 (filename projected-co2.nc)
+
+            # Manually spliced data from NOAA ESRL Global Monitoring Division
+            # with the data from the demo file. (just added yrs 2016+)
+            # https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.txt
+            co2 = [296.311, 296.661, 297.04, 297.441, 297.86, 298.29, 298.726, 299.163, 
+                299.595, 300.016, 300.421, 300.804, 301.162, 301.501, 301.829, 302.154, 
+                302.48, 302.808, 303.142, 303.482, 303.833, 304.195, 304.573, 304.966, 
+                305.378, 305.806, 306.247, 306.698, 307.154, 307.614, 308.074, 308.531, 
+                308.979, 309.401, 309.781, 310.107, 310.369, 310.559, 310.667, 310.697, 
+                310.664, 310.594, 310.51, 310.438, 310.401, 310.41, 310.475, 310.605, 
+                310.807, 311.077, 311.41, 311.802, 312.245, 312.736, 313.27, 313.842, 
+                314.448, 315.084, 315.665, 316.535, 317.195, 317.885, 318.495, 318.935, 
+                319.58, 320.895, 321.56, 322.34, 323.7, 324.835, 325.555, 326.55, 
+                328.455, 329.215, 330.165, 331.215, 332.79, 334.44, 335.78, 337.655, 
+                338.925, 340.065, 341.79, 343.33, 344.67, 346.075, 347.845, 350.055, 
+                351.52, 352.785, 354.21, 355.225, 356.055, 357.55, 359.62, 361.69, 
+                363.76, 365.83, 367.9, 368, 370.1, 372.2, 373.6943, 375.3507, 377.0071, 
+                378.6636, 380.5236, 382.3536, 384.1336, 389.9, 391.65, 393.85, 396.52, 
+                398.65, 400.83,
+                404.41, 406.76, 408.72, 411.65, 414.21, 416.41, 418.53, 421.08, 424.61 ]
+            year = [1901, 1902, 1903, 1904, 1905, 1906, 1907, 1908, 1909, 1910, 1911, 
+                1912, 1913, 1914, 1915, 1916, 1917, 1918, 1919, 1920, 1921, 1922, 1923, 
+                1924, 1925, 1926, 1927, 1928, 1929, 1930, 1931, 1932, 1933, 1934, 1935, 
+                1936, 1937, 1938, 1939, 1940, 1941, 1942, 1943, 1944, 1945, 1946, 1947, 
+                1948, 1949, 1950, 1951, 1952, 1953, 1954, 1955, 1956, 1957, 1958, 1959, 
+                1960, 1961, 1962, 1963, 1964, 1965, 1966, 1967, 1968, 1969, 1970, 1971, 
+                1972, 1973, 1974, 1975, 1976, 1977, 1978, 1979, 1980, 1981, 1982, 1983, 
+                1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 
+                1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 
+                2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 
+                2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+
+            self.logger.info(f"Saving file to {destination / 'co2.nc'}...")
+            xr.Dataset(data_vars={'co2':('year',co2)}, coords={'year':year}).to_netcdf(destination / 'co2.nc')
+            return 0
+
+        if dataset_name == 'topo':
+            self.logger.info("Exporting topo data to TEM format...")
+            if dataset_name not in self.data.keys():
+                self.lazy_import(where, 'topo')
+
+            self.logger.info("Converting topo data to TEM format...")
+            T = self.data['topo'].dataset.drop(['TPI', 'drainage_class'])
+
+            T['Y'] = np.arange(T.sizes['y'])
+            T['X'] = np.arange(T.sizes['x'])
+
+            self.logger.info(f"Saving file to {destination / 'topo.nc'}...")
+            T.to_netcdf(destination / 'topo.nc')
+            return 0
+
+        if dataset_name == 'drainage':
+            self.logger.info("Exporting drainage data to TEM format...")
+            if 'topo' not in self.data.keys():
+                self.lazy_import(where, 'topo')
+
+            self.logger.info("Converting drainage data to TEM format...")
+            D = self.data['topo'].dataset.drop(['elevation', 'TPI', 'slope', 'aspect'])
+            D['Y'] = np.arange(D.sizes['y'])
+            D['X'] = np.arange(D.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'drainage.nc'}...")
+            D.to_netcdf(destination / 'drainage.nc')
+            return 0
+
+        if dataset_name == 'runmask':
+            self.logger.info("Exporting runmask data to TEM format...")
+            self.logger.info("...using vegetation data to create runmask...")
+            if 'vegetation' not in self.data.keys():
+                self.lazy_import(where, 'vegetation')
+            veg_ds = self.data['vegetation'].dataset
+            mask = veg_ds.copy()
+            mask = mask.rename({'veg_class':'run'})
+
+            self.logger.info("turn on mask for all valid veg class px...")
+            mask['run'] = (('y','x'), np.where(veg_ds['veg_class'] > 0, 1, 0))
+            mask['Y'] = np.arange(mask.sizes['y'])
+            mask['X'] = np.arange(mask.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'run-mask.nc'}...")
+            mask.to_netcdf(destination / 'run-mask.nc')
+
+            return 0
+
+        if dataset_name == 'vegetation':
+
+            self.logger.info("Exporting vegetation data to TEM format...")
+            if dataset_name not in self.data.keys():
+                self.lazy_import(where, 'vegetation')
+
+            self.logger.info("Converting vegetation data to TEM format...")
+            V = self.data[dataset_name].dataset
+            V['Y'] = np.arange(V.sizes['y'])
+            V['X'] = np.arange(V.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'vegetation.nc'}...")
+            V.to_netcdf(destination / 'vegetation.nc')
+            return 0
+
+        if dataset_name == 'soiltex':
+            self.logger.info("Exporting soil texture data to TEM format...")
+            if dataset_name not in self.data.keys():
+                self.lazy_import(where, 'soiltex')
+
+            self.logger.info("Converting soil texture data to TEM format...")
+            ST = self.data[dataset_name].dataset
+            ST['Y'] = np.arange(ST.sizes['y'])
+            ST['X'] = np.arange(ST.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'soil-texture.nc'}...")
+            ST.to_netcdf(destination / 'soil-texture.nc')
+            return 0
+
+        if dataset_name == 'cru_climate' or dataset_name == 'cmip_climate':
+
+            if dataset_name == 'cru_climate':
+                ds_key_name = 'crujra-downscaled'
+                if 'crujra-downscaled' not in self.data.keys():
+                    self.lazy_import(where, 'crujra-downscaled')
+            if dataset_name == 'cmip_climate':
+                ds_key_name = 'cmip6-ssp245-downscaled'
+                if 'cmip6-ssp245-downscaled' not in self.data.keys():
+                    self.lazy_import(where, 'cmip6-ssp245-downscaled')
+
+            target_vars = {
+                'tair_avg': 'mean', 
+                'vapo': 'mean', 
+                'nirr': 'mean',
+                'prec': 'sum'
+            }
+
+            new_names = {
+                'tair_avg':'tair', 
+                'vapo':'vapor_press', 
+                'nirr':'nirr', 
+                'prec':'precip'
+            }
+
+            ds_monthly = self.data[ds_key_name].synthesize_to_monthly(target_vars, new_names)
+
+            transformer = pyproj.Transformer.from_crs(self.data[ds_key_name].data[0].dataset.rio.crs.to_epsg(), 4326)
+
+            X, Y = np.meshgrid(self.data[ds_key_name].data[0].dataset['x'].values, self.data[ds_key_name].data[0].dataset['y'].values)
+
+            LATS, LONS = transformer.transform(X, Y)
+
+            self.logger.info("Adding latitude and longitude coordinates to dataset...")
+            ds_monthly['lat'] = (('y','x'), LATS)
+            ds_monthly['lat'].attrs['long_name'] = 'latitude'
+            ds_monthly['lat'].attrs['units'] = 'degrees_north'
+            ds_monthly['lat'].attrs['standard_name'] = 'latitude'
+
+            ds_monthly['lon'] = (('y','x'), LONS)
+            ds_monthly['lon'].attrs['long_name'] = 'longitude'
+            ds_monthly['lon'].attrs['units'] = 'degrees_east'
+            ds_monthly['lon'].attrs['standard_name'] = 'longitude'
+
+            ds_monthly['X'] = np.arange(ds_monthly.sizes['x'])
+            ds_monthly['Y'] = np.arange(ds_monthly.sizes['y'])
+
+            self.logger.warn("Replacing any NaN or inf values in nirr with 0...")
+            np.nan_to_num(ds_monthly['nirr'], copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+
+            if dataset_name == 'cru_climate':
+                outname = 'crujra-downscaled-historic-climate.nc'
+            elif dataset_name == 'cmip_climate':
+                outname = 'cmip6-ssp245-downscaled-projected-climate.nc'
+            else:
+                assert False, "This should never happen"
+            self.logger.info(f"Saving file to {destination / outname}...")
+            ds_monthly.to_netcdf(destination / outname) 
+
+            return 0
+
+        if dataset_name == 'fri_fire':
+            self.logger.info("Exporting FRI fire data to TEM format...")
+            if 'fri-fire' not in self.data.keys():
+                self.lazy_import(where, 'fri-fire')
+            self.logger.info("Converting FRI fire data to TEM format...")
+            F = self.data['fri-fire'].dataset
+            F['Y'] = np.arange(F.sizes['y'])
+            F['X'] = np.arange(F.sizes['x'])
+            self.logger.info(f"Saving file to {destination / 'fri-fire.nc'}...")
+            F.to_netcdf(destination / 'fri-fire.nc')
+            return 0
+
+        if dataset_name == 'historic_explicit_fire' or dataset_name == 'projected_explicit_fire':
+            self.logger.info("Exporting explicit fire data to TEM format...")
+            self.logger.warn("SYNTHETIC DATA ONLY AT THIS TIME.")
+
+            # The process for creating "real" explicit fire data has not been
+            # developed yet, so for now we just make some synthetic data so that
+            # TEM will run without complaint. The fire module is effectively off
+            # because we set the burn mask to all zero. The data must match the
+            # shape of the climate files so we simply copy those and rename the
+            # variables. This avoids the need to create the synthetic data at
+            # daily resolution and then resample to monthly, which would be
+            # necessary if we try to make the synthetic data from scratch.
+
+            target_vars = {
+                'tair_avg': 'mean', 
+                'vapo': 'mean', 
+                'nirr': 'mean',
+                'prec': 'sum'
+            }
+
+            new_names = {
+                'tair_avg':'exp_burn_mask', 
+                'vapo':'exp_area_of_burn', 
+                'nirr':'exp_jday_of_burn', 
+                'prec':'exp_fire_severity'
+            }
+
+            if 'historic' in dataset_name:
+                self.logger.info("Pulling time axis from cru...")
+                ds_key = 'crujra-downscaled'
+                out_name = 'historic-explicit-fire.nc'
+            elif 'projected' in dataset_name:
+                self.logger.info("Pulling time axis from cmip...")
+                ds_key = 'cmip6-ssp245-downscaled'
+                out_name = 'projected-explicit-fire.nc'
+            else:
+                assert False, f"{function_name}: the dataset_name must contain either 'historic' or 'projected'"
+
+            ds_monthly = self.data[ds_key].synthesize_to_monthly(target_vars, new_names)
+
+            for v in new_names.values():
+                ds_monthly[v].values = np.ones(ds_monthly[v].shape)    
+
+            self.logger.info('Setting attributes for data variables')
+            ds_monthly['exp_burn_mask'].attrs.update(units='', name='Fire Occurrence')
+            ds_monthly['exp_fire_severity'].attrs.update(units='', name='Fire Severity')
+            ds_monthly['exp_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
+            ds_monthly['exp_area_of_burn'].attrs.update(units='km-2', name='Area of Burn (km-2)')
+
+            # Turning explicit fire OFF for all grid cells and time steps.
+            ds_monthly['exp_burn_mask'].values = np.zeros(ds_monthly['exp_area_of_burn'].shape)
+
+            ds_monthly['exp_burn_mask'] = ds_monthly['exp_burn_mask'].astype(np.int32)
+            ds_monthly['exp_jday_of_burn'] = ds_monthly['exp_jday_of_burn'].astype(np.int32)
+            ds_monthly['exp_fire_severity'] = ds_monthly['exp_fire_severity'].astype(np.int32)
+            ds_monthly['exp_area_of_burn'] = ds_monthly['exp_area_of_burn'].astype(np.int64)
+
+            ds_monthly['X'] = np.arange(ds_monthly.sizes['x'])
+            ds_monthly['Y'] = np.arange(ds_monthly.sizes['y'])
+
+            ds_monthly['exp_burn_mask'] = ds_monthly['exp_burn_mask'].rename({'y': 'Y', 'x': 'X'})
+            ds_monthly['exp_jday_of_burn'] = ds_monthly['exp_jday_of_burn'].rename({'y': 'Y', 'x': 'X'})
+            ds_monthly['exp_fire_severity'] = ds_monthly['exp_fire_severity'].rename({'y': 'Y', 'x': 'X'})
+            ds_monthly['exp_area_of_burn'] = ds_monthly['exp_area_of_burn'].rename({'y': 'Y', 'x': 'X'})
+
+            self.logger.info(f"Saving file to {destination / out_name}...")
+            ds_monthly.to_netcdf(destination / out_name)
+
+            return 0
+
 
     def empty_gdal_dataset(self, n_layers=1, dtype = gdal.GDT_Float32):
         """Create an empty gdal raster based on regions extent/crs/transform

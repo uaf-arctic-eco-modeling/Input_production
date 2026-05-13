@@ -10,6 +10,7 @@ from . import region
 from . import common
 from . import statistics
 from . import downscale
+from . import export
 
 from ..__init__ import __version__
 
@@ -19,8 +20,10 @@ app = Typer(help=HELP, no_args_is_help=True)
 app.add_typer(region.app,     name='region')
 app.add_typer(download.app,   name='download')
 app.add_typer(preprocess.app, name='preprocess')
-app.add_typer(statistics.app,     name='statistics')
-app.add_typer(downscale.app,     name='downscale')
+app.add_typer(statistics.app, name='statistics')
+app.add_typer(downscale.app,  name='downscale')
+app.add_typer(export.app,     name='export')
+
 
 def version_callback(arg):
     if arg:

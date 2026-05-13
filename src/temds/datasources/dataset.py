@@ -369,10 +369,9 @@ class TEMDataset(object):
 
         return TEMDataset(dataset, logger=logger)
 
-    @staticmethod
-    def from_soil_texture(data_path, extent_raster=None, download=False,
-                          overwrite=False, logger=Logger(), buffer=0,
-                          resample_alg='average'):
+    @classmethod
+    def from_soil_texture(cls, data_path, region, download=False,
+                          overwrite=False, logger=Logger()):
         func_name = "TEMdataset.from_soil_texture"
         logger.info(f'{func_name}: Processing soil texture data in {data_path}')
 
@@ -382,13 +381,10 @@ class TEMDataset(object):
             file_tools.download_all_files(soil_texture.urlsilt, data_path, overwrite)
             file_tools.download_all_files(soil_texture.urlclay, data_path, overwrite)
 
-        # ???if not Path(data_path, soil_texture..
+        if not region:
+            raise ValueError(f'{func_name}: region is required!')
 
-        if not extent_raster:
-            raise ValueError(f'{func_name}: extent_raster is required!')
-
-        logger.info(f'{func_name}: Using extent from {extent_raster}')
-        er = gdal.Open(extent_raster)
+        extent_raster = region.empty_gdal_dataset()
 
         # Original method seemed to have some extra steps...
         # also the original method didn't seem to process the sand file??
@@ -403,17 +399,10 @@ class TEMDataset(object):
         #   take the coarse value, 
         #   otherwise take the fine value.
 
-        # Get the extent from the extent raster
-        er_gt = er.GetGeoTransform()
-        er_minx = er_gt[0]
-        er_miny = er_gt[3]
-        er_maxx = er_gt[0] + (er_gt[1] * er.RasterXSize)  
-        er_maxy = er_gt[3] + (er_gt[5] * er.RasterYSize)
-
         logger.info(f'{func_name}: Creating empty xarray dataset')
-        newDS = TEMDataset.from_raster_extent(extent_raster, 
-                                              in_vars='pct_clay pct_sand pct_silt'.split(), 
-                                              ds_time_dim=[], buffer_px=0)
+        newDS = TEMDataset.from_region(region,
+                                       in_vars='pct_clay pct_sand pct_silt'.split(), 
+                                       ds_time_dim=[], buffer_px=0)
 
         for X in ['clay','sand','silt']:
             logger.info(f'{func_name}: Processing {X} data')
@@ -428,12 +417,12 @@ class TEMDataset(object):
             warpOpts = gdal.WarpOptions(
                         format='MEM',
                         srcSRS=ds_15_30.GetSpatialRef(), 
-                        dstSRS=er.GetSpatialRef(), 
-                        xRes=er.GetGeoTransform()[1], 
-                        yRes=er.GetGeoTransform()[5], 
+                        dstSRS=extent_raster.GetSpatialRef(), 
+                        xRes=extent_raster.GetGeoTransform()[1], 
+                        yRes=extent_raster.GetGeoTransform()[5], 
                         resampleAlg='average', 
                         outputType=gdal.GDT_Float32, 
-                        outputBounds=[er_minx, er_miny, er_maxx, er_maxy])
+                        outputBounds=region.get_extent())
 
             # crop them all down to the AOI
             dst_1530 = gdal.Warp("", ds_15_30, options=warpOpts)
@@ -451,7 +440,7 @@ class TEMDataset(object):
         newDS.dataset['pct_sand'].attrs.update(units='percent')
         newDS.dataset['pct_silt'].attrs.update(units='percent')
         newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
-                    .rio.write_crs(er.GetProjection(), inplace=True)\
+                    .rio.write_crs(extent_raster.GetProjection(), inplace=True)\
                     .rio.write_coordinate_system(inplace=True) 
 
         return newDS
@@ -569,18 +558,15 @@ class TEMDataset(object):
         driver.CreateCopy("/tmp/TEM_Landcover_V4_temp_from_veg.tif",extent_raster)
         del(driver)
 
-       
         if 'topo' in region.data:
             topo = region.data['topo']
         else:
-            raise NotImplementedError('Need to add back options to load topo for raw/or other preprocessed data')
-            # # slow.... for large areas
-            # topo = TEMDataset.from_topo(
-            #     'working/00-download/topo/',
-            #     extent_raster,
-            #     download=False,
-            #     logger=logger,
-            # )
+            try:
+                # not sure how to get the path here....the 'working/' part...
+                region.lazy_import(Path('working') / region.name, 'topo')
+                topo = region.data['topo']
+            except Exception as e:
+                raise RuntimeError(f"{func_name}: Problem loading topo data. Expection: {e}")
 
         # Make sure we only write out the variable we are interested in.
         topo.dataset['drainage_class'].astype(np.int32).rio.to_raster("/tmp/drainage_raster_temp_from_veg.tif")
@@ -817,64 +803,25 @@ class TEMDataset(object):
 
         return newDS
 
+    @classmethod
+    def from_fri(cls, data_path, region, download=False, overwrite=False, 
+                 synthetic=True, logger=Logger()):
+        func_name = "TEMdataset.from_fri"
+        logger.info(f'{func_name}: Processing fire return interval data')
 
-    @staticmethod
-    def from_historic_explicit_fire(synthetic=True, extent_raster_path=None, synthetic_time=None, logger=Logger()):
-        func_name = "TEMdataset.from_historic_explicit_fire"
-        logger.info(f'{func_name}: Processing explicit fire data')   
-
-        if extent_raster_path is None:
-            raise ValueError(f'{func_name}: extent_raster_path is required!')
-        
-        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
-        extent_raster = gdal.Open(extent_raster_path)
-
-        logger.info(f'{func_name}: Creating empty xarray dataset...')
-        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
-                                      in_vars=['exp_burn_mask','exp_fire_severity','exp_jday_of_burn','exp_area_of_burn',],
-                                      ds_time_dim=[], buffer_px=0)
-        # if not isinstance(synthetic_time, xr.DataArray):
-        #     raise ValueError(f'{func_name}: synthetic_time must be an xarray DataArray!')   
-
-        if isinstance(synthetic, xr.DataArray):
-            logger.info(f'{func_name}: Generating synthetic data arrays...')
-            time_length = synthetic.sizes['time']
-            exp_burn_mask = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
-            exp_fire_severity = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
-            exp_jday_of_burn = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
-            exp_area_of_burn = np.zeros(shape=(time_length, extent_raster.RasterYSize, extent_raster.RasterXSize))
-        else:
+        if not synthetic:
             raise NotImplementedError(f'{func_name}: Non-synthetic data not yet implemented!')
 
-        logger.info(f'{func_name}: Assigning data to the new dataset')
-        newDS.dataset['exp_burn_mask'] = (['time','y','x'], exp_burn_mask)
-        newDS.dataset['exp_fire_severity'] = (['time','y','x'], exp_fire_severity)
-        newDS.dataset['exp_jday_of_burn'] = (['time','y','x'], exp_jday_of_burn)
-        newDS.dataset['exp_area_of_burn'] = (['time','y','x'], exp_area_of_burn)
-
-        logger.info(f'{func_name}: Setting attributes for data variables')
-        newDS.dataset['exp_burn_mask'].attrs.update(units='', name='Fire Occurrence')
-        newDS.dataset['exp_fire_severity'].attrs.update(units='', name='Fire Severity')
-        newDS.dataset['exp_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
-        newDS.dataset['exp_area_of_burn'].attrs.update(units='km-2', name='Area of Burn (km-2)')
-
-        return newDS
-
-    @staticmethod
-    def from_fri(synthetic=True, extent_raster_path=None, logger=Logger()):
-        func_name = "TEMdataset.from_fri"
-        logger.info(f'{func_name}: Processing fire return interval data')   
-
-        if extent_raster_path is None:
-            raise ValueError(f'{func_name}: extent_raster_path is required!')
+        if not region:
+            raise ValueError(f'{func_name}: region is required!')
         
-        logger.info(f'{func_name}: Using extent from {extent_raster_path}')
-        extent_raster = gdal.Open(extent_raster_path)
-
         logger.info(f'{func_name}: Creating empty xarray dataset...')
-        newDS = TEMDataset.from_raster_extent(extent_raster_path, 
+        extent_raster = region.empty_gdal_dataset()
+        newDS = TEMDataset.from_raster_extent(extent_raster, 
                                       in_vars=['fri','fri_severity','fri_jday_of_burn','fri_area_of_burn',],
                                       ds_time_dim=[], buffer_px=0)
+
+        logger.warn(f'{func_name}: This method is currently only set up to generate synthetic data for testing purposes. Use with synthetic=False is not yet implemented!')
 
         if synthetic:
             logger.info(f'{func_name}: Generating synthetic data arrays...')
@@ -898,7 +845,7 @@ class TEMDataset(object):
         newDS.dataset['fri_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
         newDS.dataset['fri_area_of_burn'].attrs.update(units='', name='Area of Burn (km2)')
 
-        logger.info(f'{func_name}: Setting spatial properties for dataset from {extent_raster_path}')
+        logger.info(f'{func_name}: Setting spatial metadata for the new dataset')
         newDS.dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)\
                     .rio.write_crs(extent_raster.GetProjection(), inplace=True)\
                     .rio.write_coordinate_system(inplace=True) 
@@ -906,8 +853,6 @@ class TEMDataset(object):
 
         return newDS
     
-
-
     @classmethod
     def from_topo(
             cls, data_path, region, download=False, url=topo.URL,
@@ -2000,7 +1945,7 @@ class YearlyDataset(TEMDataset):
 
         new = YearlyDataset.from_TEMDataset(newDS, year)
 
-        from IPython import embed; embed()
+        #from IPython import embed; embed()
 
         # ### Monthly information
         # month = list(range(1, 13, 1))

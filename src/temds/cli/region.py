@@ -195,7 +195,7 @@ def import_data(
 
         
 
-    log.info(f'Importing dat to region {area.name} as {name}')
+    log.info(f'Importing data to region {area.name} as {name}')
 
     with joblib.parallel_config(backend="loky", n_jobs=n_process, verbose=1):
         area.import_datasource(name, source, parallel=parallel)
