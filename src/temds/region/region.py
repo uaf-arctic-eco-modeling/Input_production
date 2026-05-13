@@ -472,6 +472,8 @@ class Region(object):
             # TODO: Refactor this to get data from the web or at least a
             # file instead of hard coding here...
 
+            # TODO: Handle projected co2 (filename projected-co2.nc)
+
             # Manually spliced data from NOAA ESRL Global Monitoring Division
             # with the data from the demo file. (just added yrs 2016+)
             # https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.txt
@@ -563,8 +565,8 @@ class Region(object):
             V = self.data[dataset_name].dataset
             V['Y'] = np.arange(V.sizes['y'])
             V['X'] = np.arange(V.sizes['x'])
-            self.logger.info(f"Saving file to {destination / 'veg.nc'}...")
-            V.to_netcdf(destination / 'veg.nc')
+            self.logger.info(f"Saving file to {destination / 'vegetation.nc'}...")
+            V.to_netcdf(destination / 'vegetation.nc')
             return 0
 
         if dataset_name == 'soiltex':
@@ -576,8 +578,8 @@ class Region(object):
             ST = self.data[dataset_name].dataset
             ST['Y'] = np.arange(ST.sizes['y'])
             ST['X'] = np.arange(ST.sizes['x'])
-            self.logger.info(f"Saving file to {destination / 'soiltex.nc'}...")
-            ST.to_netcdf(destination / 'soiltex.nc')
+            self.logger.info(f"Saving file to {destination / 'soil-texture.nc'}...")
+            ST.to_netcdf(destination / 'soil-texture.nc')
             return 0
 
         if dataset_name == 'cru_climate' or dataset_name == 'cmip_climate':
