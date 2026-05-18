@@ -12,6 +12,8 @@ original bash script code is in each docstring
     # Shaman, J., and M. Kohn. 2009. “Absolute Humidity Modulates Influenza Survival, 
     # Transmission, and Seasonality.” PNAS 106 (9): 3243–8)
 """
+import copy
+import numpy as np
 
 def generic_delta_add(baseline, reference):
     """Generic correction factor calculation for additive
@@ -47,6 +49,8 @@ def generic_delta_mul(baseline, reference):
     xr.DataArray
         correction factors
     """
+    baseline = copy.deepcopy(baseline)
+    baseline= baseline.where(np.logical_or(np.isnan(baseline),baseline!=0), 1)
     return reference / baseline 
 
 
