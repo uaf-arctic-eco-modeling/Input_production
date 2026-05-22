@@ -37,6 +37,8 @@ from .manifest import Manifest
 from .tools import mask_boundary_compatibility_report, total_extent_as_geoseries
 from temds.constants import TEMDS_DATASET_NAMES
 
+import temds
+
 class MaskBoundaryCompatibilityError(Exception):
     """Exception for region mask and  boundary incompatibility errors
     """
@@ -895,12 +897,21 @@ class Region(object):
             
             
             current.name = var
+
+            # Grab the current variables attributes and copy them over...
+            current.attrs.update(src.attrs)
+
             temp.append(current)
-        
+
         downscaled = xr.merge(temp)
+
+        # Handle the attributes.
+        downscaled.attrs = {} # clear out any global attributes that were leftover.
+        downscaled.attrs.update(correction.attrs)
+        downscaled.attrs['source_id'] = f"{source_id} from TEMDS_version={source.attrs['TEMDS_version']}" if 'TEMDS_version' in source.attrs else source_id
+        downscaled.attrs.update({"TEMDS_version":temds.util.Version()})
         downscaled.attrs['data_year'] = year
 
-        
         downscaled.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
         downscaled.rio.write_crs(source.rio.crs, inplace=True)
         downscaled.rio.write_coordinate_system(inplace=True) 
