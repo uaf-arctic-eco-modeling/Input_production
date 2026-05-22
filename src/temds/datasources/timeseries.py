@@ -16,6 +16,7 @@ import rioxarray
 import numpy as np
 from joblib import Parallel, delayed
 
+import temds
 from .dataset import YearlyDataset, TEMDataset
 from . import errors
 from ..logger import Logger
@@ -499,6 +500,16 @@ class YearlyTimeSeries(UserList):
             ) for var in var_dict}
         )
         
+        # Update the attributes. 
+        clim_ref.attrs['baseline_start_year'] = start_year
+        clim_ref.attrs['baseline_end_year'] = end_year
+        clim_ref.attrs['TEMDS_version'] = temds.util.Version()
+
+        self.logger.info(f'Updating attributes for baseline dataset. Grabbing variable attributes from the {start_year=}.')
+        for v in clim_ref.data_vars:
+            clim_ref[v].attrs.update(self[start_year].dataset[v].attrs)
+
+
         clim_ref.rio.write_crs(
             self[start_year].dataset.rio.crs.to_wkt(), 
             inplace=True
