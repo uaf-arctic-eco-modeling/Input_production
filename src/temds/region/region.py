@@ -833,8 +833,8 @@ class Region(object):
         correction_factors.attrs = {}
 
         # Set global attribute for the file
-        correction_factors.attrs['baseline_id'] = f'{baseline_id} from {baseline.attrs["TEMDS_version"]}' if 'TEMDS_version' in baseline.attrs else baseline_id
-        correction_factors.attrs['reference_id'] = f'{reference_id} from {reference.attrs["TEMDS_version"]}' if 'TEMDS_version' in reference.attrs else reference_id
+        correction_factors.attrs['baseline_id'] = f'{baseline_id} from TEMDS_version={baseline.attrs["TEMDS_version"]}' if 'TEMDS_version' in baseline.attrs else baseline_id
+        correction_factors.attrs['reference_id'] = f'{reference_id} from TEMDS_version={reference.attrs["TEMDS_version"]}' if 'TEMDS_version' in reference.attrs else reference_id
 
         self.data[factor_id] = dataset.TEMDataset(correction_factors)
 
