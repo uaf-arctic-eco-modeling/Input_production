@@ -552,15 +552,27 @@ class Region(object):
 
         if dataset_name == 'runmask':
             self.logger.info("Exporting runmask data to TEM format...")
-            self.logger.info("...using vegetation data to create runmask...")
+
+            # Copy the veg dataset so that we pick up all the metadata
+            # dims, coords, etc.
+            self.logger.info("...using vegetation data as a template for the run mask...")
             if 'vegetation' not in self.data.keys():
                 self.lazy_import(where, 'vegetation')
             veg_ds = self.data['vegetation'].dataset
             mask = veg_ds.copy()
             mask = mask.rename({'veg_class':'run'})
 
+            # Now set the actual mask data with the mask for the region.
+            # This picks up the boundary (potentially irregular polygon)
+            mask.run.data = self.mask.raster.ReadAsArray()
+
+            # Then set any pixels where the veg class is 0 to 0 in the run mask
+            # this makes sure that any pixels inside the region boundary but
+            # with no veg class (rocks, lakes, glaciers, etc) are not 
+            # setup to run with TEM...
             self.logger.info("turn on mask for all valid veg class px...")
-            mask['run'] = (('y','x'), np.where(veg_ds['veg_class'] > 0, 1, 0))
+            mask.run.data = np.where(veg_ds['veg_class'] <= 0, 0, mask.run.data) 
+
             mask['Y'] = np.arange(mask.sizes['y'])
             mask['X'] = np.arange(mask.sizes['x'])
             self.logger.info(f"Saving file to {destination / 'run-mask.nc'}...")
