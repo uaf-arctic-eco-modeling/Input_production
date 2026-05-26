@@ -2213,6 +2213,8 @@ class YearlyDataset(TEMDataset):
         # thinking this might change the numbers around the year boundaries, but 
         # it didn't seem to make a difference and was slower to run...
 
+        # TODO: make sure the units (and other attributes?) make the transfer...
+
         monthly = xr.Dataset()
 
         for var, method in target_vars.items():
