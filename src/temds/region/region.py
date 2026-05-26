@@ -31,7 +31,7 @@ from .. import corrections, downscalers
 from ..logger import Logger
 from ..datasources import dataset, timeseries
 from .. import gdal_tools
-
+from .. import util
 from .mask import Mask
 from .manifest import Manifest
 from .tools import mask_boundary_compatibility_report, total_extent_as_geoseries
@@ -456,6 +456,12 @@ class Region(object):
         """
         function_name = 'Region.export_TEM'
 
+        def add_version(ds, dataset_name):
+            ds.attrs['dataset_name'] = dataset_name
+            ds.attrs['source'] = f'temds {util.Version()}'
+            ds.attrs['region_name'] = self.name
+            return ds
+
         if dataset_name not in TEMDS_DATASET_NAMES:
             raise NotImplementedError(f"Invalid dataset name for TEM export: {dataset_name}. Must be one of {TEMDS_DATASET_NAMES}.")
 
@@ -506,7 +512,10 @@ class Region(object):
                 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
 
             self.logger.info(f"Saving file to {destination / 'co2.nc'}...")
-            xr.Dataset(data_vars={'co2':('year',co2)}, coords={'year':year}).to_netcdf(destination / 'co2.nc')
+            ds = xr.Dataset(data_vars={'co2':('year',co2)}, coords={'year':year})
+            ds = add_version(ds, dataset_name)
+            util.nc_check(destination / 'co2.nc')
+            ds.to_netcdf(destination / 'co2.nc')
             return 0
 
         if dataset_name == 'topo':
@@ -521,6 +530,8 @@ class Region(object):
             T['X'] = np.arange(T.sizes['x'])
 
             self.logger.info(f"Saving file to {destination / 'topo.nc'}...")
+            T = add_version(T, dataset_name)
+            util.nc_check(destination / 'topo.nc')
             T.to_netcdf(destination / 'topo.nc')
             return 0
 
@@ -534,6 +545,8 @@ class Region(object):
             D['Y'] = np.arange(D.sizes['y'])
             D['X'] = np.arange(D.sizes['x'])
             self.logger.info(f"Saving file to {destination / 'drainage.nc'}...")
+            D = add_version(D, dataset_name)
+            util.nc_check(destination / 'drainage.nc')
             D.to_netcdf(destination / 'drainage.nc')
             return 0
 
@@ -551,8 +564,9 @@ class Region(object):
             mask['Y'] = np.arange(mask.sizes['y'])
             mask['X'] = np.arange(mask.sizes['x'])
             self.logger.info(f"Saving file to {destination / 'run-mask.nc'}...")
+            mask = add_version(mask, dataset_name)
+            util.nc_check(destination / 'run-mask.nc')
             mask.to_netcdf(destination / 'run-mask.nc')
-
             return 0
 
         if dataset_name == 'vegetation':
@@ -566,6 +580,8 @@ class Region(object):
             V['Y'] = np.arange(V.sizes['y'])
             V['X'] = np.arange(V.sizes['x'])
             self.logger.info(f"Saving file to {destination / 'vegetation.nc'}...")
+            V = add_version(V, dataset_name)
+            util.nc_check(destination / 'vegetation.nc')
             V.to_netcdf(destination / 'vegetation.nc')
             return 0
 
@@ -579,6 +595,8 @@ class Region(object):
             ST['Y'] = np.arange(ST.sizes['y'])
             ST['X'] = np.arange(ST.sizes['x'])
             self.logger.info(f"Saving file to {destination / 'soil-texture.nc'}...")
+            ST = add_version(ST, dataset_name)
+            util.nc_check(destination / 'soil-texture.nc')
             ST.to_netcdf(destination / 'soil-texture.nc')
             return 0
 
@@ -639,6 +657,8 @@ class Region(object):
             else:
                 assert False, "This should never happen"
             self.logger.info(f"Saving file to {destination / outname}...")
+            ds_monthly = add_version(ds_monthly, dataset_name)
+            util.nc_check(destination / outname)
             ds_monthly.to_netcdf(destination / outname) 
 
             return 0
@@ -652,6 +672,8 @@ class Region(object):
             F['Y'] = np.arange(F.sizes['y'])
             F['X'] = np.arange(F.sizes['x'])
             self.logger.info(f"Saving file to {destination / 'fri-fire.nc'}...")
+            F = add_version(F, dataset_name)
+            util.nc_check(destination / 'fri-fire.nc')
             F.to_netcdf(destination / 'fri-fire.nc')
             return 0
 
@@ -721,8 +743,9 @@ class Region(object):
             ds_monthly['exp_area_of_burn'] = ds_monthly['exp_area_of_burn'].rename({'y': 'Y', 'x': 'X'})
 
             self.logger.info(f"Saving file to {destination / out_name}...")
+            ds_monthly = add_version(ds_monthly, dataset_name)
+            util.nc_check(destination / out_name)
             ds_monthly.to_netcdf(destination / out_name)
-
             return 0
 
 
