@@ -4,11 +4,27 @@ import os
 import pathlib
 import errno
 import subprocess
+import xarray as xr
 
 from osgeo import gdal
 
 import importlib.metadata # for version lookup
 
+def nc_check(nc_file, message=''):
+    '''Check that a netcdf file is valid and can be opened with xarray. If not,
+    delete the file and print a warning. Sometimes we are getting corrupted
+    files that can't be opened, and this is a safety check to catch those before
+    they cause problems downstream.'''
+    try:
+      with xr.open_dataset(nc_file) as ds:
+        pass
+    except ValueError as e:
+      print(f"Invalid netcdf file: {nc_file} {message}. Error: {e}")
+      print(f"Removing file: {nc_file}")
+      os.remove(nc_file)
+    except FileNotFoundError as e:
+      print(f"File not found: {nc_file} {message}. Error: {e}")
+      # Don't try to remove a file that doesn't exist, just print the warning.
 
 def Version():
   '''Return a version string. First try to get it from git, otherwise use the
