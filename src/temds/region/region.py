@@ -659,8 +659,9 @@ class Region(object):
             ds_monthly['X'] = np.arange(ds_monthly.sizes['x'])
             ds_monthly['Y'] = np.arange(ds_monthly.sizes['y'])
 
-            self.logger.warn("Replacing any NaN or inf values in nirr with 0...")
-            np.nan_to_num(ds_monthly['nirr'], copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+            # Not sure if we need this after PR that fixes 0s in correction data?
+            #self.logger.warn("Replacing any NaN or inf values in nirr with 0...")
+            #np.nan_to_num(ds_monthly['nirr'], copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
             if dataset_name == 'cru_climate':
                 outname = 'crujra-downscaled-historic-climate.nc'
