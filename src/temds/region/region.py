@@ -37,6 +37,8 @@ from .manifest import Manifest
 from .tools import mask_boundary_compatibility_report, total_extent_as_geoseries
 from temds.constants import TEMDS_DATASET_NAMES
 
+import temds
+
 class MaskBoundaryCompatibilityError(Exception):
     """Exception for region mask and  boundary incompatibility errors
     """
@@ -607,7 +609,23 @@ class Region(object):
                 'prec':'precip'
             }
 
+            # Check per variable units attr presence in last yr of source data
+            for v in self.data[ds_key_name].data[-1].dataset.variables:
+                if 'units' not in self.data[ds_key_name].data[-1].dataset[v].attrs:
+                    print("No units for variable: ", v)
+
             ds_monthly = self.data[ds_key_name].synthesize_to_monthly(target_vars, new_names)
+
+            # Check units attr presence in synthesized data
+            for v in ds_monthly.data_vars:
+                if 'units' not in ds_monthly[v].attrs:
+                    self.logger.warn("No units for variable: ", v)
+
+            if 'TEMDS_version' in self.data[ds_key_name].data[1].dataset.attrs:
+                ds_monthly.attrs['source_data_version'] = self.data[ds_key_name].data[1].dataset.attrs['TEMDS_version']
+            else:
+                self.logger.warn("No TEMDS_version attr in source data, cannot set source_data_version attr in output TEM dataset.")
+                ds_monthly.attrs['source_data_version'] = 'unknown'
 
             transformer = pyproj.Transformer.from_crs(self.data[ds_key_name].data[0].dataset.rio.crs.to_epsg(), 4326)
 
@@ -812,11 +830,30 @@ class Region(object):
             self.logger.info(f'.. Calculating correction factor for {var} with {func}')
 
             current = func(baseline[var], reference[var])
+
+            if not(baseline[var].attrs.get('units') and reference[var].attrs.get('units')):
+                self.logger.warn(f"One of the datasets for variable {var} is missing units. This may cause issues with the correction factor calculation. Please ensure that both datasets have units specified in their attributes.")
+            elif baseline[var].attrs.get('units') != reference[var].attrs.get('units'):
+                # could be smarter here and use CFUnits to see if they are actually the same unit in a different form...
+                self.logger.warn(f"Units for variable {var} do not match between baseline and reference datasets. This may cause issues with the correction factor calculation. Please ensure that both datasets have the same units specified in their attributes.")   
+            else:
+                current.attrs['units'] = reference[var].attrs['units']
+
+            # This picks up any other attributes, like long_name, standard_name, etc.
+            current.attrs.update(baseline[var].attrs)
+
             current.name = var
             temp.append(current)
-           
 
         correction_factors = xr.merge(temp)
+
+        # Clear out any global attributes that were leftover.
+        correction_factors.attrs = {}
+
+        # Set global attribute for the file
+        correction_factors.attrs['baseline_id'] = f'{baseline_id} from TEMDS_version={baseline.attrs["TEMDS_version"]}' if 'TEMDS_version' in baseline.attrs else baseline_id
+        correction_factors.attrs['reference_id'] = f'{reference_id} from TEMDS_version={reference.attrs["TEMDS_version"]}' if 'TEMDS_version' in reference.attrs else reference_id
+
         self.data[factor_id] = dataset.TEMDataset(correction_factors)
 
     def delta_downscale_year(self, year, source_id, correction_id, variables):
@@ -876,12 +913,21 @@ class Region(object):
             
             
             current.name = var
+
+            # Grab the current variables attributes and copy them over...
+            current.attrs.update(src.attrs)
+
             temp.append(current)
-        
+
         downscaled = xr.merge(temp)
+
+        # Handle the attributes.
+        downscaled.attrs = {} # clear out any global attributes that were leftover.
+        downscaled.attrs.update(correction.attrs)
+        downscaled.attrs['source_id'] = f"{source_id} from TEMDS_version={source.attrs['TEMDS_version']}" if 'TEMDS_version' in source.attrs else source_id
+        downscaled.attrs.update({"TEMDS_version":temds.util.Version()})
         downscaled.attrs['data_year'] = year
 
-        
         downscaled.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
         downscaled.rio.write_crs(source.rio.crs, inplace=True)
         downscaled.rio.write_coordinate_system(inplace=True) 
