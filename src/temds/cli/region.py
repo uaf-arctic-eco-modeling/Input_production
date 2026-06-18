@@ -42,10 +42,10 @@ def create(
         boundary: Annotated[Path, Argument(help=f"Vector file with boundary defined")],
         mask: Annotated[Path, Option(help=f"Raster file defining mask of data. Mask is calculated and all values are set to True if not provided")] = None,
         # mask_exceeds_boundary: Annotated[bool, Option(help="Flag to indicate the provided mask raster exceeds the boundary, and should be clipped before creating region.")] = False,
-        layer: Annotated[int, Option(help=f"layer to select as boundary")] = None, 
+        layer: Annotated[str, Option(help=f"Layer to select as boundary. Accepts an integer index or a string name matching the 'layer' column.")] = None, 
         resolution: Annotated[float, Option(help="Resolution, required if mast is not provided")] = None,
         crs: Annotated[str, Option(help="WKT formatted CRS")] = None,
-        align: Annotated[bool, Option(help="Flag to force region to ba aligned to resolution. It is a good idea to keep this true")] = True
+        align: Annotated[bool, Option(help="Flag to force region to be aligned to resolution. It is a good idea to keep this true!")] = True
     ):
     """Preprocesses downloaded ERA5 daily data. Preprocessed data will be
     formatted to be read as a YearlyDataset.
@@ -58,7 +58,17 @@ def create(
         boundary_gpd = boundary_gpd.to_crs(crs)
 
     if layer:
-        boundary_gpd = boundary_gpd.loc[[layer]].reset_index()
+        try:
+            layer_idx = int(layer)
+            boundary_gpd = boundary_gpd.iloc[[layer_idx]].reset_index()
+            log.info(f"Using layer index {layer_idx} for boundary")
+        except ValueError:
+            log.info(f"Using layer name '{layer}' for boundary")
+            matches = boundary_gpd[boundary_gpd['layer'] == layer]
+            if matches.empty:
+                log.error(f"No features found with layer name '{layer}'")
+                return
+            boundary_gpd = matches.iloc[[0]].reset_index()
     else:
         boundary_gpd = boundary_gpd.iloc[[0]].reset_index()
 
@@ -190,7 +200,7 @@ def import_data(
         elif source_path.is_dir():
             source = timeseries.YearlyTimeSeries(source_path)
         else:
-            log.error('Cannot load source data.')
+            log.error(f'source path is invalid. Cannot load source data from: {source_path}')
             sys.exit(0)
 
         
