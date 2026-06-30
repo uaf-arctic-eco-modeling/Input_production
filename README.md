@@ -7,9 +7,16 @@
 - [Installation](#installation)
 
 
-
-
 ## Description
+
+The `TEMdownscale` tool (`temds`) is used for downscaling and preparing 
+model-ready inputs and forcing data. The tool is designed as a modular set of 
+helper sub-tools that can be chained toegether for different use cases. Also the  
+modularity helps for diagnosing and addressing issues found in data preparation 
+process. Typically the data prep process contains many steps, starting with
+downloading raw assests, then transforming these assets (cropping, projection,
+formatting, etc) so that they can be combined for numerical reasons (i.e.
+downscaling) and exported into model-ready formats.
 
 ## Use
 
