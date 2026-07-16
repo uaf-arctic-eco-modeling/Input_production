@@ -24,6 +24,7 @@ import pyproj
 import xarray as xr
 from joblib import Parallel, delayed
 import shapely
+from cmethods import adjust
 
 # from ..gdal_tools import empty_dataset
 from .. import corrections, downscalers
@@ -1004,4 +1005,33 @@ class Region(object):
                 results.append(data)
         
         self.data[downscaled_id] = timeseries.YearlyTimeSeries(results)
+
+    def qdm_downscale_timeseries(self, downscaled_id, observed_id, simulated_id, historic_period, projected_period, variables, **kwargs):
+        """Downscale with quantile delta method
+
+        Parameters
+        ----------
+
+        """
+        self.logger.info('building obsh')
+        obsh = self.data[observed_id].convert_range_to_single_dataset(variables, historic_period[0], historic_period[1])
+        self.logger.info('building simh')
+        simh = self.data[observed_id].convert_range_to_single_dataset(variables, historic_period[0], historic_period[1])
+        self.logger.info('building simp')
+        simp = self.data[simulated_id].convert_range_to_single_dataset(variables, projected_period[0], projected_period[1])
+        results = []
+        
+        for var in variables:
+            print('downscaling', var)
+            temp = adjust(
+                method="quantile_delta_mapping",
+                obs=obsh[var],
+                simh=simh[var],
+                simp=simp[var],
+                kind="+",
+                **kwargs
+            )[var].transpose('time', 'y','x')
+            results.append(temp)
+        
+        self.data[downscaled_id] =  xr.merge(results)
 
