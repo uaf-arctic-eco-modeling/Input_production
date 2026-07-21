@@ -96,15 +96,18 @@ class Mask(object):
         """
         init_boundary = deepcopy(extent_gpd)
 
+        if isinstance(resolution, int):
+            resolution = (resolution, -resolution)
+
         if align_extent_to_resolution:
-            extent_gpd = tools.align_to_resolution(extent_gpd, resolution)
+            extent_gpd = tools.align_to_resolution(extent_gpd, resolution[0])
 
         bounds = extent_gpd.bounds.iloc[0]
         rds = gdal_tools.empty_dataset(
-            int((bounds['maxx'] - bounds['minx'])//resolution),
-            int((bounds['maxy'] - bounds['miny'])//resolution),
+            int((bounds['maxx'] - bounds['minx'])//resolution[0]),
+            int((bounds['maxy'] - bounds['miny'])//resolution[0]),
             extent_gpd.crs.to_wkt(),
-            (bounds['minx'], resolution, 0, bounds['maxy'], 0,  -resolution ),
+            (bounds['minx'], resolution[0], 0, bounds['maxy'], 0,  resolution[1] ),
             1,
             gdal.GDT_Int16
         )  
@@ -137,8 +140,30 @@ class Mask(object):
         return gpd.GeoSeries(shapely.box(minx,miny, maxx,maxy), crs=self.crs)
     
     @classmethod
-    def from_file(cls, where):
-        return cls(gdal.Open(where))
+    def from_file(cls, where, extent_gpd=None, align_extent_to_resolution=True):
+        """Create a new mask from a raster file. Optionally an extent can be
+        provided to sample a portion of the raster (see `Mask.from_extent` as 
+        it is called to create the sub mask, before warping the data from the 
+        raster).
+
+        """
+
+        new = cls(gdal.Open(where))
+        if not extent_gpd is None:
+            resolution = new.resolution
+            new_extent = cls.from_extent(
+                extent_gpd, 
+                resolution, 
+                align_extent_to_resolution,
+                True
+            )
+
+            gdal_tools.clip_gdal_opt(
+                new_extent.raster, new.raster, 'near', False, False
+            )
+            new = new_extent
+
+        return new 
 
     @property
     def resolution(self):
