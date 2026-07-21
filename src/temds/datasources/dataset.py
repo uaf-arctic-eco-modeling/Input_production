@@ -2133,6 +2133,8 @@ class YearlyDataset(TEMDataset):
             logger=Logger(),
             **kwargs
         ):
+        ## TODO: merge this with era5_daily.merge_for_year
+        ## there is a large amount of overlap betwee these functions
         func_name = "Dataset.from_era5_daily"
 
         if download:
@@ -2163,7 +2165,7 @@ class YearlyDataset(TEMDataset):
         new.dataset = new.dataset.rename(
             {'longitude': 'lon', 'latitude':'lat', 'valid_time':'time'}
         )
-
+        new.dataset = new.dataset.convert_calendar('noleap')
         # have to do this twice don't know why?
         new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
             .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
