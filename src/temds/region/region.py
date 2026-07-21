@@ -378,19 +378,11 @@ class Region(object):
     def export_mask(self, where):
         self.mask.to_file( where )
 
-    def export_to_directory(self, where: Path, format: str = 'TEMDS', **kwargs
-            # boundary_filename = 'boundary.geojson',
-            # mask_filename = 'mask.tif',
-            # manifest_filename = 'manifest.yml',
-            # update_manifest = 
+    def export_to_directory(self, where: Path, **kwargs
             
         ):
-        # TODO: Should this actually be the wrapper for exporting to a specific
-        # format???
         """
-
         """
-
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
 
         to_save = lookup(kwargs, 'items', 'all')
@@ -1006,7 +998,9 @@ class Region(object):
         
         self.data[downscaled_id] = timeseries.YearlyTimeSeries(results)
 
-    def qdm_downscale_timeseries(self, downscaled_id, observed_id, simulated_id, historic_period, projected_period, variables, **kwargs):
+    def qdm_downscale(
+            self, downscaled_id, observed_id, simulated_id, 
+            historic_period, projected_period, variables, **kwargs):
         """Downscale with quantile delta method
 
         Parameters
@@ -1033,5 +1027,13 @@ class Region(object):
             )[var].transpose('time', 'y','x')
             results.append(temp)
         
-        self.data[downscaled_id] =  xr.merge(results)
+        results = xr.merge(results)
 
+        results_per_year = []
+        for year in self.data[simulated_id].range:
+            results_yr = results.sel(time=f"{year}")
+            results_per_year.append(dataset.YearlyDataset(year, results_yr))
+
+        del(results)
+
+        self.data[downscaled_id] = timeseries.YearlyTimeSeries(results_yr)

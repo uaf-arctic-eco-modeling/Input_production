@@ -75,7 +75,7 @@ def create(
   
     if mask:
 
-        mask = Mask(gdal.Open(mask))
+        mask = Mask.from_file(mask, boundary_gpd, align)
 
     elif not mask and resolution:
         log.info(f"Creating mask from boundary with resolution {resolution}")
