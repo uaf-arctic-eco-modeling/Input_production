@@ -208,6 +208,12 @@ class YearlyTimeSeries(UserList):
         # print('transform')
         return self[self.start_year].transform
     
+    @property
+    def vars(self):
+        """Property for Quick access to data vars"""
+        # print('transform')
+        return self[self.start_year].vars
+
     def apply_callback(self, callback, **kwargs):
         """Applys a callback to each item in timeseries
 

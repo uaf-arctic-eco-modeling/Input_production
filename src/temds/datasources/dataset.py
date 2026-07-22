@@ -1688,7 +1688,7 @@ class TEMDataset(object):
                 ix | np.isnan(self.dataset[var]), # don't fill nans
                 fill 
             ) 
-            self.dataset[var] = updated
+            self.dataset[var][:] = updated[:] 
 
 class YearlyDataset(TEMDataset):
     """This sub class of TEMDataset represents daily data

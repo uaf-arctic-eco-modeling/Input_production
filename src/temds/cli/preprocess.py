@@ -364,19 +364,8 @@ def fill_outliers(
     log = context.obj.log
     parallel = context.obj.parallel
     n_process = context.obj.get_n_process()
-    if variables:
-        unsafe = False
-        for var in variables:
-            if not var in climate_variables.DOWNSCALE_SAFE:
-                log.error(f'variable "{var}" is not downscale safe.')
-                unsafe = True
 
-        if unsafe:
-            log.info(f'Downscale safe variables are {climate_variables.DOWNSCALE_SAFE}')
-            sys.exit()
-    else:
-        log.warn(f'Assuming downscale safe variables are present: {climate_variables.DOWNSCALE_SAFE}')
-        variables = climate_variables.DOWNSCALE_SAFE
+    
     
     region = None
     if context.obj.region:
@@ -393,6 +382,24 @@ def fill_outliers(
             log.error("Data to check does not exist")
             sys.exit()
 
+    if variables is None:
+        variables = set(dataset.vars)  # & set(climate_variables.DOWNSCALE_SAFE)
+
+    ## TODO: implement some version of data checking
+    # # if variables:
+    # unsafe = False
+    # for var in variables:
+    #     if not var in climate_variables.DOWNSCALE_SAFE:
+    #         log.error(f'variable "{var}" is not downscale safe.')
+    #         unsafe = True
+
+    # if unsafe:
+    #     log.info(f'Downscale safe variables are {climate_variables.DOWNSCALE_SAFE}')
+    #     sys.exit()
+    # else:
+    #     log.warn(f'Assuming downscale safe variables are present: {climate_variables.DOWNSCALE_SAFE}')
+    #     variables = climate_variables.DOWNSCALE_SAFE
+
     start_year = dataset.start_year
     end_year = dataset.range().stop - 1
 
@@ -402,6 +409,8 @@ def fill_outliers(
 
     for var in variables:
         dataset.fill_outliers(var, means[var], std_devs[var], 5)
+
+    # return dataset
 
     # TODO add save options
     if region:
@@ -424,7 +433,9 @@ def fill_oob(
     """
     # TODO clean up cli
     log = context.obj.log
-    parallel = context.obj.parallel
+    # parallel = context.obj.parallel
+    parallel = False
+    log.warn('Parallel is disabled for this command due to BUG!')
     n_process = context.obj.get_n_process()
 
     region = None
@@ -458,8 +469,8 @@ def era5_corrections(
         context: Context,
         daily: Annotated[str, Argument(help="Name or Path to daily era5")],
         baseline: Annotated[str, Argument(help="Name or path to Era5 baseline")],
-        reference: Annotated[int, Argument(help='Name or path to reference data(i,e worldcim)')],
-        corrections: Annotated[int, Argument(help='Name or path to save corrections as ')],
+        reference: Annotated[str, Argument(help='Name or path to reference data(i,e worldcim)')],
+        corrections: Annotated[str, Argument(help='Name or path to save corrections as ')],
 
     ):
     """"""
@@ -491,7 +502,7 @@ def era5_corrections(
                 daily_ds[year]
         )
         temp.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
-        temp.rio.write_crs(daily.crs.crs, inplace=True)
+        temp.rio.write_crs(daily_ds.crs, inplace=True)
         temp.rio.write_coordinate_system(inplace=True) 
         # downscaled.rio.write_transform(source.rio.transform(), inplace=True)
         era5_corr_list.append(datasources.dataset.YearlyDataset(year, temp))
@@ -499,7 +510,7 @@ def era5_corrections(
     log.info('Finalizing...')
     corrections_ds = datasources.timeseries.YearlyTimeSeries(era5_corr_list)
     if context.obj.region:
-        context.obj.region.data['era5-corr'] = corrections_ds
+        context.obj.region.data[corrections] = corrections_ds
 
 
     log.info('Saving Results...')
