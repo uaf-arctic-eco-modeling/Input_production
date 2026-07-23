@@ -536,3 +536,8 @@ class YearlyTimeSeries(UserList):
         full = xr.concat([ds.dataset for ds in self.data], dim='time')
         del(full.attrs['data_year'])
         return TEMDataset(full)
+
+    def check_variables(self, to_check):
+        """Checks variables in to check against internal variables, and
+        returns list of variables in both"""
+        return list(set(self.vars) &  set(to_check))

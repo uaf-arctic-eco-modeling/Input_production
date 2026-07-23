@@ -1690,6 +1690,12 @@ class TEMDataset(object):
             ) 
             self.dataset[var][:] = updated[:] 
 
+    def check_variables(self, to_check):
+        """Checks variables in to check against internal variables, and
+        returns list of variables in both"""
+        return list(set(self.vars) &  set(to_check))
+
+
 class YearlyDataset(TEMDataset):
     """This sub class of TEMDataset represents daily data
     for a single year.  Extends TEMDataset by adding

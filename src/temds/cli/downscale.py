@@ -259,8 +259,8 @@ def qdm_method(
         destination: common.DESTINATION_DIR,
         to_downscale: Annotated[Path, Argument(help="Path of data to be downscaled. This should be a directory containing netcdf files for each year of data you wish to downscale. See note if --use-region flag is provided.")],
         corrections: Annotated[Path, Argument(help="Precalculated corrections")],
-        observed_period: Annotated[tuple[int, int], Option(help="TODO")],
-        simulated_period: Annotated[tuple[int, int], Option(help="TODO")], 
+        observed_period: Annotated[tuple[int, int], Argument(help="TODO")],
+        simulated_period: Annotated[tuple[int, int], Argument(help="TODO")], 
         variables: Annotated[List[str], Argument(help="list of variables to downscale")] = None,
         n_quantiles: Annotated[int, Option(help="Number Quantiles")] = 1000,
         # downscale_years: Annotated[tuple[int, int], Option(help="Start and end of years to download data for. Will default to full range available if not provided")] = None,
@@ -271,17 +271,6 @@ def qdm_method(
     parallel = context.obj.parallel
     n_process = context.obj.get_n_process()
 
-    
-    if variables:
-        unsafe = False
-        for var in variables:
-            if not var in climate_variables.DOWNSCALE_SAFE:
-                log.error(f'variable "{var}" is not downscale safe.')
-                unsafe = True
-
-        if unsafe:
-            log.info(f'Downscale safe variables are {climate_variables.DOWNSCALE_SAFE}')
-            sys.exit()
 
     if context.obj.region: 
         log.info('Using region from context')
@@ -330,7 +319,24 @@ def qdm_method(
 
         log.info('Setup complete!')
 
+    if variables:
+        unsafe = False
+        for var in variables:
+            if not var in climate_variables.DOWNSCALE_SAFE:
+                log.error(f'variable "{var}" is not downscale safe.')
+                unsafe = True
+
+        if unsafe:
+            log.info(f'Downscale safe variables are {climate_variables.DOWNSCALE_SAFE}')
+            sys.exit()
+    else:
+        variables = climate_variables.DOWNSCALE_SAFE
+
     log.info('Downscale_qdm')
+    # print(destination,
+    #     corrections,
+    #     to_downscale,)
+    # print(area)
     area.qdm_downscale(
         destination,
         corrections,

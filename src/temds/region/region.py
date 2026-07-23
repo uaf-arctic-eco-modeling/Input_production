@@ -1007,16 +1007,31 @@ class Region(object):
         ----------
 
         """
+        if 'n_quantiles' not in kwargs:
+            self.logger.info(
+                f'n_quantiles not provided in kwargs setting to 1000'
+            )
+            kwargs['n_quantiles'] = 1000
+
+        # print(self.data)
+        obs_vars = self.data[observed_id].check_variables(variables)
+        sim_vars = self.data[simulated_id].check_variables(variables)
+        variables = list(set(sim_vars) & set(obs_vars))
+        self.logger.info(f'Downsclaing variables: {variables}')
+
         self.logger.info('building obsh')
         obsh = self.data[observed_id].convert_range_to_single_dataset(variables, historic_period[0], historic_period[1])
         self.logger.info('building simh')
-        simh = self.data[observed_id].convert_range_to_single_dataset(variables, historic_period[0], historic_period[1])
+        simh = self.data[simulated_id].convert_range_to_single_dataset(variables, historic_period[0], historic_period[1])
         self.logger.info('building simp')
         simp = self.data[simulated_id].convert_range_to_single_dataset(variables, projected_period[0], projected_period[1])
         results = []
         
         for var in variables:
-            print('downscaling', var)
+            if not (var in obsh.data_vars and var in simp.data_vars):
+                self.logger.warm(f'Variable {var} is not in data to downscale skipping...')
+
+            self.logger.info(f'Downscaling {var}')
             temp = adjust(
                 method="quantile_delta_mapping",
                 obs=obsh[var],
@@ -1027,13 +1042,20 @@ class Region(object):
             )[var].transpose('time', 'y','x')
             results.append(temp)
         
+        # return results
         results = xr.merge(results)
 
+        # return results
+
         results_per_year = []
-        for year in self.data[simulated_id].range:
+        for year in range(projected_period[0], projected_period[1]+1):
+            # print(year)
             results_yr = results.sel(time=f"{year}")
+            results_yr.rio.write_crs(self.crs, inplace=True).\
+                rio.write_coordinate_system(inplace=True) 
             results_per_year.append(dataset.YearlyDataset(year, results_yr))
+            
 
         del(results)
 
-        self.data[downscaled_id] = timeseries.YearlyTimeSeries(results_yr)
+        self.data[downscaled_id] = timeseries.YearlyTimeSeries(results_per_year)
