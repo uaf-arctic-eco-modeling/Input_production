@@ -81,7 +81,11 @@ def extra_tem_files(
     )
 
     log.info("Preparing TEM soil texture data....")
-    soil_texture = datasources.dataset.TEMDataset.from_soil_texture('working/00-download/soiltexture', context.obj.region, logger=context.obj.log)
+    soil_texture = datasources.dataset.TEMDataset.from_soil_texture(
+        data_path / datasources.soil_texture.soil_texture, 
+        destination=destination, 
+        region=context.obj.region, 
+        logger=context.obj.log)
 
     log.info('Importing soil texture data to region object...')
     context.obj.region.import_datasource('soiltex', soil_texture)

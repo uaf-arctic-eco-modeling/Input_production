@@ -370,8 +370,12 @@ class TEMDataset(object):
         return TEMDataset(dataset, logger=logger)
 
     @classmethod
-    def from_soil_texture(cls, data_path, region, download=False,
-                          overwrite=False, logger=Logger()):
+    def from_soil_texture(cls,
+                          data_path,
+                          region,
+                          destination: Path, # might need this to be able to find the manifest
+                          download=False, overwrite=False, logger=Logger()):
+
         func_name = "TEMdataset.from_soil_texture"
         logger.info(f'{func_name}: Processing soil texture data in {data_path}')
 

@@ -15,6 +15,9 @@ urlclay='https://files.isric.org/soilgrids/latest/data_aggregated/1000m/clay/'
 urlsand='https://files.isric.org/soilgrids/latest/data_aggregated/1000m/sand/'
 urlsilt='https://files.isric.org/soilgrids/latest/data_aggregated/1000m/silt/'
 
+# expected folder name in the downloaded data directory once source files 
+# have been unzipped, etc...
+soil_texture = "soiltexture" 
 
 
 #gfres=50000
