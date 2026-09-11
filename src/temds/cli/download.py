@@ -37,7 +37,8 @@ NAME = 'Download'
 def ERA5_daily(
         context: Context,
         destination: common.DESTINATION_DIR,
-        years: Annotated[tuple[int, int], Argument(help="Range of years to download ERA5 daily data for.")] = None
+        years: Annotated[tuple[int, int], Argument(help="Range of years to download ERA5 daily data for.")] = None,
+        extent: Annotated[tuple[float, float, float, float], Option(help='Extent in wgs84 coords (min lon, min lat, max lon, max lat)')] = None,
     ):
     """Downloads ERA5 daily reanalysis data from ECMWF. This is a slow process.
     """
@@ -54,6 +55,13 @@ def ERA5_daily(
 
     log.info(f'Processing years: {years}')
     # return
+
+    bounds = era5_daily.DEFAULT_BOUNDS
+    if not extent is None:
+        # need to convert to maxx,miny, minx,maxy
+        bounds = [extent[3], extent[0], extent[1], extent[2]]
+
+    log.info(f'Bounds (api format) {bounds}')
 
     log.info(f'Downloading from { era5_daily.COLLECTION_ID }.')
     for year in years:
@@ -77,8 +85,10 @@ def ERA5_daily(
                 #     destination, variable, date, overwrite=False
                 # )
                 file, status = era5_daily.download_variable_for_year_month(
-                    destination, variable, year_h, month, overwrite=False
+                    destination, variable, year_h, month, 
+                    overwrite=False, bounds=bounds
                 )
+                print(status)
                 if status == 'skipped':
                     log.info(f'...... File exists, download skipped.')
                 elif status == 'complete':

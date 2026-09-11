@@ -28,7 +28,7 @@ from cf_units import Unit
 
 import temds.datasources.vegetation
 from . import errors
-from . import worldclim, crujra, cmip6, topo
+from . import worldclim, crujra, cmip6, topo, era5_daily
 from . import soil_texture
 from temds import file_tools
 from temds import climate_variables 
@@ -1258,7 +1258,7 @@ class TEMDataset(object):
             dest_x, dest_y, dest_crs, dest_gt, n_ts, gdal_type
         )
         driver = gdal.GetDriverByName('GTiff')
-        driver.CreateCopy('sample-dest.tif', dest)
+        # driver.CreateCopy('sample-dest.tif', dest)
 
         source_crs = working_dataset.rio.crs.to_wkt()
         source = gdal_tools.empty_dataset(
@@ -1688,7 +1688,13 @@ class TEMDataset(object):
                 ix | np.isnan(self.dataset[var]), # don't fill nans
                 fill 
             ) 
-            self.dataset[var] = updated
+            self.dataset[var][:] = updated[:] 
+
+    def check_variables(self, to_check):
+        """Checks variables in to check against internal variables, and
+        returns list of variables in both"""
+        return list(set(self.vars) &  set(to_check))
+
 
 class YearlyDataset(TEMDataset):
     """This sub class of TEMDataset represents daily data
@@ -2125,6 +2131,108 @@ class YearlyDataset(TEMDataset):
             logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
         return new
 
+    @staticmethod
+    def from_era5_daily(year, 
+            data_path, 
+            download = False,
+            region: 'Region'=None, 
+            logger=Logger(),
+            **kwargs
+        ):
+        ## TODO: merge this with era5_daily.merge_for_year
+        ## there is a large amount of overlap betwee these functions
+        func_name = "Dataset.from_era5_daily"
+
+        if download:
+            raise NotImplementedError('Direct download for era5_daily not implemnted')
+            ## TODO download data to data_path
+
+
+        datasets = {}
+        for var, meta in era5_daily.API_VARIABLES.items():
+            
+            long_name = meta["name"]
+            src_var = climate_variables.aliases_for('ERA5_DAILY', 'dict')[var]
+            var_file = f'{year}-{long_name}.nc'
+            var_path = Path(data_path, var_file)
+            logger.info(f"{func_name}: loading raw data for '{var}' from '{var_path}'")
+            temp = xr.open_dataset(var_path, engine="netcdf4")
+            datasets[src_var] = temp   
+        # get gt for later
+        gt = temp.rio.transform()
+
+        
+
+        new = YearlyDataset(
+            year, list(datasets.values())[0], logger=logger)
+        new.dataset = new.dataset.assign(
+            {var: datasets[var][var] for var in datasets}
+        )
+        new.dataset = new.dataset.rename(
+            {'longitude': 'lon', 'latitude':'lat', 'valid_time':'time'}
+        )
+        new.dataset = new.dataset.convert_calendar('noleap')
+        # have to do this twice don't know why?
+        new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
+            .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
+            .rio.write_coordinate_system(inplace=True)
+        new.dataset.rio.write_crs('EPSG:4326', inplace=True)\
+            .rio.set_spatial_dims(x_dim='lon', y_dim='lat', inplace=True)\
+            .rio.write_coordinate_system(inplace=True)
+        new.dataset.rio.write_transform(gt, inplace=True)
+
+        if not region is None:
+            minx, miny, maxx, maxy = region.get_extent()
+            new = new.get_by_extent(
+                minx, miny, maxx, maxy,
+                region.crs,
+                region.resolution
+            )
+
+
+        source = era5_daily.NAME
+        for std_var, var in climate_variables.aliases_for(source, 'dict').items():
+            if climate_variables.has_conversion(std_var, source):
+                logger.info(f'{func_name}: Converting units for {var} to {std_var}')
+                new.dataset[var].values = climate_variables.to_std_units(
+                    new.dataset[var].values, std_var, source
+                )
+                cv = climate_variables.lookup_alias(source, var)
+                unit = cv.std_unit.name
+                v_name = cv.name
+                new.dataset[var].attrs.update(units=unit, name=v_name)
+
+
+        # TODO check if this needs to move above previous for loop
+        logger.info(f'{func_name}: Calculating vapo kPa')
+        new.dataset['vapo'] = era5_daily.calculate_vapo_from_dewpoint(
+            new.dataset['d2m']
+        )
+        unit = climate_variables.CLIMATE_VARIABLES['vapo'].std_unit.name
+        v_name = climate_variables.CLIMATE_VARIABLES['vapo'].name
+        new.dataset['vapo'].attrs.update(units=unit, name=v_name)
+        # end check
+        
+        logger.info(f'{func_name}: Renaming variables to TEMDS standard names...')
+        logger.info(f'{func_name}: current names: {list(new.dataset.data_vars)}')
+        logger.info(f'{func_name}: {climate_variables.aliases_for(source, "dict_r")}')
+        new.dataset = new.dataset.rename(
+            climate_variables.aliases_for(source, 'dict_r')
+        )
+        logger.info(f'{func_name}: new names: {list(new.dataset.data_vars)}')
+
+        verified, reasons = new.verify()
+        if not verified:
+            logger.warn(f'YearlyDataset.from_preprocess_crujra: verificaion issues: {reasons}')
+        
+        
+        
+        return new
+        
+    
+
+
+    
     def save(self, out_file, **kwargs): 
         """Extends save to save `year` as 'data_year' in netcdf
         attrs.

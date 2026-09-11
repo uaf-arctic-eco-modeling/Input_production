@@ -251,3 +251,114 @@ def delta_method(
         area.data[destination_name].save(out_path, overwrite=overwrite)
 
     return area
+
+
+@app.command()
+def qdm_method(
+        context: Context,
+        destination: common.DESTINATION_DIR,
+        to_downscale: Annotated[Path, Argument(help="Path of data to be downscaled. This should be a directory containing netcdf files for each year of data you wish to downscale. See note if --use-region flag is provided.")],
+        corrections: Annotated[Path, Argument(help="Precalculated corrections")],
+        observed_period: Annotated[tuple[int, int], Argument(help="TODO")],
+        simulated_period: Annotated[tuple[int, int], Argument(help="TODO")], 
+        variables: Annotated[List[str], Argument(help="list of variables to downscale")] = None,
+        n_quantiles: Annotated[int, Option(help="Number Quantiles")] = 1000,
+        # downscale_years: Annotated[tuple[int, int], Option(help="Start and end of years to download data for. Will default to full range available if not provided")] = None,
+    ):
+    log = context.obj.log
+    overwrite = context.obj.overwrite
+    cleanup = context.obj.cleanup
+    parallel = context.obj.parallel
+    n_process = context.obj.get_n_process()
+
+
+    if context.obj.region: 
+        log.info('Using region from context')
+        area = context.obj.region
+        region_directory = context.obj.region_directory
+
+        log.info('--use-region was provided so TODO:ADD NAMES will be treated as items in Region.data')
+        to_downscale = str(to_downscale)
+        corrections = str(corrections)
+        destination = str(destination)
+
+        for key in [to_downscale, corrections]:
+            if not key in area.data:
+                if key is None:
+                    continue
+                log.error(f"You are using a region and to_downscale value of {key} not loaded, load with --load-data={key}")
+                sys.exit(0)
+    else:
+        to_downscale_pth = Path(to_downscale)
+        log.info(f'Using to_downscale data at: {to_downscale_pth}')
+        if not to_downscale_pth.exists():
+            log.error('Target to_downscale data does not exist...')
+            sys.exit()
+
+        corrections_pth = Path(corrections)
+        log.info(f'Using corrections data at: {corrections_pth}')
+        if not corrections_pth.exists():
+            log.error('Target corrections data does not exist...')
+            sys.exit()
+            
+        log.suspend()
+        to_downscale_ds = datasources.timeseries.YearlyTimeSeries(to_downscale_pth, logger=log)
+        corrections_ds = datasources.dataset.TEMDataset(corrections_pth, logger=log)
+
+        log.resume()
+        log.debug(f'Creating temp Region')
+
+        area = Region.from_TEMDataset(to_downscale_ds.data[0], logger=log)
+        to_downscale = to_downscale_pth.stem
+        log.suspend()
+        area.import_datasource(to_downscale, to_downscale_ds)
+        log.resume()
+
+        corrections = corrections_pth.stem
+        area.import_datasource(corrections, corrections_ds)
+
+        log.info('Setup complete!')
+
+    if variables:
+        unsafe = False
+        for var in variables:
+            if not var in climate_variables.DOWNSCALE_SAFE:
+                log.error(f'variable "{var}" is not downscale safe.')
+                unsafe = True
+
+        if unsafe:
+            log.info(f'Downscale safe variables are {climate_variables.DOWNSCALE_SAFE}')
+            sys.exit()
+    else:
+        variables = climate_variables.DOWNSCALE_SAFE
+
+    log.info('Downscale_qdm')
+    # print(destination,
+    #     corrections,
+    #     to_downscale,)
+    # print(area)
+    area.qdm_downscale(
+        destination,
+        corrections,
+        to_downscale,
+        observed_period, simulated_period,
+        variables,
+        n_quantiles = n_quantiles
+    )
+    
+    if type(destination) is str:
+        destination_name = destination
+    else:
+        destination_name =  to_downscale + '-downscaled'
+
+    log.info('Saving Results...')
+    if context.obj.region:
+        context.obj.callback_export_region(
+            [destination_name], 
+            overwrite=overwrite
+        ) 
+    else:
+        out_path = destination
+        area.data[destination_name].save(out_path, overwrite=overwrite)
+
+    return area

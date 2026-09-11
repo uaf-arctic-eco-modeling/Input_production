@@ -133,7 +133,7 @@ class GlobalConfiguration:
                 kwargs['update_manifest'] = True
                 kwargs['items'] = items
                 kwargs['overwrite']=self.overwrite
-                
+                self.region_directory.mkdir(exist_ok=True, parents=True)
                 self.region.export_to_directory(
                     self.region_directory, **kwargs
                 )

@@ -10,6 +10,20 @@ op_table = {
 }
 
 def calc_era5_corrections(era5_baseline, reference, era5_daily):
+    """Calculates era5 corrections for qdm method, 
+    
+    This needs better documentation, or generalization, and potential 
+    integration into dataset?
+
+    Parameters
+    ----------
+    era5_baseline: TEMDataset
+        Long term climate average for era5
+    reference: TEMDataset
+        reference data i.e. worldclim
+    era5_daily: TEMDataset
+        daily era5 data
+    """
     corr=[]
     for var, op in op_table.items():
         # print(var, op)

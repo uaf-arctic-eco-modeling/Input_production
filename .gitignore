@@ -6,12 +6,13 @@ __pycache__/
 .DS_Store
 
 # don't track the generated assets
-working/
+./working/*
 
 local_test_data/*
 
 *.nc
 *.xml
 *.tif
-#*.ipynb
-
+*.ipynb
+*.json
+*.zip

@@ -24,6 +24,7 @@ import pyproj
 import xarray as xr
 from joblib import Parallel, delayed
 import shapely
+from cmethods import adjust
 
 # from ..gdal_tools import empty_dataset
 from .. import corrections, downscalers
@@ -377,19 +378,11 @@ class Region(object):
     def export_mask(self, where):
         self.mask.to_file( where )
 
-    def export_to_directory(self, where: Path, format: str = 'TEMDS', **kwargs
-            # boundary_filename = 'boundary.geojson',
-            # mask_filename = 'mask.tif',
-            # manifest_filename = 'manifest.yml',
-            # update_manifest = 
+    def export_to_directory(self, where: Path, **kwargs
             
         ):
-        # TODO: Should this actually be the wrapper for exporting to a specific
-        # format???
         """
-
         """
-
         lookup = lambda kw, ke, de: kw[ke] if ke in kw else de
 
         to_save = lookup(kwargs, 'items', 'all')
@@ -998,3 +991,64 @@ class Region(object):
         
         self.data[downscaled_id] = timeseries.YearlyTimeSeries(results)
 
+    def qdm_downscale(
+            self, downscaled_id, observed_id, simulated_id, 
+            historic_period, projected_period, variables, **kwargs):
+        """Downscale with quantile delta method
+
+        Parameters
+        ----------
+
+        """
+        if 'n_quantiles' not in kwargs:
+            self.logger.info(
+                f'n_quantiles not provided in kwargs setting to 1000'
+            )
+            kwargs['n_quantiles'] = 1000
+
+        # print(self.data)
+        obs_vars = self.data[observed_id].check_variables(variables)
+        sim_vars = self.data[simulated_id].check_variables(variables)
+        variables = list(set(sim_vars) & set(obs_vars))
+        self.logger.info(f'Downsclaing variables: {variables}')
+
+        self.logger.info('building obsh')
+        obsh = self.data[observed_id].convert_range_to_single_dataset(variables, historic_period[0], historic_period[1])
+        self.logger.info('building simh')
+        simh = self.data[simulated_id].convert_range_to_single_dataset(variables, historic_period[0], historic_period[1])
+        self.logger.info('building simp')
+        simp = self.data[simulated_id].convert_range_to_single_dataset(variables, projected_period[0], projected_period[1])
+        results = []
+        
+        for var in variables:
+            if not (var in obsh.data_vars and var in simp.data_vars):
+                self.logger.warm(f'Variable {var} is not in data to downscale skipping...')
+
+            self.logger.info(f'Downscaling {var}')
+            temp = adjust(
+                method="quantile_delta_mapping",
+                obs=obsh[var],
+                simh=simh[var],
+                simp=simp[var],
+                kind="+",
+                **kwargs
+            )[var].transpose('time', 'y','x')
+            results.append(temp)
+        
+        # return results
+        results = xr.merge(results)
+
+        # return results
+
+        results_per_year = []
+        for year in range(projected_period[0], projected_period[1]+1):
+            # print(year)
+            results_yr = results.sel(time=f"{year}")
+            results_yr.rio.write_crs(self.crs, inplace=True).\
+                rio.write_coordinate_system(inplace=True) 
+            results_per_year.append(dataset.YearlyDataset(year, results_yr))
+            
+
+        del(results)
+
+        self.data[downscaled_id] = timeseries.YearlyTimeSeries(results_per_year)
