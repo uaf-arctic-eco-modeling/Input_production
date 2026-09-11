@@ -370,8 +370,12 @@ class TEMDataset(object):
         return TEMDataset(dataset, logger=logger)
 
     @classmethod
-    def from_soil_texture(cls, data_path, region, download=False,
-                          overwrite=False, logger=Logger()):
+    def from_soil_texture(cls,
+                          data_path,
+                          region,
+                          destination: Path, # might need this to be able to find the manifest
+                          download=False, overwrite=False, logger=Logger()):
+
         func_name = "TEMdataset.from_soil_texture"
         logger.info(f'{func_name}: Processing soil texture data in {data_path}')
 
@@ -453,6 +457,7 @@ class TEMDataset(object):
             global_political_map: Path, 
             eco_region_map: Path,
             region, 
+            destination: Path, # need this to be able to find the manifest
             download=False,
             overwrite=False, logger=Logger(), buffer=0
         ):
@@ -562,11 +567,10 @@ class TEMDataset(object):
             topo = region.data['topo']
         else:
             try:
-                # not sure how to get the path here....the 'working/' part...
-                region.lazy_import(Path('working') / region.name, 'topo')
+                region.lazy_import(destination, 'topo')
                 topo = region.data['topo']
             except Exception as e:
-                raise RuntimeError(f"{func_name}: Problem loading topo data. Expection: {e}")
+                raise RuntimeError(f"{func_name}: Problem loading topo data from {destination}. Expection: {e}")
 
         # Make sure we only write out the variable we are interested in.
         topo.dataset['drainage_class'].astype(np.int32).rio.to_raster("/tmp/drainage_raster_temp_from_veg.tif")
@@ -1951,7 +1955,6 @@ class YearlyDataset(TEMDataset):
 
         new = YearlyDataset.from_TEMDataset(newDS, year)
 
-        #from IPython import embed; embed()
 
         # ### Monthly information
         # month = list(range(1, 13, 1))
