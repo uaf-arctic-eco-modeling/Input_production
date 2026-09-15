@@ -632,10 +632,17 @@ class Region(object):
             assert isinstance(ds_monthly.indexes['time'], xr.CFTimeIndex), f"Expected time index to be xr.CFTimeIndex, not {type(ds_monthly.indexes['time'])}"
             assert ds_monthly.indexes['time'].calendar == 'noleap', f"Expected time index calendar to be 'noleap', not {ds_monthly.indexes['time'].calendar}"   
 
+            # Guard against upstream calculations (e.g. vapor pressure from psl/elevation)
+            # unintentionally promoting a variable to float64.
+            for var in ds_monthly.data_vars:
+                if ds_monthly[var].dtype == np.float64:
+                    self.logger.warn(f"Variable {var} was float64, casting to float32 before export.")
+                    ds_monthly[var] = ds_monthly[var].astype(np.float32)
+
             # Check units attr presence in synthesized data
             for v in ds_monthly.data_vars:
                 if 'units' not in ds_monthly[v].attrs:
-                    self.logger.warn("No units for variable: ", v)
+                    self.logger.warn(f"No units for variable: {v}")
 
             if 'TEMDS_version' in self.data[ds_key_name].data[1].dataset.attrs:
                 ds_monthly.attrs['source_data_version'] = self.data[ds_key_name].data[1].dataset.attrs['TEMDS_version']
