@@ -28,7 +28,11 @@ def export_model(
         context: Context,
         destination: temds.cli.common.DESTINATION_DIR,
         format: Annotated[str, Option(help="Model format to export to.")] = None,
+<<<<<<< HEAD
         which: Annotated[str, Option(help="Which dataset to export.")] = 'all',
+=======
+        which: Annotated[str, Option(help="Which dataset(s) to export. Use 'all' or a comma-separated list of dataset names (see temds.constants.TEMDS_DATASET_NAMES).")] = 'all',
+>>>>>>> fix-tem-fire-files
         from_directory: Annotated[pathlib.Path, Option(help="Directory to read data from. Will default to region directory if --use-region is provided")] = None,    ):
     """This command exports data to a model specific format"""
     log = context.obj.log
@@ -52,7 +56,15 @@ def export_model(
         log.info("Exporting all datasets...")
         dataset_list = temds.constants.TEMDS_DATASET_NAMES
     else:
+<<<<<<< HEAD
         raise NotImplementedError("Only exporting all datasets is currently supported. Please specify --which all or implement a new option (see src/temds/cli/export.py).")
+=======
+        dataset_list = [name.strip() for name in which.split(',')]
+        invalid = [name for name in dataset_list if name not in temds.constants.TEMDS_DATASET_NAMES]
+        if invalid:
+            raise ValueError(f"Invalid dataset name(s) for TEM export: {invalid}. Must be one of {temds.constants.TEMDS_DATASET_NAMES}.")
+        log.info(f"Exporting datasets: {dataset_list}")
+>>>>>>> fix-tem-fire-files
 
     for dataset_name in dataset_list:
         ret_code = r.export_TEM(dataset_name=dataset_name, where=destination)

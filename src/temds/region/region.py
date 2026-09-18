@@ -709,67 +709,66 @@ class Region(object):
             # developed yet, so for now we just make some synthetic data so that
             # TEM will run without complaint. The fire module is effectively off
             # because we set the burn mask to all zero. The data must match the
-            # shape of the climate files so we simply copy those and rename the
-            # variables. This avoids the need to create the synthetic data at
-            # daily resolution and then resample to monthly, which would be
-            # necessary if we try to make the synthetic data from scratch.
+            # shape of the climate files.
 
-            target_vars = {
-                'tair_avg': 'mean', 
-                'vapo': 'mean', 
-                'nirr': 'mean',
-                'prec': 'sum'
-            }
-
-            new_names = {
-                'tair_avg':'exp_burn_mask', 
-                'vapo':'exp_area_of_burn', 
-                'nirr':'exp_jday_of_burn', 
-                'prec':'exp_fire_severity'
-            }
-
+            # Also need to grab the spatial reference coordinates from the reference dataset.
             if 'historic' in dataset_name:
+                if 'crujra-downscaled' not in self.data.keys():
+                    self.lazy_import(where, 'crujra-downscaled')
                 self.logger.info("Pulling time axis from cru...")
-                ds_key = 'crujra-downscaled'
+                ts = self.data['crujra-downscaled']
+                ref_ds = ts.data[0].dataset
                 out_name = 'historic-explicit-fire.nc'
             elif 'projected' in dataset_name:
+                if 'cmip6-ssp245-downscaled' not in self.data.keys():
+                    self.lazy_import(where, 'cmip6-ssp245-downscaled')
                 self.logger.info("Pulling time axis from cmip...")
-                ds_key = 'cmip6-ssp245-downscaled'
+                ts = self.data['cmip6-ssp245-downscaled']
+                ref_ds = ts.data[0].dataset
                 out_name = 'projected-explicit-fire.nc'
             else:
                 assert False, f"{function_name}: the dataset_name must contain either 'historic' or 'projected'"
 
-            ds_monthly = self.data[ds_key].synthesize_to_monthly(target_vars, new_names)
+            time_index = xr.date_range(f"{ts.data[0].year}-01-01", periods=len(ts.data), freq='YS', use_cftime=True, calendar='noleap')
 
-            for v in new_names.values():
-                ds_monthly[v].values = np.ones(ds_monthly[v].shape)    
+            x_proj_coord = ref_ds.coords['x'].values
+            y_proj_coord = ref_ds.coords['y'].values
+
+            dim_sizes = (len(time_index), len(y_proj_coord), len(x_proj_coord))
+
+            exp_fire_ds = xr.Dataset(
+                coords={
+                    'time': time_index,
+                    'y': y_proj_coord,
+                    'x': x_proj_coord,
+                },
+                data_vars={
+                    'exp_burn_mask': (('time','y', 'x'), np.zeros(dim_sizes, dtype=np.int32)),
+                    'exp_area_of_burn': (('time','y', 'x'), np.zeros(dim_sizes, dtype=np.int32)),
+                    'exp_jday_of_burn': (('time','y', 'x'), np.zeros(dim_sizes, dtype=np.int32)),
+                    'exp_fire_severity': (('time','y', 'x'), np.zeros(dim_sizes, dtype=np.int32)), 
+                }
+            )
+            exp_fire_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True)
+            exp_fire_ds.rio.write_crs(ref_ds.rio.crs, inplace=True)
+            exp_fire_ds.rio.write_transform(ref_ds.rio.transform(), inplace=True)
+            exp_fire_ds.rio.write_coordinate_system(inplace=True)
 
             self.logger.info('Setting attributes for data variables')
-            ds_monthly['exp_burn_mask'].attrs.update(units='', name='Fire Occurrence')
-            ds_monthly['exp_fire_severity'].attrs.update(units='', name='Fire Severity')
-            ds_monthly['exp_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn')
-            ds_monthly['exp_area_of_burn'].attrs.update(units='km-2', name='Area of Burn (km-2)')
+            exp_fire_ds['exp_burn_mask'].attrs.update(units='', name='Fire Occurrence', _FillValue=-9999)
+            exp_fire_ds['exp_fire_severity'].attrs.update(units='', name='Fire Severity', _FillValue=-9999)
+            exp_fire_ds['exp_jday_of_burn'].attrs.update(units='', name='Julian Day of Burn', _FillValue=-9999)
+            exp_fire_ds['exp_area_of_burn'].attrs.update(units='km-2', name='Area of Burn (km-2)', _FillValue=-9999)
 
-            # Turning explicit fire OFF for all grid cells and time steps.
-            ds_monthly['exp_burn_mask'].values = np.zeros(ds_monthly['exp_area_of_burn'].shape)
+            exp_fire_ds['X'] = np.arange(exp_fire_ds.sizes['x'])
+            exp_fire_ds['Y'] = np.arange(exp_fire_ds.sizes['y'])
 
-            ds_monthly['exp_burn_mask'] = ds_monthly['exp_burn_mask'].astype(np.int32)
-            ds_monthly['exp_jday_of_burn'] = ds_monthly['exp_jday_of_burn'].astype(np.int32)
-            ds_monthly['exp_fire_severity'] = ds_monthly['exp_fire_severity'].astype(np.int32)
-            ds_monthly['exp_area_of_burn'] = ds_monthly['exp_area_of_burn'].astype(np.int64)
-
-            ds_monthly['X'] = np.arange(ds_monthly.sizes['x'])
-            ds_monthly['Y'] = np.arange(ds_monthly.sizes['y'])
-
-            ds_monthly['exp_burn_mask'] = ds_monthly['exp_burn_mask'].rename({'y': 'Y', 'x': 'X'})
-            ds_monthly['exp_jday_of_burn'] = ds_monthly['exp_jday_of_burn'].rename({'y': 'Y', 'x': 'X'})
-            ds_monthly['exp_fire_severity'] = ds_monthly['exp_fire_severity'].rename({'y': 'Y', 'x': 'X'})
-            ds_monthly['exp_area_of_burn'] = ds_monthly['exp_area_of_burn'].rename({'y': 'Y', 'x': 'X'})
+            #exp_fire_ds['time'].attrs.update(units=time_units, name='time', calendar=time_calendar, _FillValue=-9999)
 
             self.logger.info(f"Saving file to {destination / out_name}...")
-            ds_monthly = add_version(ds_monthly, dataset_name)
+            exp_fire_ds = add_version(exp_fire_ds, dataset_name)
             util.nc_check(destination / out_name)
-            ds_monthly.to_netcdf(destination / out_name)
+            exp_fire_ds.to_netcdf(destination / out_name)
             return 0
 
 
