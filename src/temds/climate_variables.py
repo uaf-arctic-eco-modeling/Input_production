@@ -246,7 +246,9 @@ def calculate_vapo(pres, spfh):
     """Calculate Vapor pressure from sea level pressure and
     specific humidity
     """
-    return (0.001 * pres * spfh) / (0.622 + 0.378 * spfh)
+    result = (0.001 * pres * spfh) / (0.622 + 0.378 * spfh)
+    # guard against upcasting if pres or spfh differ in precision (e.g. float64 elevation)
+    return result.astype(spfh.dtype)
 
 def calculate_pres_from_psl(psl, air_temp, elevation):
     """Calculate PRES from PSL, air_temp, and elevation
@@ -261,4 +263,6 @@ def calculate_pres_from_psl(psl, air_temp, elevation):
         if 0, PRES = PSL (because e^0 == 1)
  
     """
-    return psl * np.exp((-9.80665 * 0.0289644 * elevation) / (8.3144598 * (air_temp + 273.15)))
+    result = psl * np.exp((-9.80665 * 0.0289644 * elevation) / (8.3144598 * (air_temp + 273.15)))
+    # guard against upcasting if elevation is a different precision than psl
+    return result.astype(psl.dtype)

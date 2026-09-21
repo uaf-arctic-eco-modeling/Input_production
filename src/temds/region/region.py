@@ -646,6 +646,13 @@ class Region(object):
 
             ds_monthly = self.data[ds_key_name].synthesize_to_monthly(target_vars, new_names)
 
+            # Guard against upstream calculations (e.g. vapor pressure from psl/elevation)
+            # unintentionally promoting a variable to float64.
+            for var in ds_monthly.data_vars:
+                if ds_monthly[var].dtype == np.float64:
+                    self.logger.warn(f"Variable {var} was float64, casting to float32 before export.")
+                    ds_monthly[var] = ds_monthly[var].astype(np.float32)
+
             # Check units attr presence in synthesized data
             for v in ds_monthly.data_vars:
                 if 'units' not in ds_monthly[v].attrs:
