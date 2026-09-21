@@ -29,9 +29,7 @@ def export_model(
         destination: temds.cli.common.DESTINATION_DIR,
         format: Annotated[str, Option(help="Model format to export to.")] = None,
         which: Annotated[str, Option(help="Which dataset to export.")] = 'all',
-        from_directory: Annotated[pathlib.Path, Option(help="Directory to read data from. Will default to region directory if --use-region is provided")] = None,
-
-    ):
+        from_directory: Annotated[pathlib.Path, Option(help="Directory to read data from. Will default to region directory if --use-region is provided")] = None,    ):
     """This command exports data to a model specific format"""
     log = context.obj.log
     overwrite = context.obj.overwrite
@@ -55,7 +53,7 @@ def export_model(
         dataset_list = temds.constants.TEMDS_DATASET_NAMES
     else:
         raise NotImplementedError("Only exporting all datasets is currently supported. Please specify --which all or implement a new option (see src/temds/cli/export.py).")
-    
+
     for dataset_name in dataset_list:
         ret_code = r.export_TEM(dataset_name=dataset_name, where=destination)
         if ret_code:

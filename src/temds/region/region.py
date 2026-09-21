@@ -444,6 +444,18 @@ class Region(object):
             {dataset_name}.nc, where dataset_name is the value of the
             dataset_name parameter.
 
+        This will export all the data.
+
+        There is one more step that should be done before starting a TEM runs to
+        handle the potential overlap in time range of the historic and projected
+        data. Users should use TEM utilities (pyddt) to handle this (and other 
+        pre-flight checks)!
+
+        Returns
+        -------
+        None
+            Writes the dataset to the specified location in TEM format.
+
         Questions:
          - should this export all data in a region object? Not all possible keys
            have a tem analog
@@ -477,47 +489,24 @@ class Region(object):
         if dataset_name == 'co2':
             self.logger.info("Exporting CO2 data to TEM format...")
 
-            # TODO: Refactor this to get data from the web or at least a
-            # file instead of hard coding here...
-
-            # TODO: Handle projected co2 (filename projected-co2.nc)
-
-            # Manually spliced data from NOAA ESRL Global Monitoring Division
-            # with the data from the demo file. (just added yrs 2016+)
-            # https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.txt
-            co2 = [296.311, 296.661, 297.04, 297.441, 297.86, 298.29, 298.726, 299.163, 
-                299.595, 300.016, 300.421, 300.804, 301.162, 301.501, 301.829, 302.154, 
-                302.48, 302.808, 303.142, 303.482, 303.833, 304.195, 304.573, 304.966, 
-                305.378, 305.806, 306.247, 306.698, 307.154, 307.614, 308.074, 308.531, 
-                308.979, 309.401, 309.781, 310.107, 310.369, 310.559, 310.667, 310.697, 
-                310.664, 310.594, 310.51, 310.438, 310.401, 310.41, 310.475, 310.605, 
-                310.807, 311.077, 311.41, 311.802, 312.245, 312.736, 313.27, 313.842, 
-                314.448, 315.084, 315.665, 316.535, 317.195, 317.885, 318.495, 318.935, 
-                319.58, 320.895, 321.56, 322.34, 323.7, 324.835, 325.555, 326.55, 
-                328.455, 329.215, 330.165, 331.215, 332.79, 334.44, 335.78, 337.655, 
-                338.925, 340.065, 341.79, 343.33, 344.67, 346.075, 347.845, 350.055, 
-                351.52, 352.785, 354.21, 355.225, 356.055, 357.55, 359.62, 361.69, 
-                363.76, 365.83, 367.9, 368, 370.1, 372.2, 373.6943, 375.3507, 377.0071, 
-                378.6636, 380.5236, 382.3536, 384.1336, 389.9, 391.65, 393.85, 396.52, 
-                398.65, 400.83,
-                404.41, 406.76, 408.72, 411.65, 414.21, 416.41, 418.53, 421.08, 424.61 ]
-            year = [1901, 1902, 1903, 1904, 1905, 1906, 1907, 1908, 1909, 1910, 1911, 
-                1912, 1913, 1914, 1915, 1916, 1917, 1918, 1919, 1920, 1921, 1922, 1923, 
-                1924, 1925, 1926, 1927, 1928, 1929, 1930, 1931, 1932, 1933, 1934, 1935, 
-                1936, 1937, 1938, 1939, 1940, 1941, 1942, 1943, 1944, 1945, 1946, 1947, 
-                1948, 1949, 1950, 1951, 1952, 1953, 1954, 1955, 1956, 1957, 1958, 1959, 
-                1960, 1961, 1962, 1963, 1964, 1965, 1966, 1967, 1968, 1969, 1970, 1971, 
-                1972, 1973, 1974, 1975, 1976, 1977, 1978, 1979, 1980, 1981, 1982, 1983, 
-                1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 
-                1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 
-                2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 
-                2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
-
-            self.logger.info(f"Saving file to {destination / 'co2.nc'}...")
-            ds = xr.Dataset(data_vars={'co2':('year',co2)}, coords={'year':year})
+            ds = xr.Dataset(
+                data_vars={'co2':('year',util.historic_co2['co2'])}, 
+                coords={'year':util.historic_co2['year']}
+            )
             ds = add_version(ds, dataset_name)
-            util.nc_check(destination / 'co2.nc')
-            ds.to_netcdf(destination / 'co2.nc')
+            util.nc_check(destination / 'historic-co2.nc')
+            ds.to_netcdf(destination / 'historic-co2.nc')
+
+            for scenario in util.projected_co2.keys():
+                if scenario == 'year':
+                    continue
+                ds = xr.Dataset(
+                    data_vars={'co2':('year',util.projected_co2[scenario])}, 
+                    coords={'year':util.projected_co2['year']}
+                )
+                ds = add_version(ds, dataset_name)
+                util.nc_check(destination / f'projected-{scenario}-co2.nc')
+                ds.to_netcdf(destination / f'projected-{scenario}-co2.nc')  
             return 0
 
         if dataset_name == 'topo':
@@ -645,6 +634,10 @@ class Region(object):
                     print("No units for variable: ", v)
 
             ds_monthly = self.data[ds_key_name].synthesize_to_monthly(target_vars, new_names)
+
+            assert 'time' in ds_monthly.indexes, "time index not found"
+            assert isinstance(ds_monthly.indexes['time'], xr.CFTimeIndex), f"Expected time index to be xr.CFTimeIndex, not {type(ds_monthly.indexes['time'])}"
+            assert ds_monthly.indexes['time'].calendar == 'noleap', f"Expected time index calendar to be 'noleap', not {ds_monthly.indexes['time'].calendar}"   
 
             # Check units attr presence in synthesized data
             for v in ds_monthly.data_vars:
