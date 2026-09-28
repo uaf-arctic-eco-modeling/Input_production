@@ -96,7 +96,7 @@ class Mask(object):
         """
         init_boundary = deepcopy(extent_gpd)
 
-        if isinstance(resolution, int):
+        if isinstance(resolution, (int, float)):
             resolution = (resolution, -resolution)
 
         if align_extent_to_resolution:
