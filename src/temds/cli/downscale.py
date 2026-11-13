@@ -32,6 +32,7 @@ NAME = 'Downscale'
 
 @app.command()
 def extra_tem_files(
+    data_path: Annotated[Path, Argument(help="Path to the directory containing source data for extra TEM files to be prepared.")],
     context: Context,
     destination: common.DESTINATION_DIR,
     overwrite: common.OVERWRITE_FLAG = False,
@@ -61,11 +62,12 @@ def extra_tem_files(
 
     log.info('Preparing TEM vegetation data...')
     veg = datasources.dataset.TEMDataset.from_vegetation(
-        land_cover_raster=datasources.vegetation.land_cover_path, 
-        land_cover_classes=datasources.vegetation.land_cover_classification, 
-        global_political_map=datasources.vegetation.political_shp_path, 
-        eco_region_map=datasources.vegetation.eco_shp_path, 
-        region=context.obj.region
+        land_cover_raster=data_path / datasources.vegetation.land_cover_path, 
+        land_cover_classes=data_path / datasources.vegetation.land_cover_classification, 
+        global_political_map=data_path / datasources.vegetation.political_shp_path, 
+        eco_region_map=data_path / datasources.vegetation.eco_shp_path, 
+        region=context.obj.region,
+        destination=destination,
         )
 
     log.info('Importing vegetation data to region object...')    
@@ -79,7 +81,11 @@ def extra_tem_files(
     )
 
     log.info("Preparing TEM soil texture data....")
-    soil_texture = datasources.dataset.TEMDataset.from_soil_texture('working/00-download/soiltexture', context.obj.region, logger=context.obj.log)
+    soil_texture = datasources.dataset.TEMDataset.from_soil_texture(
+        data_path / datasources.soil_texture.soil_texture, 
+        destination=destination, 
+        region=context.obj.region, 
+        logger=context.obj.log)
 
     log.info('Importing soil texture data to region object...')
     context.obj.region.import_datasource('soiltex', soil_texture)
